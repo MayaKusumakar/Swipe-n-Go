@@ -2,7 +2,7 @@
 
 **Group Name:** Swipe-n-Go
 
-**Group Members:** Maya Kusumakar, Evelyn, Haylie, Angus, Beale, Noah, Anat
+**Group Members:** Maya Kusumakar, Evelyn, Haylie, Angus, Beale, Noah Wong, Anat
 
 **Github Repo:** https://github.com/MayaKusumakar/Swipe-n-GoLinks to an external site.
 
