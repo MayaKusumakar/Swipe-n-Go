@@ -23,3 +23,25 @@ The project should not feature:
 * A hosting platform that isn't with Google App Engine.
 * Replace Flask with FastAPI, Djongo, or another framework.
 * Put the entire backend insode one large Flask application file.
+
+## Security Feature
+Students should only be able to sign in with a verified @ucdavis.edu Google account, so everyone using the app is part of the UC Davis community. Only approved hosts, such as club officers, departments, and campus organizations, can publish events, and other students can request host access. A student's swipes and interests should stay private, and hosts should only see the number of interested students, not their identities.
+Students should be able to report events that are fake, spam, or unsafe, and any event with multiple reports should be hidden until it is reviewed. Flyer photos uploaded by hosts must be image files under a size limit, have their location metadata removed, and pass an inappropriate-content check before the event can be published.
+
+
+The backend server must use the Google App Engine Standard Environment. Requirements include:
+* Python runtime: 3.10-3.13.
+* Flask web service.
+* Flask Blueprints for decomposed API handling, with every API route verifying the user's login token and host-only routes checking the host role.
+* Server-side validation and sanitization of all user input.
+* Rate limiting on requests to prevent spam and abuse.
+* An app.yaml config file that enforces HTTPS on all routes.
+* API keys and credentials stored in Google Secret Manager.
+* A .gcloudignore file that excludes unnecessary files from deployment, including virtual environments, local development artifacts, and any local secret or .env files.
+
+The project should not feature:
+* A hosting platform that isn't with Google App Engine.
+* Replace Flask with FastAPI, Django, or another framework.
+* Put the entire backend inside one large Flask application file.
+* API keys, passwords, or other secrets stored directly in the codebase.
+* Sign-in for accounts outside the @ucdavis.edu domain.
