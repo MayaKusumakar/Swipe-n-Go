@@ -1,0 +1,6 @@
+* text=auto
+# Shell scripts must stay LF or they fail in bash/WSL; batch files stay CRLF.
+*.sh text eol=lf
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary

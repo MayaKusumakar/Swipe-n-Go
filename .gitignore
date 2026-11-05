@@ -1,0 +1,35 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+*-key.json
+credentials*.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Android / Gradle
+.gradle/
+.kotlin/
+build/
+local.properties
+captures/
+*.apk
+*.aab
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Instructor reference copy: contains nested git repos, node_modules, a .env
+# with credentials, and a 129 MB tarball. Remove this line only if the team
+# decides to commit a cleaned-up copy.
+Voluntr Reference/
