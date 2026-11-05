@@ -11,6 +11,12 @@ Focus on implementing the frontend UI and swipe functionality using our existing
 Event hosts should be able to use the camera to take a photo of an event flyer and automatically fill in the event details, creating an event card in the app. The scan should extract the event name and the key details: date, time, and location. It should also pull a short description if the flyer has one. The flyer photo can be used as the event card's image.
 If any required detail is missing or can't be read clearly, the app should prompt the person to fill it in before continuing. Before the event is officially added to the app, the person adding it must review all of the scanned details and can edit any of them. The event is only published once they confirm.
 
+## Saved Events and Calendar For Users
+When a student swipes right on an event, it should be saved to a "My Events" list in the app. Students should be able to open this list at any time to see every event they've saved, sorted by date with the soonest events at the top. Events that have already happened should move to a separate "Past" section instead of cluttering the list.
+Each saved event should show the same key details as its event card: name, image, date, time, and location. Tapping a saved event should open its full details. Students should be able to remove an event from their list if they change their mind.
+From an event's details, students should be able to add it to their phone's calendar (Google Calendar or Apple Calendar) with the event name, date, time, location, and description filled in. If a host edits or cancels an event that a student has saved, the student's list should reflect the change, and canceled events should be clearly marked.
+Saved events must be stored on the server and tied to the student's account, so their list stays the same across devices and app reinstalls.
+
 
 The backend server must use the Google App Engine Standard Environment. Requirements include:
 * Python runtime: 3.10-3.13.
