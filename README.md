@@ -14,6 +14,8 @@
 
 
 Description:
+Swipe n Go is an Android app that helps UC Davis students discover campus events by swiping right on ones they're interested in and left on ones they'd skip. Events come from organizers (and later flyer scanning), and the app will learn each student's interests to recommend events and help them find others to go with.
+(Draft from overview.md, for the team to review.)
 
 Requirements:
 -
@@ -50,7 +52,6 @@ Client unit tests: from `android/`, run `./gradlew testDebugUnitTest` (`gradlew.
 Client UI tests (need a running emulator or device): `./gradlew connectedDebugAndroidTest`
 
 Test login:
-username -
-password -
+None needed yet. There's no login in Milestone 0 (the course's SMS auth service will be added later).
 
 

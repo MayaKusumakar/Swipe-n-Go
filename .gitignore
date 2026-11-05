@@ -28,8 +28,3 @@ captures/
 *.iml
 .vscode/
 .DS_Store
-
-# Instructor reference copy: contains nested git repos, node_modules, a .env
-# with credentials, and a 129 MB tarball. Remove this line only if the team
-# decides to commit a cleaned-up copy.
-Voluntr Reference/

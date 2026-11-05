@@ -8,6 +8,7 @@
 | 1 | 2026-11-04 | Mobile client: Kotlin + Jetpack Compose (Android). |
 | 2 | 2026-11-04 | First feature (Milestone 0): the swipe deck of upcoming events. |
 | 3 | 2026-11-04 | `docs/API.md` is human-only. The LLM records the implemented API in `docs/API.llm.md`. |
+| 4 | 2026-11-04 | The instructor's Voluntr reference copy is removed from the project. It now lives outside the repo, at `ECS_191/Voluntr Reference`. |
 
 ## Proposals (not approved)
 | # | Proposal | Notes |
@@ -16,7 +17,6 @@
 | P2 | App Engine runtime `python312` | Matches WSL's Python 3.12. Python 3.10 reached end of life in Oct 2026. |
 | P3 | Swipes are local-only in Milestone 0 (no server call) | Recording swipes (`POST /api/interactions`) comes later. |
 | P4 | Seed data goes in Datastore namespace `dev`, flagged `is_seed_data` | |
-| P5 | Ignore `Voluntr Reference/` in git | Added to `.gitignore` for safety. It contains a `.env` with credentials and a 129 MB tarball. Easy to undo. |
 | P6 | Add a `repositories/` layer for Datastore access | |
 | P7 | Dev-only in-memory event store (`EVENT_STORE=memory`) | Unblocks local demos until GCP is set up. Off by default. The real HTTP, Blueprint and service path is still used. |
 | P8 | All server errors (404/405/500) use the JSON error format | |
