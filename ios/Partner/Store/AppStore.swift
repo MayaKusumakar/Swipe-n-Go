@@ -1,0 +1,498 @@
+import SwiftUI
+import Observation
+
+struct InAppBanner: Identifiable, Equatable {
+    let id = UUID()
+    var title: String
+    var subtitle: String
+    var symbol: String
+    var color: Color
+}
+
+enum JoinOutcome { case joined, requested }
+
+enum SwipeAction { case join, skip, save }
+
+/// Single source of truth for the prototype. Persists to a JSON file on device
+/// and simulates the "other side" (hosts approving, people replying).
+@MainActor
+@Observable
+final class AppStore {
+    // MARK: Persisted state
+    var hasOnboarded = false
+    var me: Person
+    var people: [Person] = [] { didSet { rebuildIndex() } }
+    var activities: [Activity] = []
+    var joinedIDs: Set<UUID> = []
+    var pendingIDs: Set<UUID> = []
+    var savedIDs: Set<UUID> = []
+    var skippedIDs: Set<UUID> = []
+    var conversations: [Conversation] = []
+    var requests: [JoinRequest] = []
+    var notificationsEnabled = true
+    var radiusMiles: Double = 50
+    var showAgeOnProfile = true
+
+    // MARK: Transient UI state
+    var banner: InAppBanner?
+    var typing: [UUID: UUID] = [:]           // conversationID → personID currently "typing"
+    var selectedTab: AppTab = .discover
+    var openConversationID: UUID?
+    var requestedChat: UUID?                  // set to deep-link into a conversation
+    private(set) var swipeHistory: [(UUID, SwipeAction)] = []
+
+    @ObservationIgnored private var index: [UUID: Person] = [:]
+    @ObservationIgnored private let fileURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appending(path: "partner-state.json")
+    }()
+
+    init() {
+        me = AppStore.defaultMe()
+        if !load() { seed() }
+        #if DEBUG
+        applyDebugLaunchArguments()
+        #endif
+    }
+
+    #if DEBUG
+    /// `-demo` skips onboarding with a sample profile; `-tab <name>` opens a tab. Handy for screenshots.
+    private func applyDebugLaunchArguments() {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-demo"), !hasOnboarded {
+            completeOnboarding(name: "Anant Katiyar", age: 21, pronouns: "", interests: [.run, .concert, .food, .coffee, .hike])
+            me.emoji = "😎"
+            save()
+        }
+        if args.contains("-joined"), joinedIDs.isEmpty {
+            for a in discoverDeck.filter({ !$0.requiresApproval }).prefix(2) { confirmJoin(a.id) }
+            if let a = discoverDeck.first(where: { $0.requiresApproval }) { pendingIDs.insert(a.id) }
+            savedIDs.formUnion(discoverDeck.suffix(2).map(\.id))
+            save()
+        }
+        if args.contains("-chat"), let c = conversations.first(where: { $0.activityID != nil }) {
+            requestedChat = c.id
+        }
+        if let i = args.firstIndex(of: "-tab"), i + 1 < args.count {
+            selectedTab = ["discover": .discover, "explore": .explore, "plans": .plans, "chats": .chats, "profile": .profile][args[i + 1]] ?? .discover
+        }
+    }
+    #endif
+
+    static func defaultMe() -> Person {
+        Person(id: UUID(), name: "", age: 21, bio: "", pronouns: "", interests: [], hue: 0.6, emoji: "😊",
+               isVerified: false, rating: 5.0, activitiesDone: 0, school: "UC Davis")
+    }
+
+    // MARK: - Lookup
+
+    func person(_ id: UUID) -> Person? { id == me.id ? me : index[id] }
+    func activity(_ id: UUID) -> Activity? { activities.first { $0.id == id } }
+
+    private func rebuildIndex() {
+        index = Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0) })
+    }
+
+    func isHost(_ activity: Activity) -> Bool { activity.hostID == me.id }
+    func isGoing(_ activity: Activity) -> Bool { joinedIDs.contains(activity.id) || isHost(activity) }
+    func isPending(_ activity: Activity) -> Bool { pendingIDs.contains(activity.id) }
+    func isSaved(_ activity: Activity) -> Bool { savedIDs.contains(activity.id) }
+
+    func attendees(of activity: Activity) -> [Person] {
+        ([activity.hostID] + activity.attendeeIDs).compactMap(person)
+    }
+
+    func matchScore(_ activity: Activity) -> Int {
+        var score = me.interests.contains(activity.category) ? 3 : 0
+        if let host = person(activity.hostID) {
+            score += Set(host.interests).intersection(me.interests).count
+        }
+        return score
+    }
+
+    // MARK: - Feeds
+
+    var discoverDeck: [Activity] {
+        activities
+            .filter { !$0.isPast && !isHost($0) && !joinedIDs.contains($0.id) && !pendingIDs.contains($0.id)
+                && !skippedIDs.contains($0.id) && !$0.isFull && Geo.miles(to: $0.coordinate) <= radiusMiles }
+            .sorted { lhs, rhs in
+                let l = matchScore(lhs), r = matchScore(rhs)
+                return l == r ? lhs.date < rhs.date : l > r
+            }
+    }
+
+    var upcoming: [Activity] {
+        activities.filter { !$0.isPast && (isGoing($0) || isPending($0)) }.sorted { $0.date < $1.date }
+    }
+
+    var hosting: [Activity] {
+        activities.filter { isHost($0) && !$0.isPast }.sorted { $0.date < $1.date }
+    }
+
+    var saved: [Activity] {
+        activities.filter { savedIDs.contains($0.id) && !$0.isPast }.sorted { $0.date < $1.date }
+    }
+
+    var totalUnread: Int { conversations.reduce(0) { $0 + $1.unreadCount } }
+
+    // MARK: - Onboarding & profile
+
+    func completeOnboarding(name: String, age: Int, pronouns: String, interests: [ActivityCategory]) {
+        me.name = name
+        me.age = age
+        me.pronouns = pronouns
+        me.interests = interests
+        me.hue = Double.random(in: 0...1)
+        if me.bio.isEmpty { me.bio = "New to Partner — say hi! 👋" }
+        hasOnboarded = true
+        // Seed conversations reference the old `me` id; re-key them.
+        seed(keepingMe: true)
+        save()
+    }
+
+    func updateProfile(_ person: Person) {
+        me = person
+        save()
+    }
+
+    // MARK: - Swiping & joining
+
+    func swipe(_ activity: Activity, _ action: SwipeAction) {
+        swipeHistory.append((activity.id, action))
+        switch action {
+        case .skip: skippedIDs.insert(activity.id)
+        case .save: savedIDs.insert(activity.id); skippedIDs.insert(activity.id)
+        case .join: _ = join(activity)
+        }
+        save()
+    }
+
+    var canUndo: Bool { !swipeHistory.isEmpty }
+
+    func undoLastSwipe() {
+        guard let (id, action) = swipeHistory.popLast() else { return }
+        switch action {
+        case .skip: skippedIDs.remove(id)
+        case .save: savedIDs.remove(id); skippedIDs.remove(id)
+        case .join: if let a = activity(id) { leave(a, silently: true) }
+        }
+        save()
+    }
+
+    @discardableResult
+    func join(_ activity: Activity) -> JoinOutcome {
+        skippedIDs.remove(activity.id)
+        if activity.requiresApproval {
+            pendingIDs.insert(activity.id)
+            save()
+            simulateHostApproval(for: activity.id)
+            return .requested
+        } else {
+            confirmJoin(activity.id)
+            return .joined
+        }
+    }
+
+    private func confirmJoin(_ id: UUID) {
+        guard let i = activities.firstIndex(where: { $0.id == id }) else { return }
+        pendingIDs.remove(id)
+        joinedIDs.insert(id)
+        if !activities[i].attendeeIDs.contains(me.id) { activities[i].attendeeIDs.append(me.id) }
+        let convo = groupConversation(for: activities[i])
+        appendSystem("\(me.firstName) joined the plan", to: convo)
+        simulateWelcome(in: convo, activity: activities[i])
+        save()
+    }
+
+    func leave(_ activity: Activity, silently: Bool = false) {
+        joinedIDs.remove(activity.id)
+        pendingIDs.remove(activity.id)
+        if let i = activities.firstIndex(where: { $0.id == activity.id }) {
+            activities[i].attendeeIDs.removeAll { $0 == me.id }
+        }
+        if let c = conversations.firstIndex(where: { $0.activityID == activity.id }) {
+            if silently { conversations.remove(at: c) } else {
+                conversations[c].messages.append(Message(senderID: me.id, text: "\(me.firstName) left the plan", date: .now, kind: .system))
+            }
+        }
+        save()
+    }
+
+    func toggleSaved(_ activity: Activity) {
+        if savedIDs.contains(activity.id) { savedIDs.remove(activity.id) } else { savedIDs.insert(activity.id) }
+        save()
+    }
+
+    func resetSkipped() {
+        skippedIDs.removeAll()
+        swipeHistory.removeAll()
+        save()
+    }
+
+    // MARK: - Hosting
+
+    func host(_ activity: Activity) {
+        var a = activity
+        a.hostID = me.id
+        activities.append(a)
+        activities.sort { $0.date < $1.date }
+        let convo = groupConversation(for: a)
+        appendSystem("You created “\(a.title)”. Invite people or wait for requests!", to: convo)
+        save()
+        simulateIncomingRequest(for: a.id)
+    }
+
+    func cancel(_ activity: Activity) {
+        activities.removeAll { $0.id == activity.id }
+        conversations.removeAll { $0.activityID == activity.id }
+        requests.removeAll { $0.activityID == activity.id }
+        save()
+    }
+
+    func requests(for activity: Activity) -> [JoinRequest] {
+        requests.filter { $0.activityID == activity.id }
+    }
+
+    func approve(_ request: JoinRequest) {
+        requests.removeAll { $0.id == request.id }
+        guard let i = activities.firstIndex(where: { $0.id == request.activityID }),
+              let guest = person(request.personID) else { return }
+        if !activities[i].attendeeIDs.contains(guest.id) { activities[i].attendeeIDs.append(guest.id) }
+        let convo = groupConversation(for: activities[i])
+        if let c = conversations.firstIndex(where: { $0.id == convo }),
+           !conversations[c].participantIDs.contains(guest.id) {
+            conversations[c].participantIDs.append(guest.id)
+        }
+        appendSystem("\(guest.firstName) joined the plan", to: convo)
+        save()
+        scheduleReply(in: convo, from: guest.id, text: "Thanks for having me! 🙌", after: 2.0)
+    }
+
+    func decline(_ request: JoinRequest) {
+        requests.removeAll { $0.id == request.id }
+        save()
+    }
+
+    // MARK: - Chat
+
+    @discardableResult
+    func groupConversation(for activity: Activity) -> UUID {
+        if let existing = conversations.first(where: { $0.activityID == activity.id }) { return existing.id }
+        let participants = Array(Set([me.id, activity.hostID] + activity.attendeeIDs))
+        let convo = Conversation(id: UUID(), activityID: activity.id, participantIDs: participants, messages: [])
+        conversations.insert(convo, at: 0)
+        return convo.id
+    }
+
+    @discardableResult
+    func directConversation(with personID: UUID) -> UUID {
+        if let existing = conversations.first(where: { $0.activityID == nil && Set($0.participantIDs) == [me.id, personID] }) {
+            return existing.id
+        }
+        let convo = Conversation(id: UUID(), activityID: nil, participantIDs: [me.id, personID], messages: [])
+        conversations.insert(convo, at: 0)
+        save()
+        return convo.id
+    }
+
+    func conversation(_ id: UUID) -> Conversation? { conversations.first { $0.id == id } }
+
+    func title(for convo: Conversation) -> String {
+        if let aid = convo.activityID, let a = activity(aid) { return a.title }
+        return convo.participantIDs.filter { $0 != me.id }.compactMap(person).map(\.firstName).joined(separator: ", ")
+    }
+
+    func others(in convo: Conversation) -> [Person] {
+        convo.participantIDs.filter { $0 != me.id }.compactMap(person)
+    }
+
+    func send(_ text: String, in conversationID: UUID) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let i = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        conversations[i].messages.append(Message(senderID: me.id, text: trimmed, date: .now))
+        bumpToTop(i)
+        save()
+
+        guard let responder = others(in: conversations[0]).randomElement() else { return }
+        scheduleReply(in: conversationID, from: responder.id, text: reply(to: trimmed), after: Double.random(in: 1.6...3.2))
+    }
+
+    func markRead(_ conversationID: UUID) {
+        guard let i = conversations.firstIndex(where: { $0.id == conversationID }), conversations[i].unreadCount > 0 else { return }
+        conversations[i].unreadCount = 0
+        save()
+    }
+
+    private func reply(to text: String) -> String {
+        let lower = text.lowercased()
+        if lower.contains("?") {
+            if lower.contains("where") { return "Let's meet right at the entrance 📍" }
+            if lower.contains("when") || lower.contains("time") { return "Let's aim for 10 min before start!" }
+            return ["Yes for sure!", "I think so, yeah 👍", "Good question — let's figure it out together"].randomElement()!
+        }
+        if lower.contains("hi") || lower.contains("hey") || lower.contains("hello") { return "Hey!! 👋 So glad you're coming" }
+        if lower.contains("thank") { return "Of course! 😊" }
+        return SampleData.replies.randomElement()!
+    }
+
+    private func appendSystem(_ text: String, to conversationID: UUID) {
+        guard let i = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        conversations[i].messages.append(Message(senderID: me.id, text: text, date: .now, kind: .system))
+        bumpToTop(i)
+    }
+
+    private func bumpToTop(_ i: Int) {
+        guard i != 0 else { return }
+        let c = conversations.remove(at: i)
+        conversations.insert(c, at: 0)
+    }
+
+    // MARK: - Simulation of the other side
+
+    private func scheduleReply(in conversationID: UUID, from personID: UUID, text: String, after delay: Double) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay * 0.4))
+            self?.typing[conversationID] = personID
+            try? await Task.sleep(for: .seconds(delay * 0.6))
+            guard let self else { return }
+            self.typing[conversationID] = nil
+            guard let i = self.conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+            self.conversations[i].messages.append(Message(senderID: personID, text: text, date: .now))
+            if self.openConversationID != conversationID { self.conversations[i].unreadCount += 1 }
+            self.bumpToTop(i)
+            self.save()
+        }
+    }
+
+    private func simulateHostApproval(for activityID: UUID) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3.5))
+            guard let self, self.pendingIDs.contains(activityID), let a = self.activity(activityID) else { return }
+            self.confirmJoin(activityID)
+            let host = self.person(a.hostID)?.firstName ?? "The host"
+            self.show(InAppBanner(title: "You're in! 🎉", subtitle: "\(host) approved your request for \(a.title)",
+                                  symbol: a.category.symbol, color: a.category.color))
+        }
+    }
+
+    private func simulateWelcome(in conversationID: UUID, activity: Activity) {
+        let lines = [
+            "Welcome \(me.firstName)! 👋 Stoked you're joining",
+            "Yay welcome! See you \(activity.date.friendlyDay.lowercased() == "today" ? "later today" : activity.date.friendlyDay)",
+            "Hey \(me.firstName)! Glad you're in 🙌"
+        ]
+        scheduleReply(in: conversationID, from: activity.hostID, text: lines.randomElement()!, after: 2.4)
+    }
+
+    private func simulateIncomingRequest(for activityID: UUID) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, let a = self.activity(activityID) else { return }
+            let candidates = self.people
+                .filter { !a.attendeeIDs.contains($0.id) }
+                .sorted { ($0.interests.contains(a.category) ? 0 : 1) < ($1.interests.contains(a.category) ? 0 : 1) }
+            guard let guest = candidates.prefix(4).randomElement() else { return }
+            self.requests.append(JoinRequest(activityID: a.id, personID: guest.id,
+                                             note: SampleData.requestNotes.randomElement()!, date: .now))
+            self.save()
+            self.show(InAppBanner(title: "New join request", subtitle: "\(guest.firstName) wants to join \(a.title)",
+                                  symbol: "person.crop.circle.badge.plus", color: a.category.color))
+        }
+    }
+
+    func show(_ banner: InAppBanner) {
+        guard notificationsEnabled else { return }
+        withAnimation(.spring(duration: 0.45, bounce: 0.3)) { self.banner = banner }
+        let id = banner.id
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3.6))
+            guard let self, self.banner?.id == id else { return }
+            withAnimation(.smooth) { self.banner = nil }
+        }
+    }
+
+    // MARK: - Persistence
+
+    private struct Snapshot: Codable {
+        var hasOnboarded: Bool
+        var me: Person
+        var people: [Person]
+        var activities: [Activity]
+        var joinedIDs: Set<UUID>
+        var pendingIDs: Set<UUID>
+        var savedIDs: Set<UUID>
+        var skippedIDs: Set<UUID>
+        var conversations: [Conversation]
+        var requests: [JoinRequest]
+        var notificationsEnabled: Bool
+        var radiusMiles: Double
+        var showAgeOnProfile: Bool
+    }
+
+    func save() {
+        let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activities,
+                            joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, skippedIDs: skippedIDs,
+                            conversations: conversations, requests: requests, notificationsEnabled: notificationsEnabled,
+                            radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile)
+        do {
+            let data = try JSONEncoder().encode(snap)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            print("Partner: save failed — \(error)")
+        }
+    }
+
+    @discardableResult
+    private func load() -> Bool {
+        guard let data = try? Data(contentsOf: fileURL),
+              let s = try? JSONDecoder().decode(Snapshot.self, from: data) else { return false }
+        hasOnboarded = s.hasOnboarded
+        me = s.me
+        people = s.people
+        activities = s.activities
+        joinedIDs = s.joinedIDs
+        pendingIDs = s.pendingIDs
+        savedIDs = s.savedIDs
+        skippedIDs = s.skippedIDs
+        conversations = s.conversations
+        requests = s.requests
+        notificationsEnabled = s.notificationsEnabled
+        radiusMiles = s.radiusMiles
+        showAgeOnProfile = s.showAgeOnProfile
+        // Keep the demo fresh: if every seeded plan has passed, reseed activities.
+        if !activities.contains(where: { !$0.isPast && !isHost($0) }) { seed(keepingMe: true) }
+        return true
+    }
+
+    private func seed(keepingMe: Bool = false) {
+        if !keepingMe { me = AppStore.defaultMe() }
+        let seed = SampleData.make(for: me)
+        people = seed.people
+        activities = seed.activities
+        conversations = seed.conversations
+        requests = seed.requests
+        joinedIDs = []
+        pendingIDs = []
+        savedIDs = []
+        skippedIDs = []
+        swipeHistory = []
+    }
+
+    /// Wipes everything, including the profile, and returns to onboarding.
+    func resetEverything() {
+        try? FileManager.default.removeItem(at: fileURL)
+        hasOnboarded = false
+        notificationsEnabled = true
+        radiusMiles = 50
+        seed()
+        selectedTab = .discover
+    }
+
+    /// Keeps the profile but restores fresh demo activities and chats.
+    func refreshDemoContent() {
+        seed(keepingMe: true)
+        save()
+    }
+}
