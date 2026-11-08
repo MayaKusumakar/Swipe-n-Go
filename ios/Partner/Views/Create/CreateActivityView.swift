@@ -29,6 +29,10 @@ struct CreateActivityView: View {
     let draft: ActivityDraft?
     @State private var draftID = UUID()
     @State private var restoredDraft = false
+    @State private var repeats = false
+    @State private var frequency: EventRecurrence.Frequency = .weekly
+    @State private var occurrenceCount = 6
+    @State private var recurrenceTimeZoneID = TimeZone.current.identifier
     @State private var schedulePost = false
     @State private var publishAt = Date.now.addingTimeInterval(3600)
     @State private var showCloseOptions = false
@@ -72,6 +76,7 @@ struct CreateActivityView: View {
                     categorySection
                     titleSection
                     whenSection
+                    recurrenceSection
                     whereSection
                     groupSection
                     detailsSection
@@ -117,6 +122,10 @@ struct CreateActivityView: View {
                 cost = draft.cost
                 details = draft.details
                 coverPhotoData = draft.coverPhotoData
+                repeats = draft.recurrence != nil
+                frequency = draft.recurrence?.frequency ?? .weekly
+                occurrenceCount = draft.recurrence?.count ?? 6
+                recurrenceTimeZoneID = draft.recurrence?.timeZoneID ?? TimeZone.current.identifier
                 schedulePost = draft.scheduledAt != nil
                 publishAt = draft.scheduledAt ?? .now.addingTimeInterval(3600)
             }
@@ -197,6 +206,31 @@ struct CreateActivityView: View {
 
     // MARK: Sections
 
+    private var recurrenceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            label("Recurring event")
+            Toggle("Repeat this event", isOn: $repeats)
+            if repeats {
+                Picker("Repeats", selection: $frequency) {
+                    ForEach(EventRecurrence.Frequency.allCases, id: \.self) { option in
+                        Text(option.rawValue).tag(option)
+                    }
+                }
+                Stepper("Occurrences including the first · \(occurrenceCount)",
+                        value: $occurrenceCount, in: 2...12)
+                let dates = currentDraft().occurrenceDates
+                if let last = dates.last {
+                    Text("\(occurrenceCount) events, ending \(last.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Text("Each date gets its own event with the same details and cover photo. All dates publish together. Times follow \(recurrenceTimeZoneID).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var publishingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             label("Publishing")
@@ -222,7 +256,10 @@ struct CreateActivityView: View {
             id: draftID, category: category, title: title, date: date,
             duration: duration, place: place, capacity: capacity, level: level,
             requiresApproval: requiresApproval, cost: cost, details: details,
-            coverPhotoData: coverPhotoData, scheduledAt: scheduledAt, updatedAt: .now
+            coverPhotoData: coverPhotoData, scheduledAt: scheduledAt,
+            recurrence: repeats ? EventRecurrence(frequency: frequency, count: occurrenceCount,
+                                                  timeZoneID: recurrenceTimeZoneID) : nil,
+            updatedAt: .now
         )
     }
 
@@ -471,7 +508,7 @@ struct CreateActivityView: View {
         }
         published = true
         store.show(InAppBanner(
-            title: schedulePost ? "Your post is scheduled" : "Your plan is live!",
+            title: schedulePost ? "Your post is scheduled" : (repeats ? "Your event series is live!" : "Your plan is live!"),
             subtitle: schedulePost ? "Manage it in Plans → Scheduled." : "People can now find your plan.",
             symbol: schedulePost ? "clock" : category.symbol, color: category.color
         ))

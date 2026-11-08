@@ -263,10 +263,10 @@ final class AppStore {
         let previousDrafts = drafts
         let previousActivities = activities
         for draft in due {
-            if draft.date > now, var activity = draft.activity {
-                activity.hostID = me.id
-                if !activities.contains(where: { $0.id == activity.id }) {
-                    activities.append(activity)
+            let occurrences = draft.activities(hostID: me.id)
+            if draft.date > now, !occurrences.isEmpty {
+                if !activities.contains(where: { $0.id == draft.id || $0.seriesID == draft.id }) {
+                    activities.append(contentsOf: occurrences)
                 }
                 drafts.removeAll { $0.id == draft.id }
             } else if let index = drafts.firstIndex(where: { $0.id == draft.id }) {
@@ -283,22 +283,27 @@ final class AppStore {
 
     @discardableResult
     func publishDraft(_ draft: ActivityDraft) -> Bool {
-        guard draft.date > .now, var activity = draft.activity else { return false }
+        let occurrences = draft.activities(hostID: me.id)
+        guard draft.date > .now, !occurrences.isEmpty else { return false }
+        // Retrying a successful publication must not replace attendee state.
+        guard !activities.contains(where: { $0.id == draft.id || $0.seriesID == draft.id }) else { return true }
         let previousDrafts = drafts
         let previousActivities = activities
-        activity.hostID = me.id
         drafts.removeAll { $0.id == draft.id }
-        activities.removeAll { $0.id == draft.id }
-        activities.append(activity)
+        activities.append(contentsOf: occurrences)
         activities.sort { $0.date < $1.date }
         guard save() else {
             drafts = previousDrafts
             activities = previousActivities
             return false
         }
-        _ = groupConversation(for: activity)
+        for activity in occurrences {
+            _ = groupConversation(for: activity)
+        }
         save()
-        simulateIncomingRequest(for: activity.id)
+        if let first = occurrences.first {
+            simulateIncomingRequest(for: first.id)
+        }
         return true
     }
 

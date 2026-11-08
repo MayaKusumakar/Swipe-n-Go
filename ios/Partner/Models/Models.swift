@@ -151,6 +151,7 @@ struct Activity: Codable, Identifiable, Hashable {
     var level: ActivityLevel
     var requiresApproval: Bool
     var costNote: String
+    var seriesID: UUID? = nil
     var coverPhotoData: Data? = nil
 
     var coordinate: CLLocationCoordinate2D {
@@ -254,6 +255,7 @@ struct ActivityDraft: Codable, Identifiable {
     var details = ""
     var coverPhotoData: Data?
     var scheduledAt: Date?
+    var recurrence: EventRecurrence?
     var updatedAt = Date.now
 
     var activity: Activity? {
@@ -267,5 +269,47 @@ struct ActivityDraft: Codable, Identifiable {
             tags: [category.title], level: level, requiresApproval: requiresApproval,
             costNote: cost.isEmpty ? "Free" : cost, coverPhotoData: coverPhotoData
         )
+    }
+}
+
+
+struct EventRecurrence: Codable, Equatable {
+    enum Frequency: String, Codable, CaseIterable {
+        case weekly = "Every week"
+        case biweekly = "Every two weeks"
+        case monthly = "Every month"
+    }
+
+    var frequency: Frequency = .weekly
+    var count = 6
+    var timeZoneID = TimeZone.current.identifier
+
+    func dates(startingAt start: Date) -> [Date] {
+        guard (2...12).contains(count) else { return [] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        let component: Calendar.Component = frequency == .monthly ? .month : .weekOfYear
+        let interval = frequency == .biweekly ? 2 : 1
+        return (0..<count).compactMap {
+            calendar.date(byAdding: component, value: $0 * interval, to: start)
+        }
+    }
+}
+
+extension ActivityDraft {
+    var occurrenceDates: [Date] {
+        recurrence?.dates(startingAt: date) ?? [date]
+    }
+
+    func activities(hostID: UUID) -> [Activity] {
+        guard let template = activity else { return [] }
+        return occurrenceDates.enumerated().map { index, date in
+            var occurrence = template
+            occurrence.id = index == 0 ? id : UUID()
+            occurrence.hostID = hostID
+            occurrence.date = date
+            occurrence.seriesID = recurrence == nil ? nil : id
+            return occurrence
+        }
     }
 }

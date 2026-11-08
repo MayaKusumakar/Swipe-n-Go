@@ -105,6 +105,11 @@ struct PlansView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(draft.title.isEmpty ? "Untitled plan" : draft.title)
                         .font(.headline)
+                    if let recurrence = draft.recurrence {
+                        Text("\(recurrence.frequency.rawValue) · \(recurrence.count) events")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if let scheduledAt = draft.scheduledAt {
                         Text("Publishes \(scheduledAt.friendlyDateTime)")
                             .font(.subheadline)
