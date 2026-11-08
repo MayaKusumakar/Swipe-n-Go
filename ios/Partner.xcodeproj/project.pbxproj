@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AABB00112233445566778801 /* FlyerScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB00112233445566778802 /* FlyerScanner.swift */; };
 		07CBDFAA5B1B675F6199DC46 /* CreateActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC7CC9628CF6412B1E45D4A /* CreateActivityView.swift */; };
 		08E6C9E2ABFCBCAC011DF1C5 /* ExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCFC7561898135ED6D3A1D1B /* ExploreView.swift */; };
 		1610C3DD00C95A7CF8FE151E /* ChatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E05EC8B25B9729101DEB50E /* ChatsView.swift */; };
@@ -24,6 +25,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        AABB00112233445566778802 /* FlyerScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyerScanner.swift; sourceTree = "<group>"; };
 		0E05EC8B25B9729101DEB50E /* ChatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatsView.swift; sourceTree = "<group>"; };
 		44C2D83EF9FBF5EFBEE0B9AE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		57C9A54AD348957691460A86 /* ActivityDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailView.swift; sourceTree = "<group>"; };
@@ -99,6 +101,7 @@
 			isa = PBXGroup;
 			children = (
 				6AC7CC9628CF6412B1E45D4A /* CreateActivityView.swift */,
+                AABB00112233445566778802 /* FlyerScanner.swift */,
 			);
 			path = Create;
 			sourceTree = "<group>";
@@ -259,6 +262,7 @@
 				1610C3DD00C95A7CF8FE151E /* ChatsView.swift in Sources */,
 				E36B71B78009CCA54D315487 /* Components.swift in Sources */,
 				07CBDFAA5B1B675F6199DC46 /* CreateActivityView.swift in Sources */,
+                AABB00112233445566778801 /* FlyerScanner.swift in Sources */,
 				30231E75CDA87D2F1A8A131D /* DiscoverView.swift in Sources */,
 				08E6C9E2ABFCBCAC011DF1C5 /* ExploreView.swift in Sources */,
 				A0056F588F25B6B5198B45DC /* Models.swift in Sources */,
@@ -350,7 +354,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Partner;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Partner uses your location to find activities and people near you.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo of an event flyer to fill in event details.";
+                INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Partner uses your location to find activities and people near you.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -434,7 +439,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Partner;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Partner uses your location to find activities and people near you.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo of an event flyer to fill in event details.";
+                INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Partner uses your location to find activities and people near you.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (

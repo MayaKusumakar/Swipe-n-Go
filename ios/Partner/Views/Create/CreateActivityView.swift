@@ -2,6 +2,7 @@ import SwiftUI
 import MapKit
 import PhotosUI
 import ImageIO
+import AVFoundation
 
 struct Place: Codable, Identifiable, Hashable {
     var id: String { "\(name)|\(latitude)|\(longitude)" }
@@ -52,6 +53,14 @@ struct CreateActivityView: View {
     @State private var cost = "Free"
     @State private var details = ""
     @State private var showPlacePicker = false
+    @State private var flyerPhoto: PhotosPickerItem?
+    @State private var flyerData: Data?
+    @State private var capturedFlyerData: Data?
+    @State private var scanResult: FlyerScanResult?
+    @State private var scanning = false
+    @State private var showCamera = false
+    @State private var scannedLocation = ""
+    @State private var pendingFlyerCover: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var coverPhotoData: Data?
     @State private var cropSource: CropSource?
@@ -63,7 +72,7 @@ struct CreateActivityView: View {
     enum Field { case title, details, cost }
 
     private var canPublish: Bool {
-        !isLoadingPhoto && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && place != nil && date > .now
+        !scanning && !isLoadingPhoto && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && place != nil && date > .now
             && (!schedulePost || (publishAt > .now && publishAt < date))
     }
 
@@ -72,6 +81,7 @@ struct CreateActivityView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     preview
+                    flyerSection
                     coverPhotoSection
                     categorySection
                     titleSection
@@ -122,6 +132,7 @@ struct CreateActivityView: View {
                 cost = draft.cost
                 details = draft.details
                 coverPhotoData = draft.coverPhotoData
+                scannedLocation = draft.suggestedLocation ?? ""
                 repeats = draft.recurrence != nil
                 frequency = draft.recurrence?.frequency ?? .weekly
                 occurrenceCount = draft.recurrence?.count ?? 6
@@ -131,18 +142,76 @@ struct CreateActivityView: View {
             }
             .confirmationDialog("Keep this post?", isPresented: $showCloseOptions, titleVisibility: .visible) {
                 Button("Save draft and close") { saveDraftAndClose() }
-                    .disabled(isLoadingPhoto)
+                    .disabled(isLoadingPhoto || scanning)
                 Button("Discard changes", role: .destructive) { dismiss() }
                 Button("Keep editing", role: .cancel) {}
             } message: {
                 Text("Saving as a draft pauses any scheduled publishing until you schedule it again.")
             }
             .sheet(isPresented: $showPlacePicker) {
-                PlacePickerView(selection: $place)
+                PlacePickerView(selection: $place, initialQuery: scannedLocation)
             }
             .sheet(item: $cropSource, onDismiss: { selectedPhoto = nil }) { source in
                 CoverPhotoCropView(image: source.image) { data in
                     coverPhotoData = data
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera, onDismiss: {
+                flyerData = capturedFlyerData
+                capturedFlyerData = nil
+            }) {
+                FlyerCameraView { data in capturedFlyerData = data }
+                    .ignoresSafeArea()
+            }
+            .sheet(item: $scanResult, onDismiss: {
+                flyerPhoto = nil
+                flyerData = nil
+                if let image = pendingFlyerCover {
+                    cropSource = CropSource(image: image)
+                    pendingFlyerCover = nil
+                }
+            }) { result in
+                FlyerReviewView(result: result) { name, starts, venue, description, price, image in
+                    title = name
+                    date = starts
+                    scannedLocation = venue
+                    place = nil
+                    details = description
+                    cost = price
+                    pendingFlyerCover = image
+                }
+            }
+            .task(id: flyerPhoto) {
+                guard let flyerPhoto else { return }
+                scanning = true
+                do {
+                    guard let data = try await flyerPhoto.loadTransferable(type: Data.self) else {
+                        throw CocoaError(.fileReadCorruptFile)
+                    }
+                    try Task.checkCancellation()
+                    flyerData = data
+                } catch is CancellationError {
+                    scanning = false
+                } catch {
+                    scanning = false
+                    self.flyerPhoto = nil
+                    photoError = "The flyer could not be opened. Please choose another image."
+                }
+            }
+            .task(id: flyerData) {
+                guard let flyerData else { return }
+                scanning = true
+                defer { scanning = false }
+                do {
+                    let result = try await FlyerScanner.scan(flyerData)
+                    try Task.checkCancellation()
+                    scanResult = result
+                } catch is CancellationError {
+                    return
+                } catch {
+                    flyerPhoto = nil
+                    self.flyerData = nil
+                    photoError = "No readable flyer text was found. Try a clearer photo or enter the details manually."
                 }
             }
             .task(id: selectedPhoto) {
@@ -206,6 +275,36 @@ struct CreateActivityView: View {
 
     // MARK: Sections
 
+    private var flyerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            label("Scan an event flyer")
+            Text("Upload or photograph a flyer to fill in your event details.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            PhotosPicker(selection: $flyerPhoto, matching: .images) {
+                Label("Upload flyer", systemImage: "doc.viewfinder")
+            }
+            Button("Take flyer photo", systemImage: "camera") {
+                Task {
+                    guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                        photoError = "A camera is unavailable on this device. Use Upload flyer to choose an image."
+                        return
+                    }
+                    let allowed = await AVCaptureDevice.requestAccess(for: .video)
+                    if allowed {
+                        showCamera = true
+                    } else {
+                        photoError = "Camera access is off. Enable it in Settings to take a flyer photo, or use Upload flyer."
+                    }
+                }
+            }
+            if scanning {
+                ProgressView("Reading flyer…")
+            }
+        }
+        .disabled(scanning || isLoadingPhoto)
+    }
+
     private var recurrenceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             label("Recurring event")
@@ -247,7 +346,7 @@ struct CreateActivityView: View {
             Button("Save draft and close", systemImage: "square.and.arrow.down") {
                 saveDraftAndClose()
             }
-            .disabled(isLoadingPhoto)
+            .disabled(isLoadingPhoto || scanning)
         }
     }
 
@@ -259,6 +358,7 @@ struct CreateActivityView: View {
             coverPhotoData: coverPhotoData, scheduledAt: scheduledAt,
             recurrence: repeats ? EventRecurrence(frequency: frequency, count: occurrenceCount,
                                                   timeZoneID: recurrenceTimeZoneID) : nil,
+            suggestedLocation: scannedLocation.isEmpty ? nil : scannedLocation,
             updatedAt: .now
         )
     }
@@ -278,7 +378,7 @@ struct CreateActivityView: View {
                 Label(coverPhotoData == nil ? "Choose a photo" : "Replace photo",
                       systemImage: "photo.on.rectangle")
             }
-            .disabled(isLoadingPhoto)
+            .disabled(isLoadingPhoto || scanning)
             if isLoadingPhoto {
                 ProgressView("Loading photo")
             }
@@ -380,6 +480,11 @@ struct CreateActivityView: View {
     private var whereSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             label("Where?")
+            if !scannedLocation.isEmpty && place == nil {
+                Text("Scanned location · \(scannedLocation). Choose a place to confirm.")
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+            }
             Button { showPlacePicker = true } label: {
                 HStack(spacing: 14) {
                     Image(systemName: place == nil ? "mappin.and.ellipse" : "mappin.circle.fill")
@@ -530,9 +635,14 @@ extension Date {
 struct PlacePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var selection: Place?
-    @State private var query = ""
+    @State private var query: String
     @State private var results: [Place] = []
     @State private var isSearching = false
+
+    init(selection: Binding<Place?>, initialQuery: String = "") {
+        _selection = selection
+        _query = State(initialValue: initialQuery)
+    }
 
     var body: some View {
         NavigationStack {
