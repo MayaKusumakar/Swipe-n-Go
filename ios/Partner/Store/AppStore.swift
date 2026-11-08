@@ -22,6 +22,7 @@ final class AppStore {
     var hasOnboarded = false
     var me: Person
     var people: [Person] = [] { didSet { rebuildIndex() } }
+    var drafts: [ActivityDraft] = []
     var activities: [Activity] = []
     var joinedIDs: Set<UUID> = []
     var pendingIDs: Set<UUID> = []
@@ -231,6 +232,76 @@ final class AppStore {
         save()
     }
 
+    @discardableResult
+    func saveDraft(_ draft: ActivityDraft) -> Bool {
+        let previous = drafts
+        drafts.removeAll { $0.id == draft.id }
+        drafts.insert(draft, at: 0)
+        guard save() else {
+            drafts = previous
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    func deleteDraft(_ id: UUID) -> Bool {
+        let previous = drafts
+        drafts.removeAll { $0.id == id }
+        guard save() else {
+            drafts = previous
+            return false
+        }
+        return true
+    }
+
+    /// Publishes due local posts atomically with removing their drafts.
+    func publishScheduledPosts() {
+        let now = Date.now
+        let due = drafts.filter { $0.scheduledAt.map { $0 <= now } ?? false }
+        guard !due.isEmpty else { return }
+        let previousDrafts = drafts
+        let previousActivities = activities
+        for draft in due {
+            if draft.date > now, var activity = draft.activity {
+                activity.hostID = me.id
+                if !activities.contains(where: { $0.id == activity.id }) {
+                    activities.append(activity)
+                }
+                drafts.removeAll { $0.id == draft.id }
+            } else if let index = drafts.firstIndex(where: { $0.id == draft.id }) {
+                // An event that has already started needs the host to update its date.
+                drafts[index].scheduledAt = nil
+            }
+        }
+        activities.sort { $0.date < $1.date }
+        if !save() {
+            drafts = previousDrafts
+            activities = previousActivities
+        }
+    }
+
+    @discardableResult
+    func publishDraft(_ draft: ActivityDraft) -> Bool {
+        guard draft.date > .now, var activity = draft.activity else { return false }
+        let previousDrafts = drafts
+        let previousActivities = activities
+        activity.hostID = me.id
+        drafts.removeAll { $0.id == draft.id }
+        activities.removeAll { $0.id == draft.id }
+        activities.append(activity)
+        activities.sort { $0.date < $1.date }
+        guard save() else {
+            drafts = previousDrafts
+            activities = previousActivities
+            return false
+        }
+        _ = groupConversation(for: activity)
+        save()
+        simulateIncomingRequest(for: activity.id)
+        return true
+    }
+
     // MARK: - Hosting
 
     func host(_ activity: Activity) {
@@ -420,6 +491,7 @@ final class AppStore {
         var me: Person
         var people: [Person]
         var activities: [Activity]
+        var drafts: [ActivityDraft]?
         var joinedIDs: Set<UUID>
         var pendingIDs: Set<UUID>
         var savedIDs: Set<UUID>
@@ -431,16 +503,19 @@ final class AppStore {
         var showAgeOnProfile: Bool
     }
 
-    func save() {
-        let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activities,
+    @discardableResult
+    func save() -> Bool {
+        let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activities, drafts: drafts,
                             joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, skippedIDs: skippedIDs,
                             conversations: conversations, requests: requests, notificationsEnabled: notificationsEnabled,
                             radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile)
         do {
             let data = try JSONEncoder().encode(snap)
             try data.write(to: fileURL, options: .atomic)
+            return true
         } catch {
             print("Partner: save failed — \(error)")
+            return false
         }
     }
 
@@ -451,6 +526,7 @@ final class AppStore {
         hasOnboarded = s.hasOnboarded
         me = s.me
         people = s.people
+        drafts = s.drafts ?? []
         activities = s.activities
         joinedIDs = s.joinedIDs
         pendingIDs = s.pendingIDs
@@ -462,7 +538,12 @@ final class AppStore {
         radiusMiles = s.radiusMiles
         showAgeOnProfile = s.showAgeOnProfile
         // Keep the demo fresh: if every seeded plan has passed, reseed activities.
-        if !activities.contains(where: { !$0.isPast && !isHost($0) }) { seed(keepingMe: true) }
+        if !activities.contains(where: { !$0.isPast && !isHost($0) }) {
+            let hosted = activities.filter { isHost($0) }
+            seed(keepingMe: true)
+            activities.append(contentsOf: hosted)
+            activities.sort { $0.date < $1.date }
+        }
         return true
     }
 
@@ -484,6 +565,7 @@ final class AppStore {
     func resetEverything() {
         try? FileManager.default.removeItem(at: fileURL)
         hasOnboarded = false
+        drafts = []
         notificationsEnabled = true
         radiusMiles = 50
         seed()

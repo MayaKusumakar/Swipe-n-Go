@@ -4,14 +4,17 @@ struct PlansView: View {
     @Environment(AppStore.self) private var store
     @State private var segment: Segment = .upcoming
     @State private var showCreate = false
+    @State private var editingDraft: ActivityDraft?
+    @State private var draftError = false
 
-    enum Segment: String, CaseIterable { case upcoming = "Going", hosting = "Hosting", saved = "Saved" }
+    enum Segment: String, CaseIterable { case upcoming = "Going", hosting = "Hosting", saved = "Saved", drafts = "Drafts", scheduled = "Scheduled" }
 
     private var items: [Activity] {
         switch segment {
         case .upcoming: store.upcoming.filter { !store.isHost($0) }
         case .hosting: store.hosting
         case .saved: store.saved
+        case .drafts, .scheduled: []
         }
     }
 
@@ -48,7 +51,9 @@ struct PlansView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    if items.isEmpty {
+                    if segment == .drafts || segment == .scheduled {
+                        draftList
+                    } else if items.isEmpty {
                         empty
                     } else {
                         LazyVStack(spacing: 12) {
@@ -75,6 +80,62 @@ struct PlansView: View {
                 }
             }
             .sheet(isPresented: $showCreate) { CreateActivityView() }
+            .sheet(item: $editingDraft) { CreateActivityView(draft: $0) }
+            .alert("Could not save changes", isPresented: $draftError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Please try again.")
+            }
+        }
+    }
+
+    private var draftList: some View {
+        let posts = store.drafts.filter {
+            segment == .scheduled ? $0.scheduledAt != nil : $0.scheduledAt == nil
+        }
+        return VStack(alignment: .leading, spacing: 16) {
+            if posts.isEmpty {
+                ContentUnavailableView(
+                    segment == .scheduled ? "No scheduled posts" : "No drafts",
+                    systemImage: segment == .scheduled ? "clock" : "doc",
+                    description: Text("Start a plan with +, then save a draft or schedule it for later.")
+                )
+            }
+            ForEach(posts) { draft in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(draft.title.isEmpty ? "Untitled plan" : draft.title)
+                        .font(.headline)
+                    if let scheduledAt = draft.scheduledAt {
+                        Text("Publishes \(scheduledAt.friendlyDateTime)")
+                            .font(.subheadline)
+                        Text("Editing pauses scheduled publishing.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("Saved \(draft.updatedAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Button(draft.scheduledAt == nil ? "Continue editing" : "Edit and pause schedule") {
+                            var editable = draft
+                            editable.scheduledAt = nil
+                            guard store.saveDraft(editable) else {
+                                draftError = true
+                                return
+                            }
+                            editingDraft = editable
+                        }
+                        Spacer()
+                        Button("Delete", role: .destructive) {
+                            if !store.deleteDraft(draft.id) { draftError = true }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(16)
+                .cardStyle(radius: 18)
+            }
         }
     }
 
@@ -82,6 +143,7 @@ struct PlansView: View {
         let (symbol, title, message): (String, String, String) = switch segment {
         case .upcoming: ("calendar.badge.plus", "No plans yet", "Swipe right on something in Discover and it'll show up here.")
         case .hosting: ("crown", "Host your first plan", "Got an idea? Post it and let people come to you.")
+        case .drafts, .scheduled: ("doc", "No posts", "Your unfinished posts appear here.")
         case .saved: ("bookmark", "Nothing saved", "Swipe up on a card or tap the bookmark to save it for later.")
         }
         return ContentUnavailableView {

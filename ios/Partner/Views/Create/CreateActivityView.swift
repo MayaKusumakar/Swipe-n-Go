@@ -3,7 +3,7 @@ import MapKit
 import PhotosUI
 import ImageIO
 
-struct Place: Identifiable, Hashable {
+struct Place: Codable, Identifiable, Hashable {
     var id: String { "\(name)|\(latitude)|\(longitude)" }
     var name: String
     var address: String
@@ -25,6 +25,17 @@ struct Place: Identifiable, Hashable {
 struct CreateActivityView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+
+    let draft: ActivityDraft?
+    @State private var draftID = UUID()
+    @State private var restoredDraft = false
+    @State private var schedulePost = false
+    @State private var publishAt = Date.now.addingTimeInterval(3600)
+    @State private var showCloseOptions = false
+
+    init(draft: ActivityDraft? = nil) {
+        self.draft = draft
+    }
 
     @State private var category: ActivityCategory = .run
     @State private var title = ""
@@ -48,7 +59,8 @@ struct CreateActivityView: View {
     enum Field { case title, details, cost }
 
     private var canPublish: Bool {
-        !title.trimmingCharacters(in: .whitespaces).isEmpty && place != nil && date > .now
+        !isLoadingPhoto && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && place != nil && date > .now
+            && (!schedulePost || (publishAt > .now && publishAt < date))
     }
 
     var body: some View {
@@ -63,6 +75,7 @@ struct CreateActivityView: View {
                     whereSection
                     groupSection
                     detailsSection
+                    publishingSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 30)
@@ -73,21 +86,47 @@ struct CreateActivityView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel", systemImage: "xmark") { dismiss() }
+                    Button("Close", systemImage: "xmark") { showCloseOptions = true }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Post", systemImage: "checkmark") { publish() }
+                    Button(schedulePost ? "Schedule" : "Post", systemImage: "checkmark") { publish() }
                         .disabled(!canPublish)
                 }
             }
             .safeAreaInset(edge: .bottom) {
                 Button(action: publish) {
-                    Label("Post plan", systemImage: "paperplane.fill")
+                    Label(schedulePost ? "Schedule post" : "Post plan", systemImage: schedulePost ? "clock" : "paperplane.fill")
                 }
                 .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(category.gradient)))
                 .disabled(!canPublish)
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
+            }
+            .onAppear {
+                guard !restoredDraft, let draft else { return }
+                restoredDraft = true
+                draftID = draft.id
+                category = draft.category
+                title = draft.title
+                date = draft.date
+                duration = draft.duration
+                place = draft.place
+                capacity = draft.capacity
+                level = draft.level
+                requiresApproval = draft.requiresApproval
+                cost = draft.cost
+                details = draft.details
+                coverPhotoData = draft.coverPhotoData
+                schedulePost = draft.scheduledAt != nil
+                publishAt = draft.scheduledAt ?? .now.addingTimeInterval(3600)
+            }
+            .confirmationDialog("Keep this post?", isPresented: $showCloseOptions, titleVisibility: .visible) {
+                Button("Save draft and close") { saveDraftAndClose() }
+                    .disabled(isLoadingPhoto)
+                Button("Discard changes", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
+            } message: {
+                Text("Saving as a draft pauses any scheduled publishing until you schedule it again.")
             }
             .sheet(isPresented: $showPlacePicker) {
                 PlacePickerView(selection: $place)
@@ -119,7 +158,7 @@ struct CreateActivityView: View {
                     photoError = "This photo could not be opened. Please choose another image."
                 }
             }
-            .alert("Photo unavailable", isPresented: Binding(
+            .alert("Unable to complete action", isPresented: Binding(
                 get: { photoError != nil },
                 set: { if !$0 { photoError = nil } }
             )) {
@@ -129,7 +168,7 @@ struct CreateActivityView: View {
             }
             .sensoryFeedback(.success, trigger: published)
         }
-        .interactiveDismissDisabled(!title.isEmpty || coverPhotoData != nil)
+        .interactiveDismissDisabled()
     }
 
     // MARK: Preview
@@ -157,6 +196,43 @@ struct CreateActivityView: View {
     }
 
     // MARK: Sections
+
+    private var publishingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            label("Publishing")
+            Toggle("Schedule for later", isOn: $schedulePost)
+            if schedulePost {
+                DatePicker("Publish on", selection: $publishAt, in: Date.now...)
+                Text("Choose a publishing time before the event starts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Posts publish on this device while the app is open, or when you reopen it. If the event has already started, the post returns to drafts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Button("Save draft and close", systemImage: "square.and.arrow.down") {
+                saveDraftAndClose()
+            }
+            .disabled(isLoadingPhoto)
+        }
+    }
+
+    private func currentDraft(scheduledAt: Date? = nil) -> ActivityDraft {
+        ActivityDraft(
+            id: draftID, category: category, title: title, date: date,
+            duration: duration, place: place, capacity: capacity, level: level,
+            requiresApproval: requiresApproval, cost: cost, details: details,
+            coverPhotoData: coverPhotoData, scheduledAt: scheduledAt, updatedAt: .now
+        )
+    }
+
+    private func saveDraftAndClose() {
+        guard store.saveDraft(currentDraft()) else {
+            photoError = "Your draft could not be saved. Please try again."
+            return
+        }
+        dismiss()
+    }
 
     private var coverPhotoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -386,19 +462,19 @@ struct CreateActivityView: View {
     }
 
     private func publish() {
-        guard let place, canPublish else { return }
-        let activity = Activity(
-            id: UUID(), title: title.trimmingCharacters(in: .whitespaces), category: category, hostID: store.me.id,
-            date: date, durationMinutes: duration, placeName: place.name, address: place.address,
-            latitude: place.latitude, longitude: place.longitude, capacity: capacity, attendeeIDs: [],
-            details: details.isEmpty ? "Come hang out! 🙌" : details, tags: [category.title],
-            level: level, requiresApproval: requiresApproval, costNote: cost.isEmpty ? "Free" : cost,
-            coverPhotoData: coverPhotoData
-        )
-        store.host(activity)
+        guard canPublish else { return }
+        let draft = currentDraft(scheduledAt: schedulePost ? publishAt : nil)
+        let saved = schedulePost ? store.saveDraft(draft) : store.publishDraft(draft)
+        guard saved else {
+            photoError = "Your post could not be saved. Please try again."
+            return
+        }
         published = true
-        store.show(InAppBanner(title: "Your plan is live!", subtitle: "We'll let you know when people want in.",
-                               symbol: category.symbol, color: category.color))
+        store.show(InAppBanner(
+            title: schedulePost ? "Your post is scheduled" : "Your plan is live!",
+            subtitle: schedulePost ? "Manage it in Plans → Scheduled." : "People can now find your plan.",
+            symbol: schedulePost ? "clock" : category.symbol, color: category.color
+        ))
         dismiss()
     }
 }

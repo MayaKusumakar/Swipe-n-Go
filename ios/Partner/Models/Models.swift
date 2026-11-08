@@ -238,3 +238,34 @@ extension Date {
         return formatted(.dateTime.month(.abbreviated).day())
     }
 }
+
+
+struct ActivityDraft: Codable, Identifiable {
+    var id = UUID()
+    var category: ActivityCategory = .run
+    var title = ""
+    var date = Calendar.current.date(byAdding: .hour, value: 3, to: .now)!
+    var duration = 90
+    var place: Place?
+    var capacity = 4
+    var level: ActivityLevel = .anyone
+    var requiresApproval = false
+    var cost = "Free"
+    var details = ""
+    var coverPhotoData: Data?
+    var scheduledAt: Date?
+    var updatedAt = Date.now
+
+    var activity: Activity? {
+        guard let place, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return Activity(
+            id: id, title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            category: category, hostID: UUID(), date: date, durationMinutes: duration,
+            placeName: place.name, address: place.address,
+            latitude: place.latitude, longitude: place.longitude,
+            capacity: capacity, attendeeIDs: [], details: details,
+            tags: [category.title], level: level, requiresApproval: requiresApproval,
+            costNote: cost.isEmpty ? "Free" : cost, coverPhotoData: coverPhotoData
+        )
+    }
+}

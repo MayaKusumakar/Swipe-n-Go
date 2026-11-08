@@ -18,6 +18,7 @@ enum AppTab: Hashable {
 }
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(AppStore.self) private var store
 
     var body: some View {
@@ -36,6 +37,17 @@ struct RootView: View {
                     .onTapGesture { withAnimation(.smooth) { store.banner = nil } }
                     .zIndex(10)
                     .padding(.top, 4)
+            }
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                store.publishScheduledPosts()
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                } catch {
+                    return
+                }
             }
         }
         .animation(.smooth(duration: 0.5), value: store.hasOnboarded)
