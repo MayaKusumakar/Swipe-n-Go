@@ -235,7 +235,7 @@ struct ActivityRow: View {
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                CategoryBackdrop(category: activity.category, animated: false)
+                ActivityCover(category: activity.category, photoData: activity.coverPhotoData)
                 Image(systemName: activity.category.symbol)
                     .font(.system(size: 26, weight: .semibold))
                     .foregroundStyle(.white)

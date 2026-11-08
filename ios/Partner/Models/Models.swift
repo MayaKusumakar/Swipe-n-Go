@@ -151,6 +151,7 @@ struct Activity: Codable, Identifiable, Hashable {
     var level: ActivityLevel
     var requiresApproval: Bool
     var costNote: String
+    var coverPhotoData: Data? = nil
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)

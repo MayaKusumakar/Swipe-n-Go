@@ -1,5 +1,7 @@
 import SwiftUI
 import MapKit
+import PhotosUI
+import ImageIO
 
 struct Place: Identifiable, Hashable {
     var id: String { "\(name)|\(latitude)|\(longitude)" }
@@ -35,6 +37,11 @@ struct CreateActivityView: View {
     @State private var cost = "Free"
     @State private var details = ""
     @State private var showPlacePicker = false
+    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var coverPhotoData: Data?
+    @State private var cropSource: CropSource?
+    @State private var photoError: String?
+    @State private var isLoadingPhoto = false
     @State private var published = false
     @FocusState private var focus: Field?
 
@@ -49,6 +56,7 @@ struct CreateActivityView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     preview
+                    coverPhotoSection
                     categorySection
                     titleSection
                     whenSection
@@ -84,16 +92,51 @@ struct CreateActivityView: View {
             .sheet(isPresented: $showPlacePicker) {
                 PlacePickerView(selection: $place)
             }
+            .sheet(item: $cropSource, onDismiss: { selectedPhoto = nil }) { source in
+                CoverPhotoCropView(image: source.image) { data in
+                    coverPhotoData = data
+                }
+            }
+            .task(id: selectedPhoto) {
+                guard let selectedPhoto else { return }
+                isLoadingPhoto = true
+                defer { isLoadingPhoto = false }
+                do {
+                    guard let data = try await selectedPhoto.loadTransferable(type: Data.self),
+                          let source = CGImageSourceCreateWithData(data as CFData, nil),
+                          let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                            kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: 2400
+                          ] as CFDictionary) else {
+                        throw CocoaError(.fileReadCorruptFile)
+                    }
+                    try Task.checkCancellation()
+                    cropSource = CropSource(image: UIImage(cgImage: thumbnail))
+                } catch is CancellationError {
+                    return
+                } catch {
+                    photoError = "This photo could not be opened. Please choose another image."
+                }
+            }
+            .alert("Photo unavailable", isPresented: Binding(
+                get: { photoError != nil },
+                set: { if !$0 { photoError = nil } }
+            )) {
+                Button("OK") { photoError = nil }
+            } message: {
+                Text(photoError ?? "")
+            }
             .sensoryFeedback(.success, trigger: published)
         }
-        .interactiveDismissDisabled(!title.isEmpty)
+        .interactiveDismissDisabled(!title.isEmpty || coverPhotoData != nil)
     }
 
     // MARK: Preview
 
     private var preview: some View {
         ZStack(alignment: .bottomLeading) {
-            CategoryBackdrop(category: category)
+            ActivityCover(category: category, photoData: coverPhotoData)
             LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 6) {
                 Text(title.isEmpty ? "Your plan title" : title)
@@ -114,6 +157,29 @@ struct CreateActivityView: View {
     }
 
     // MARK: Sections
+
+    private var coverPhotoSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            label("Cover photo")
+            PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                Label(coverPhotoData == nil ? "Choose a photo" : "Replace photo",
+                      systemImage: "photo.on.rectangle")
+            }
+            .disabled(isLoadingPhoto)
+            if isLoadingPhoto {
+                ProgressView("Loading photo")
+            }
+            if coverPhotoData != nil {
+                Button("Remove photo", role: .destructive) {
+                    coverPhotoData = nil
+                    selectedPhoto = nil
+                }
+            }
+            Text("Choose a photo, then drag and zoom to crop it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
 
     private var categorySection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -326,7 +392,8 @@ struct CreateActivityView: View {
             date: date, durationMinutes: duration, placeName: place.name, address: place.address,
             latitude: place.latitude, longitude: place.longitude, capacity: capacity, attendeeIDs: [],
             details: details.isEmpty ? "Come hang out! 🙌" : details, tags: [category.title],
-            level: level, requiresApproval: requiresApproval, costNote: cost.isEmpty ? "Free" : cost
+            level: level, requiresApproval: requiresApproval, costNote: cost.isEmpty ? "Free" : cost,
+            coverPhotoData: coverPhotoData
         )
         store.host(activity)
         published = true
@@ -435,5 +502,115 @@ struct PlacePickerView: View {
         } catch {
             results = local
         }
+    }
+}
+
+
+private struct CropSource: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
+private struct CoverPhotoCropView: View {
+    @Environment(\.dismiss) private var dismiss
+    let image: UIImage
+    let onCrop: (Data) -> Void
+    @State private var zoom: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var dragStart: CGSize = .zero
+    @State private var cropError = false
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { geometry in
+                let width = max(1, geometry.size.width - 40)
+                let size = CGSize(width: width, height: width * 9 / 16)
+                VStack(spacing: 24) {
+                    Spacer()
+                    Image(uiImage: image)
+                        .resizable()
+                        .frame(width: image.size.width * scale(for: size),
+                               height: image.size.height * scale(for: size))
+                        .offset(offset)
+                        .frame(width: size.width, height: size.height)
+                        .clipped()
+                        .overlay(Rectangle().stroke(.white, lineWidth: 2))
+                        .contentShape(Rectangle())
+                        .gesture(DragGesture()
+                            .onChanged { value in
+                                offset = clamped(CGSize(
+                                    width: dragStart.width + value.translation.width,
+                                    height: dragStart.height + value.translation.height
+                                ), in: size)
+                            }
+                            .onEnded { _ in dragStart = offset })
+                        .accessibilityLabel("Cover photo crop preview")
+                    Text("Drag to position your photo")
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Image(systemName: "minus.magnifyingglass")
+                        Slider(value: $zoom, in: 1...4)
+                            .accessibilityLabel("Photo zoom")
+                            .onChange(of: zoom) {
+                                offset = clamped(offset, in: size)
+                                dragStart = offset
+                            }
+                        Image(systemName: "plus.magnifyingglass")
+                    }
+                    Spacer()
+                    Button("Use photo") { crop(size: size) }
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding(20)
+            }
+            .navigationTitle("Crop cover photo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .alert("Could not save photo", isPresented: $cropError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Please try choosing another photo.")
+            }
+        }
+    }
+
+    private func scale(for size: CGSize) -> CGFloat {
+        max(size.width / image.size.width, size.height / image.size.height) * zoom
+    }
+
+    private func clamped(_ proposed: CGSize, in size: CGSize) -> CGSize {
+        let scale = scale(for: size)
+        let horizontal = max(0, (image.size.width * scale - size.width) / 2)
+        let vertical = max(0, (image.size.height * scale - size.height) / 2)
+        return CGSize(width: min(horizontal, max(-horizontal, proposed.width)),
+                      height: min(vertical, max(-vertical, proposed.height)))
+    }
+
+    private func crop(size: CGSize) {
+        let output = CGSize(width: 1600, height: 900)
+        let factor = output.width / size.width
+        let scale = scale(for: size) * factor
+        let position = clamped(offset, in: size)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let cropped = UIGraphicsImageRenderer(size: output, format: format).image { _ in
+            image.draw(in: CGRect(
+                x: (output.width - image.size.width * scale) / 2 + position.width * factor,
+                y: (output.height - image.size.height * scale) / 2 + position.height * factor,
+                width: image.size.width * scale,
+                height: image.size.height * scale
+            ))
+        }
+        guard let data = cropped.jpegData(compressionQuality: 0.8) else {
+            cropError = true
+            return
+        }
+        onCrop(data)
+        dismiss()
     }
 }

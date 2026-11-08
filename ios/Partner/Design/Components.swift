@@ -280,3 +280,24 @@ extension View {
             .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
     }
 }
+
+
+/// Shared cover rendering for published plans and the posting preview.
+struct ActivityCover: View {
+    let category: ActivityCategory
+    let photoData: Data?
+
+    var body: some View {
+        GeometryReader { geometry in
+            if let photoData, let photo = UIImage(data: photoData) {
+                Image(uiImage: photo)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+            } else {
+                CategoryBackdrop(category: category)
+            }
+        }
+    }
+}

@@ -274,7 +274,7 @@ struct SwipeCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            CategoryBackdrop(category: activity.category)
+            ActivityCover(category: activity.category, photoData: activity.coverPhotoData)
 
             LinearGradient(colors: [.clear, .black.opacity(0.15), .black.opacity(0.75)],
                            startPoint: .center, endPoint: .bottom)
@@ -390,7 +390,7 @@ struct CelebrationView: View {
 
     var body: some View {
         ZStack {
-            CategoryBackdrop(category: activity.category)
+            ActivityCover(category: activity.category, photoData: activity.coverPhotoData)
                 .overlay(.black.opacity(0.25))
                 .ignoresSafeArea()
 

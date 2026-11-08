@@ -78,7 +78,7 @@ struct ActivityDetailView: View {
             let minY = geo.frame(in: .global).minY
             let stretch = max(0, minY)
             ZStack(alignment: .bottomLeading) {
-                CategoryBackdrop(category: live.category)
+                ActivityCover(category: live.category, photoData: live.coverPhotoData)
                 LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .center, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 10) {
                     Label(live.category.title, systemImage: live.category.symbol)

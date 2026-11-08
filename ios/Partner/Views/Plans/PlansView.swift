@@ -109,7 +109,7 @@ private struct NextUpCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            CategoryBackdrop(category: activity.category)
+            ActivityCover(category: activity.category, photoData: activity.coverPhotoData)
             LinearGradient(colors: [.clear, .black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
