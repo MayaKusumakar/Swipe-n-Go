@@ -156,6 +156,19 @@ struct Activity: Codable, Identifiable, Hashable {
     var coverPhotoData: Data? = nil
     /// Set when the event exists on the backend (nil = only on this phone).
     var serverID: String? = nil
+    /// The host keeps the location hidden until they accept someone.
+    var privateLocation: Bool? = nil
+    /// True while the server has not shared this private location with you yet.
+    var locationHidden: Bool? = nil
+    /// Secret from the server that proves you host this event (only on the host's phone).
+    var hostToken: String? = nil
+    /// Your join request on the server for someone else's event, and its secret.
+    var myAttendeeID: String? = nil
+    var myAttendeeToken: String? = nil
+    /// Server attendee id for each person on this phone, so the host can remove them on the server.
+    var serverAttendeeIDs: [UUID: String]? = nil
+
+    var isLocationPrivate: Bool { privateLocation == true }
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
@@ -196,6 +209,8 @@ struct JoinRequest: Codable, Identifiable, Hashable {
     var personID: UUID
     var note: String
     var date: Date
+    /// Set for requests that came from the server (a real person on another phone).
+    var serverAttendeeID: String? = nil
 }
 
 // MARK: - Helpers
@@ -254,6 +269,7 @@ struct ActivityDraft: Codable, Identifiable {
     var capacity = 4
     var level: ActivityLevel = .anyone
     var requiresApproval = false
+    var privateLocation: Bool? = nil
     var cost = "Free"
     var details = ""
     var coverPhotoData: Data?
@@ -270,8 +286,9 @@ struct ActivityDraft: Codable, Identifiable {
             placeName: place.name, address: place.address,
             latitude: place.latitude, longitude: place.longitude,
             capacity: capacity, attendeeIDs: [], details: details,
-            tags: [category.title], level: level, requiresApproval: requiresApproval,
-            costNote: cost.isEmpty ? "Free" : cost, coverPhotoData: coverPhotoData
+            tags: [category.title], level: level, requiresApproval: requiresApproval || privateLocation == true,
+            costNote: cost.isEmpty ? "Free" : cost, coverPhotoData: coverPhotoData,
+            privateLocation: privateLocation == true ? true : nil
         )
     }
 }

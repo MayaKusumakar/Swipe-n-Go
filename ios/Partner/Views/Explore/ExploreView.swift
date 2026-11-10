@@ -20,7 +20,7 @@ struct ExploreView: View {
             .filter { a in
                 guard !query.isEmpty else { return true }
                 let q = query.lowercased()
-                return a.title.lowercased().contains(q) || a.placeName.lowercased().contains(q)
+                return a.title.lowercased().contains(q) || store.placeLabel(a).lowercased().contains(q)
                     || a.category.title.lowercased().contains(q) || a.tags.contains { $0.lowercased().contains(q) }
             }
             .sorted { $0.date < $1.date }
@@ -81,7 +81,8 @@ struct ExploreView: View {
             }
             .annotationTitles(.hidden)
 
-            ForEach(results) { a in
+            // Private locations get no pin until you're accepted.
+            ForEach(results.filter { store.canSeeLocation($0) }) { a in
                 Annotation(a.title, coordinate: a.coordinate, anchor: .bottom) {
                     MapPin(activity: a, isSelected: selection == a.id)
                 }
@@ -143,7 +144,7 @@ struct ExploreView: View {
             .animation(.spring(duration: 0.35, bounce: 0.2), value: selection)
         }
         .onChange(of: selection) { _, new in
-            if let new, let a = store.activity(new) {
+            if let new, let a = store.activity(new), store.canSeeLocation(a) {
                 withAnimation(.smooth) {
                     camera = .region(MKCoordinateRegion(center: a.coordinate, span: MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03)))
                 }
@@ -256,7 +257,7 @@ struct ActivityRow: View {
                     .lineLimit(1)
                 HStack(spacing: 8) {
                     AvatarStack(people: store.attendees(of: activity), size: 22, max: 3)
-                    Text("\(activity.placeName) · \(Geo.distanceText(to: activity.coordinate))")
+                    Text("\(store.placeLabel(activity)) · \(store.distanceLabel(activity))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

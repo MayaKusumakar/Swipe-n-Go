@@ -319,7 +319,7 @@ struct SwipeCard: View {
                 HStack(spacing: 6) {
                     infoChip("calendar", "\(activity.date.friendlyDay) \(activity.date.friendlyTime)")
                         .layoutPriority(1)
-                    infoChip("location.fill", Geo.distanceText(to: activity.coordinate))
+                    infoChip(store.canSeeLocation(activity) ? "location.fill" : "eye.slash.fill", store.distanceLabel(activity))
                     infoChip("person.2.fill", "\(activity.spotsLeft) left")
                 }
             }

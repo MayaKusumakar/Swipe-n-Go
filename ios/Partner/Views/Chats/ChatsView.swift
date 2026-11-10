@@ -201,7 +201,7 @@ struct ChatView: View {
                     CategoryIcon(category: activity.category, size: 44)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(activity.title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
-                        Text("\(activity.date.friendlyDateTime) · \(activity.placeName)")
+                        Text("\(activity.date.friendlyDateTime) · \(store.placeLabel(activity))")
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer()

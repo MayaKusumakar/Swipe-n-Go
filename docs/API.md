@@ -24,7 +24,7 @@ Every error, including unknown routes (`404 not_found`), wrong methods (`405 met
 { "error": { "code": "string", "message": "string" } }
 ```
 
-No endpoint checks sign-in yet.
+No endpoint checks sign-in yet. Host and attendee actions are protected by secret tokens instead (see **Attendees and private locations** below).
 
 ---
 
@@ -37,18 +37,19 @@ No endpoint checks sign-in yet.
 | `description` | string | up to 2000 characters, may be `""` |
 | `start_time` | string | ISO‑8601 with UTC offset, e.g. `2026-11-06T19:00:00+00:00` |
 | `end_time` | string \| null | after `start_time` |
-| `location_name` | string | e.g. `"Memorial Union"` |
-| `latitude`, `longitude` | number \| null | sent together or not at all |
+| `location_name` | string \| null | e.g. `"Memorial Union"`. `null` in `GET /api/events` when `location_private` is true |
+| `latitude`, `longitude` | number \| null | sent together or not at all. `null` in the list for private locations |
 | `category` | string | lowercase word. The iOS app uses `run, gym, hike, cycling, sports, yoga, food, coffee, drinks, concert, movies, art, study, games, explore`. Seed data also uses `social, clubs, music, outdoors, tech`. |
 | `image_url` | string \| null | always null for now (no uploads yet) |
 | `host_name` | string \| null | display name of whoever posted it |
-| `address` | string \| null | |
+| `address` | string \| null | `null` in the list for private locations |
 | `capacity` | integer \| null | 2–500 |
 | `attendee_count` | integer | always 0 for now (no RSVP endpoint yet) |
 | `cost` | string \| null | free text, e.g. `"Free"`, `"$15 cover"` |
 | `tags` | string[] | up to 10, each up to 30 characters |
 | `level` | string \| null | `anyone`, `beginner`, `intermediate` or `advanced` |
-| `requires_approval` | boolean | default `false` |
+| `requires_approval` | boolean | default `false`. Always `true` when `location_private` is true |
+| `location_private` | boolean | default `false`. The location is shared only with the host and approved attendees, through `GET /api/events/<id>/location` |
 
 Events stored before the optional fields existed return them as `null` / `0` / `[]` / `false`.
 
@@ -111,7 +112,9 @@ Request body (JSON). Required: `title`, `start_time`, `location_name`, `category
 - `start_time` must be in the future and include a UTC offset.
 - Text fields are trimmed.
 
-Response `201`: the created Event object.
+- `location_private` is optional (`true`/`false`). When `true`, the server also sets `requires_approval` to `true`.
+
+Response `201`: the created Event object with its full location, plus `host_token`: a secret string the host's app must keep. It is returned only here (the server stores a hash of it) and is needed to approve, list or remove attendees.
 
 Errors:
 - `400 invalid_event`: the message names the bad field, e.g. `"capacity must be an integer from 2 to 500"`
@@ -122,4 +125,48 @@ Code: `backend/api/events.py` (route), `backend/api/event_input.py` (validation)
 
 ---
 
-Not built yet: sign-in (@ucdavis.edu Google accounts), editing and deleting events, RSVP / saved events on the server, image uploads, filters (category, distance, date), pagination, rate limiting.
+## Attendees and private locations
+
+Callers prove who they are with tokens, sent as headers:
+- `X-Host-Token`: from `POST /api/events`. Lets you manage that one event.
+- `X-Attendee-Token`: from `POST /api/events/<id>/attendees`. Identifies you as that one attendee.
+
+A missing or wrong token gets `403 forbidden`. An unknown event or attendee gets `404 not_found`. These checks run on the server; the app hiding a button is not the protection.
+
+The Attendee object:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | UUID |
+| `name` | string | 1–120 characters |
+| `status` | string | `pending` or `approved` |
+
+### POST /api/events/\<id\>/attendees
+
+Ask to join. No token needed. Body: `{"name": "Maya"}`.
+
+Response `201`: the Attendee plus `attendee_token` (returned only here). Status is `approved` straight away unless the event has `requires_approval`, in which case it is `pending`.
+
+Errors: `400 invalid_attendee` (missing name), `404 not_found`.
+
+### GET /api/events/\<id\>/attendees
+
+Host only (`X-Host-Token`). Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`.
+
+### POST /api/events/\<id\>/attendees/\<attendee_id\>/approve
+
+Host only. Accepts a pending request. Response `200`: the updated Attendee.
+
+### DELETE /api/events/\<id\>/attendees/\<attendee_id\>
+
+Removes an attendee, or declines a request. Allowed for the host (`X-Host-Token`) or for that attendee themselves (`X-Attendee-Token`, i.e. leaving). Response `204`, no body. A removed attendee can no longer get a private location.
+
+### GET /api/events/\<id\>/location
+
+The full location: `{"location_name", "address", "latitude", "longitude"}`. Open to anyone for events without a private location. For private ones, only the host or an **approved** attendee gets `200`; everyone else gets `403 forbidden`.
+
+Code: `backend/api/events.py` (routes), `services/event_service.py` (all permission checks), `repositories/` (attendees are stored as child entities of their event).
+
+---
+
+Not built yet: sign-in (@ucdavis.edu Google accounts), editing and deleting events, real accounts behind the host/attendee tokens, chats and saved events on the server, attendee counts, image uploads, filters (category, distance, date), pagination, rate limiting.

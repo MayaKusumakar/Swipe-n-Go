@@ -13,9 +13,14 @@ Current state (iOS app in `ios/`, `Anant` branch):
   - The server address is set in Profile → Server. In the simulator it defaults to `http://localhost:8080`; on a phone you type the Mac's Wi‑Fi IP. Plain `http` on the local network is allowed through `NSAllowsLocalNetworking` in `ios/Partner/Info.plist`.
   - Category mapping: the app's own category names pass straight through. The seed-data categories map as `social`→games, `music`→concert, `outdoors`→hike, `tech`→study, and anything else becomes "Day Out" (explore).
   - Hosts the app only knows by `host_name` become stand-in profiles (age hidden, rating 5.0).
-- **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), joining and RSVPs, join requests, chats, saved events, drafts, recurring events, cover photos and flyers.
+  - **Joining shared events, approvals and removals go through the server** (`/api/events/<id>/attendees`, see `API.md`). Creating an event returns a secret host token and joining returns an attendee token; the app keeps them in the event's local record. Hosts' phones pull requests from other phones on each sync, and Accept / Decline / Remove call the server first.
+  - **Private locations:** the host can turn on "Keep location private" in Host a plan (this forces approval on). The server leaves the location out of `GET /api/events` and only returns it from `GET /api/events/<id>/location` to the host or an approved attendee. Until then the app shows "Location shared once accepted", no map pin and no distance. A removed attendee loses access on the server.
+- **Plans screen:** two tabs, Going and Hosting. Hosting has a smaller second row: Your plans · Saved · Drafts · Scheduled.
+- **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), the simulated hosts and guests, chats, saved events, drafts, recurring events, cover photos and flyers. For sample (local) events, private locations and removals are only hidden in the app, since there's no server copy.
 
 Differences from our design:
 - `client_architecture.md` is still blank, so there's nothing to compare against yet. The team should fill it in. The current state above can be the starting point.
 - The app uses the category names listed in `API.md`, but the server's seed data uses different ones (`social`, `clubs`, ...). The team should pick one list.
 - `docs/overview.md` says events show who's interested, while the Security section of `Prompt.md` says hosts only see counts. The app shows attendees today, but only from on-device sample data.
+- Saved events now sit under Plans → Hosting, as requested, even though saved events are other people's plans rather than ones you host.
+- The host/attendee tokens stand in for accounts until @ucdavis.edu sign-in exists. Anyone who gets a token can act as that host or attendee.

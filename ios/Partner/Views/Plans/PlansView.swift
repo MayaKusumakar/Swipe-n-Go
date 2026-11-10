@@ -2,11 +2,27 @@ import SwiftUI
 
 struct PlansView: View {
     @Environment(AppStore.self) private var store
-    @State private var segment: Segment = .upcoming
+    @State private var tab: Tab = .going
+    @State private var hostingSection: HostingSection = .plans
     @State private var editingDraft: ActivityDraft?
     @State private var draftError = false
 
-    enum Segment: String, CaseIterable { case upcoming = "Going", hosting = "Hosting", saved = "Saved", drafts = "Drafts", scheduled = "Scheduled" }
+    enum Tab: String, CaseIterable { case going = "Going", hosting = "Hosting" }
+    /// Shown inside the Hosting tab only.
+    enum HostingSection: String, CaseIterable { case plans = "Your plans", saved = "Saved", drafts = "Drafts", scheduled = "Scheduled" }
+
+    /// Which list is on screen, combining the tab and, under Hosting, its section.
+    private enum Segment { case upcoming, hosting, saved, drafts, scheduled }
+
+    private var segment: Segment {
+        guard tab == .hosting else { return .upcoming }
+        switch hostingSection {
+        case .plans: return .hosting
+        case .saved: return .saved
+        case .drafts: return .drafts
+        case .scheduled: return .scheduled
+        }
+    }
 
     private var items: [Activity] {
         switch segment {
@@ -43,12 +59,22 @@ struct PlansView: View {
                         }
                     }
 
-                    Picker("Plans", selection: $segment.animation(.snappy)) {
-                        ForEach(Segment.allCases, id: \.self) { s in
-                            Text(s.rawValue).tag(s)
+                    Picker("Plans", selection: $tab.animation(.snappy)) {
+                        ForEach(Tab.allCases, id: \.self) { t in
+                            Text(t.rawValue).tag(t)
                         }
                     }
                     .pickerStyle(.segmented)
+
+                    if tab == .hosting {
+                        Picker("Hosting", selection: $hostingSection.animation(.snappy)) {
+                            ForEach(HostingSection.allCases, id: \.self) { s in
+                                Text(s.rawValue).tag(s)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .controlSize(.small)
+                    }
 
                     if segment == .drafts || segment == .scheduled {
                         draftList
@@ -194,7 +220,7 @@ private struct NextUpCard: View {
                 Text(activity.title)
                     .font(.title.weight(.bold))
                     .lineLimit(2)
-                Text("\(Image(systemName: "calendar")) \(activity.date.friendlyDateTime) · \(activity.placeName)")
+                Text("\(Image(systemName: "calendar")) \(activity.date.friendlyDateTime) · \(store.placeLabel(activity))")
                 .lineLimit(1)
                 .font(.subheadline.weight(.medium))
                 .opacity(0.92)

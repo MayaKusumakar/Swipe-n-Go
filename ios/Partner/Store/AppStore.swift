@@ -134,6 +134,21 @@ final class AppStore {
     func isPending(_ activity: Activity) -> Bool { pendingIDs.contains(activity.id) }
     func isSaved(_ activity: Activity) -> Bool { savedIDs.contains(activity.id) }
 
+    /// A private location shows only to the host and to people the host accepted.
+    /// For shared events the server enforces this: it doesn't send the location until then.
+    func canSeeLocation(_ activity: Activity) -> Bool {
+        guard activity.isLocationPrivate, !isHost(activity) else { return true }
+        return joinedIDs.contains(activity.id) && activity.locationHidden != true
+    }
+
+    func placeLabel(_ activity: Activity) -> String {
+        canSeeLocation(activity) ? activity.placeName : "Location shared once accepted"
+    }
+
+    func distanceLabel(_ activity: Activity) -> String {
+        canSeeLocation(activity) ? Geo.distanceText(to: activity.coordinate) : "Private"
+    }
+
     func attendees(of activity: Activity) -> [Person] {
         ([activity.hostID] + activity.attendeeIDs).compactMap(person)
     }
@@ -219,10 +234,15 @@ final class AppStore {
     @discardableResult
     func join(_ activity: Activity) -> JoinOutcome {
         skippedIDs.remove(activity.id)
-        if activity.requiresApproval {
+        let sharedPrivate = activity.serverID != nil && activity.isLocationPrivate
+        if activity.serverID != nil, !isHost(activity), activity.myAttendeeToken == nil {
+            Task { await registerJoin(activity) }
+        }
+        if activity.requiresApproval || sharedPrivate {
             pendingIDs.insert(activity.id)
             save()
-            simulateHostApproval(for: activity.id)
+            // A real host has to accept you before the server shares a private location.
+            if !sharedPrivate { simulateHostApproval(for: activity.id) }
             return .requested
         } else {
             confirmJoin(activity.id)
@@ -241,11 +261,36 @@ final class AppStore {
         save()
     }
 
+    /// Sends your join request for a shared event to the server and keeps its secret.
+    private func registerJoin(_ activity: Activity) async {
+        guard let serverID = activity.serverID, let url = serverURL,
+              let attendee = try? await EventServer.requestToJoin(eventID: serverID, name: me.name, baseURL: url),
+              let i = activities.firstIndex(where: { $0.id == activity.id }) else { return }
+        activities[i].myAttendeeID = attendee.id
+        activities[i].myAttendeeToken = attendee.attendeeToken
+        save()
+    }
+
+    /// The host of a shared private event accepted you (the server just shared the location).
+    func confirmServerApproval(_ id: UUID) {
+        guard let a = activity(id) else { return }
+        confirmJoin(id)
+        show(InAppBanner(title: "You're in! 🎉", subtitle: "\(person(a.hostID)?.firstName ?? "The host") accepted you. The location is now visible.",
+                         symbol: a.category.symbol, color: a.category.color))
+    }
+
     func leave(_ activity: Activity, silently: Bool = false) {
         joinedIDs.remove(activity.id)
         pendingIDs.remove(activity.id)
         if let i = activities.firstIndex(where: { $0.id == activity.id }) {
             activities[i].attendeeIDs.removeAll { $0 == me.id }
+            if let serverID = activities[i].serverID, let attendeeID = activities[i].myAttendeeID,
+               let token = activities[i].myAttendeeToken {
+                Task { _ = await serverAction { try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .attendee(token), baseURL: $0) } }
+            }
+            activities[i].myAttendeeID = nil
+            activities[i].myAttendeeToken = nil
+            if activities[i].isLocationPrivate, activities[i].serverID != nil { activities[i].locationHidden = true }
         }
         if let c = conversations.firstIndex(where: { $0.activityID == activity.id }) {
             if silently { conversations.remove(at: c) } else {
@@ -370,6 +415,20 @@ final class AppStore {
     }
 
     func approve(_ request: JoinRequest) {
+        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID),
+           let serverID = a.serverID, let token = a.hostToken {
+            Task {
+                guard await serverAction({ try await EventServer.approve(eventID: serverID, attendeeID: attendeeID, hostToken: token, baseURL: $0) }),
+                      let i = activities.firstIndex(where: { $0.id == a.id }) else { return }
+                activities[i].serverAttendeeIDs = (activities[i].serverAttendeeIDs ?? [:]).merging([request.personID: attendeeID]) { $1 }
+                acceptLocally(request)
+            }
+        } else {
+            acceptLocally(request)
+        }
+    }
+
+    private func acceptLocally(_ request: JoinRequest) {
         requests.removeAll { $0.id == request.id }
         guard let i = activities.firstIndex(where: { $0.id == request.activityID }),
               let guest = person(request.personID) else { return }
@@ -385,7 +444,45 @@ final class AppStore {
     }
 
     func decline(_ request: JoinRequest) {
-        requests.removeAll { $0.id == request.id }
+        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID),
+           let serverID = a.serverID, let token = a.hostToken {
+            Task {
+                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .host(token), baseURL: $0) })
+                else { return }
+                requests.removeAll { $0.id == request.id }
+                save()
+            }
+        } else {
+            requests.removeAll { $0.id == request.id }
+            save()
+        }
+    }
+
+    /// The host removes someone from their plan. For shared plans the server does it first,
+    /// so they also lose access to a private location.
+    func removeAttendee(_ personID: UUID, from activity: Activity) {
+        guard isHost(activity), personID != me.id else { return }
+        if let serverID = activity.serverID, let attendeeID = activity.serverAttendeeIDs?[personID], let token = activity.hostToken {
+            Task {
+                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .host(token), baseURL: $0) })
+                else { return }
+                removeLocally(personID, from: activity.id)
+            }
+        } else {
+            removeLocally(personID, from: activity.id)
+        }
+    }
+
+    private func removeLocally(_ personID: UUID, from activityID: UUID) {
+        guard let i = activities.firstIndex(where: { $0.id == activityID }) else { return }
+        activities[i].attendeeIDs.removeAll { $0 == personID }
+        activities[i].serverAttendeeIDs?[personID] = nil
+        if let c = conversations.firstIndex(where: { $0.activityID == activityID }) {
+            conversations[c].participantIDs.removeAll { $0 == personID }
+        }
+        if let name = person(personID)?.firstName {
+            appendSystem("\(name) was removed from the plan", to: groupConversation(for: activities[i]))
+        }
         save()
     }
 

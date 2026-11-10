@@ -19,6 +19,7 @@ class FakeEventRepository:
 
     def __init__(self):
         self.events = []
+        self.attendees = {}
         self.error = None
         self.calls = []
 
@@ -35,6 +36,24 @@ class FakeEventRepository:
             return False
         self.events.append(event)
         return True
+
+    def get(self, event_id):
+        if self.error:
+            raise self.error
+        return next((e for e in self.events if e.id == event_id), None)
+
+    def list_attendees(self, event_id):
+        return sorted((a for (eid, _), a in self.attendees.items() if eid == event_id),
+                      key=lambda a: a.created_at)
+
+    def get_attendee(self, event_id, attendee_id):
+        return self.attendees.get((event_id, attendee_id))
+
+    def save_attendee(self, attendee):
+        self.attendees[(attendee.event_id, attendee.id)] = attendee
+
+    def delete_attendee(self, event_id, attendee_id):
+        self.attendees.pop((event_id, attendee_id), None)
 
 
 def make_event(event_id="seed-001", **overrides):

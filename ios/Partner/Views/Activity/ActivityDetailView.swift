@@ -10,6 +10,7 @@ struct ActivityDetailView: View {
     @State private var celebration: Celebration?
     @State private var confirmLeave = false
     @State private var confirmCancel = false
+    @State private var removing: Person?
 
     private var live: Activity { store.activity(activity.id) ?? activity }
     private var host: Person? { store.person(live.hostID) }
@@ -40,7 +41,7 @@ struct ActivityDetailView: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                ShareLink(item: "Join me for \(live.title) on Swipe-n-Go — \(live.date.friendlyDateTime) at \(live.placeName)!") {
+                ShareLink(item: "Join me for \(live.title) on Swipe-n-Go — \(live.date.friendlyDateTime) at \(store.placeLabel(live))!") {
                     Image(systemName: "square.and.arrow.up")
                 }
                 Button {
@@ -69,6 +70,17 @@ struct ActivityDetailView: View {
         } message: {
             Text("Everyone who joined will be notified.")
         }
+        .confirmationDialog("Remove \(removing?.firstName ?? "this person")?",
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing) { person in
+            Button("Remove from plan", role: .destructive) {
+                withAnimation { store.removeAttendee(person.id, from: live) }
+            }
+        } message: { person in
+            Text(live.isLocationPrivate
+                 ? "\(person.firstName) will leave the plan and its group chat, and lose access to the location."
+                 : "\(person.firstName) will leave the plan and its group chat.")
+        }
     }
 
     // MARK: Hero
@@ -89,7 +101,7 @@ struct ActivityDetailView: View {
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .lineLimit(3)
                         .minimumScaleFactor(0.8)
-                    Text("\(live.date.friendlyDateTime) · \(live.placeName)")
+                    Text("\(live.date.friendlyDateTime) · \(store.placeLabel(live))")
                         .font(.subheadline.weight(.medium))
                         .opacity(0.9)
                 }
@@ -110,7 +122,7 @@ struct ActivityDetailView: View {
             Divider().frame(height: 40)
             fact("clock.fill", durationText, "Duration")
             Divider().frame(height: 40)
-            fact("location.fill", Geo.distanceText(to: live.coordinate), "Away")
+            fact("location.fill", store.distanceLabel(live), "Away")
             Divider().frame(height: 40)
             fact("creditcard.fill", live.costNote, "Cost")
         }
@@ -191,6 +203,7 @@ struct ActivityDetailView: View {
             FlowLayout(spacing: 8) {
                 TagPill(text: live.level.rawValue, tint: live.category.color)
                 if live.requiresApproval { TagPill(text: "Host approves", tint: .orange) }
+                if live.isLocationPrivate { TagPill(text: "Private location", tint: .orange) }
                 ForEach(live.tags, id: \.self) { TagPill(text: $0) }
             }
         }
@@ -209,6 +222,11 @@ struct ActivityDetailView: View {
             }
             ProgressView(value: Double(people.count), total: Double(live.capacity))
                 .tint(live.category.color)
+            if store.isHost(live), people.contains(where: { $0.id != store.me.id }) {
+                Text("Touch and hold someone to remove them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             ScrollView(.horizontal) {
                 HStack(spacing: 16) {
                     ForEach(people) { p in
@@ -234,6 +252,11 @@ struct ActivityDetailView: View {
                             .frame(width: 64)
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            if store.isHost(live), p.id != store.me.id {
+                                Button("Remove from plan", systemImage: "person.fill.xmark", role: .destructive) { removing = p }
+                            }
+                        }
                     }
                     ForEach(0..<live.spotsLeft, id: \.self) { _ in
                         VStack(spacing: 6) {
@@ -254,7 +277,29 @@ struct ActivityDetailView: View {
 
     // MARK: Location
 
-    private var locationSection: some View {
+    @ViewBuilder private var locationSection: some View {
+        if store.canSeeLocation(live) {
+            visibleLocation
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Where")
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Private location").font(.subheadline.weight(.semibold))
+                        Text("\(host?.firstName ?? "The host") shares where it is once they accept your request.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "eye.slash.fill").foregroundStyle(live.category.color)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .cardStyle(radius: 22)
+            }
+        }
+    }
+
+    private var visibleLocation: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Where")
             VStack(spacing: 0) {

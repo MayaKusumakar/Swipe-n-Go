@@ -117,6 +117,10 @@ def parse_new_event(body, now):
     if not isinstance(requires_approval, bool):
         raise InvalidEventError("requires_approval", "requires_approval must be true or false")
 
+    location_private = body.get("location_private", False)
+    if not isinstance(location_private, bool):
+        raise InvalidEventError("location_private", "location_private must be true or false")
+
     return {
         "event_id": event_id,
         "title": _text(body, "title", MAX_TITLE, required=True),
@@ -134,4 +138,12 @@ def parse_new_event(body, now):
         "tags": [tag.strip() for tag in tags],
         "level": level,
         "requires_approval": requires_approval,
+        "location_private": location_private,
     }
+
+
+def parse_attendee_name(body):
+    """Name from the POST /api/events/<id>/attendees body."""
+    if not isinstance(body, dict):
+        raise InvalidEventError("body", "request body must be a JSON object")
+    return _text(body, "name", MAX_SHORT_TEXT, required=True)

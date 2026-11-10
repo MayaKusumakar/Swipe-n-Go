@@ -50,6 +50,7 @@ struct CreateActivityView: View {
     @State private var capacity = 4
     @State private var level: ActivityLevel = .anyone
     @State private var requiresApproval = false
+    @State private var privateLocation = false
     @State private var cost = "Free"
     @State private var details = ""
     @State private var showPlacePicker = false
@@ -129,6 +130,7 @@ struct CreateActivityView: View {
                 capacity = draft.capacity
                 level = draft.level
                 requiresApproval = draft.requiresApproval
+                privateLocation = draft.privateLocation == true
                 cost = draft.cost
                 details = draft.details
                 coverPhotoData = draft.coverPhotoData
@@ -368,7 +370,8 @@ struct CreateActivityView: View {
         ActivityDraft(
             id: draftID, category: category, title: title, date: date,
             duration: duration, place: place, capacity: capacity, level: level,
-            requiresApproval: requiresApproval, cost: cost, details: details,
+            requiresApproval: requiresApproval || privateLocation,
+            privateLocation: privateLocation ? true : nil, cost: cost, details: details,
             coverPhotoData: coverPhotoData, scheduledAt: scheduledAt,
             recurrence: repeats ? EventRecurrence(frequency: frequency, count: occurrenceCount,
                                                   timeZoneID: recurrenceTimeZoneID) : nil,
@@ -515,6 +518,16 @@ struct CreateActivityView: View {
                 .cardStyle(radius: 18)
             }
             .buttonStyle(PressableStyle())
+
+            Toggle(isOn: $privateLocation.animation(.snappy)) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Label("Keep location private", systemImage: "eye.slash.fill")
+                    Text("Only people you accept see where it is").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(14)
+            .cardStyle(radius: 18)
+            .tint(category.color)
         }
     }
 
@@ -540,12 +553,14 @@ struct CreateActivityView: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 Divider().padding(.leading, 14)
-                Toggle(isOn: $requiresApproval) {
+                Toggle(isOn: privateLocation ? .constant(true) : $requiresApproval) {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Approve requests", systemImage: "hand.raised.fill")
-                        Text("Review people before they join").font(.caption).foregroundStyle(.secondary)
+                        Text(privateLocation ? "On because the location is private" : "Review people before they join")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .disabled(privateLocation)
                 .padding(14)
                 Divider().padding(.leading, 14)
                 HStack {
@@ -628,7 +643,7 @@ struct CreateActivityView: View {
         published = true
         store.show(InAppBanner(
             title: schedulePost ? "Your post is scheduled" : (repeats ? "Your event series is live!" : "Your plan is live!"),
-            subtitle: schedulePost ? "Manage it in Plans → Scheduled." : "People can now find your plan.",
+            subtitle: schedulePost ? "Manage it in Plans → Hosting → Scheduled." : "People can now find your plan.",
             symbol: schedulePost ? "clock" : category.symbol, color: category.color
         ))
         dismiss()

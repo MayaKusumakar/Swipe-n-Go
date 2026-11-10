@@ -9,7 +9,8 @@ enum EventServer {
         var description: String
         var startTime: Date
         var endTime: Date?
-        var locationName: String
+        /// nil in the public list when the location is private.
+        var locationName: String?
         var latitude: Double?
         var longitude: Double?
         var category: String
@@ -22,6 +23,25 @@ enum EventServer {
         var tags: [String]?
         var level: String?
         var requiresApproval: Bool?
+        var locationPrivate: Bool?
+        /// Only in the response to POST /api/events, for the host.
+        var hostToken: String?
+    }
+
+    struct Attendee: Decodable {
+        var id: String
+        var name: String
+        var status: String
+        /// Only in the response to a join request, for that person.
+        var attendeeToken: String?
+        var isApproved: Bool { status == "approved" }
+    }
+
+    struct Location: Decodable {
+        var locationName: String
+        var address: String?
+        var latitude: Double?
+        var longitude: Double?
     }
 
     /// Body for POST /api/events.
@@ -42,10 +62,12 @@ enum EventServer {
         var tags: [String]
         var level: String
         var requiresApproval: Bool
+        var locationPrivate: Bool
     }
 
     struct ServerError: LocalizedError {
         var message: String
+        var status = 0
         var errorDescription: String? { message }
     }
 
@@ -77,11 +99,61 @@ enum EventServer {
         return try decoder.decode(ServerEvent.self, from: data)
     }
 
+    // MARK: Attendees and private locations (see docs/API.md). The server checks the tokens.
+
+    enum Credential {
+        case host(String), attendee(String)
+    }
+
+    private static func send(_ method: String, _ path: String, baseURL: URL, as credential: Credential? = nil,
+                             body: [String: String]? = nil) async throws -> Data {
+        var request = URLRequest(url: baseURL.appending(path: path))
+        request.httpMethod = method
+        switch credential {
+        case .host(let token): request.setValue(token, forHTTPHeaderField: "X-Host-Token")
+        case .attendee(let token): request.setValue(token, forHTTPHeaderField: "X-Attendee-Token")
+        case nil: break
+        }
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        let (data, response) = try await session.data(for: request)
+        try check(response, data)
+        return data
+    }
+
+    static func requestToJoin(eventID: String, name: String, baseURL: URL) async throws -> Attendee {
+        let data = try await send("POST", "api/events/\(eventID)/attendees", baseURL: baseURL, body: ["name": name])
+        return try decoder.decode(Attendee.self, from: data)
+    }
+
+    static func attendees(eventID: String, hostToken: String, baseURL: URL) async throws -> [Attendee] {
+        struct Response: Decodable { var attendees: [Attendee] }
+        let data = try await send("GET", "api/events/\(eventID)/attendees", baseURL: baseURL, as: .host(hostToken))
+        return try decoder.decode(Response.self, from: data).attendees
+    }
+
+    static func approve(eventID: String, attendeeID: String, hostToken: String, baseURL: URL) async throws {
+        _ = try await send("POST", "api/events/\(eventID)/attendees/\(attendeeID)/approve", baseURL: baseURL, as: .host(hostToken))
+    }
+
+    /// The host removes someone (or declines a request), or an attendee removes themselves.
+    static func removeAttendee(eventID: String, attendeeID: String, as credential: Credential, baseURL: URL) async throws {
+        _ = try await send("DELETE", "api/events/\(eventID)/attendees/\(attendeeID)", baseURL: baseURL, as: credential)
+    }
+
+    /// The full location of a private event. The server answers 403 until the host has approved you.
+    static func location(eventID: String, as credential: Credential, baseURL: URL) async throws -> Location {
+        let data = try await send("GET", "api/events/\(eventID)/location", baseURL: baseURL, as: credential)
+        return try decoder.decode(Location.self, from: data)
+    }
+
     private static func check(_ response: URLResponse, _ data: Data) throws {
         guard let http = response as? HTTPURLResponse else { throw ServerError(message: "No response from server") }
         guard (200..<300).contains(http.statusCode) else {
             let message = (try? decoder.decode(ErrorResponse.self, from: data).error.message) ?? "Server error \(http.statusCode)"
-            throw ServerError(message: message)
+            throw ServerError(message: message, status: http.statusCode)
         }
     }
 
@@ -158,16 +230,20 @@ extension ActivityLevel {
 extension Activity {
     init(server e: EventServer.ServerEvent, hostID: UUID) {
         let duration = e.endTime.map { max(15, Int($0.timeIntervalSince(e.startTime) / 60)) } ?? 60
+        // A private location arrives without a name or coordinates; it stays hidden until the server shares it.
+        let hidden = e.locationPrivate == true && e.locationName == nil
         self.init(
             id: EventServer.localID(for: e.id), title: e.title, category: ActivityCategory(serverValue: e.category),
-            hostID: hostID, date: e.startTime, durationMinutes: duration, placeName: e.locationName,
-            address: e.address ?? e.locationName,
+            hostID: hostID, date: e.startTime, durationMinutes: duration, placeName: e.locationName ?? "",
+            address: e.address ?? e.locationName ?? "",
             latitude: e.latitude ?? Geo.home.latitude, longitude: e.longitude ?? Geo.home.longitude,
             capacity: e.capacity ?? 30, attendeeIDs: [],
             details: e.description.isEmpty ? "No description yet." : e.description,
             tags: e.tags ?? [], level: ActivityLevel(apiValue: e.level),
             requiresApproval: e.requiresApproval ?? false, costNote: e.cost ?? "Free",
-            serverID: e.id
+            serverID: e.id,
+            privateLocation: e.locationPrivate == true ? true : nil,
+            locationHidden: hidden ? true : nil
         )
     }
 
@@ -177,18 +253,19 @@ extension Activity {
             locationName: placeName, latitude: latitude, longitude: longitude, category: category.rawValue,
             hostName: hostName, address: address, capacity: min(max(capacity, 2), 500), cost: costNote,
             tags: Array(tags.prefix(10)).map { String($0.prefix(30)) }, level: level.apiValue,
-            requiresApproval: requiresApproval
+            requiresApproval: requiresApproval || isLocationPrivate, locationPrivate: isLocationPrivate
         )
     }
 }
 
 extension Person {
     /// Stand-in profile for a host known only by name from the server.
-    static func serverHost(named name: String?, category: ActivityCategory) -> Person {
+    static func serverHost(named name: String?, category: ActivityCategory,
+                           bio: String = "Posts plans on Swipe-n-Go.") -> Person {
         let display = name?.trimmingCharacters(in: .whitespaces).nilIfEmpty ?? "Campus host"
         let id = EventServer.stableUUID("host:" + display.lowercased())
         let hue = Double(id.uuid.0) / 255
-        return Person(id: id, name: display, age: 0, bio: "Posts plans on Swipe-n-Go.", pronouns: "",
+        return Person(id: id, name: display, age: 0, bio: bio, pronouns: "",
                       interests: [category], hue: hue, emoji: "", isVerified: false, rating: 5.0,
                       activitiesDone: 0, school: "UC Davis")
     }

@@ -2,7 +2,7 @@
 from google.cloud import datastore
 from google.cloud.datastore.query import PropertyFilter
 
-from models import EVENT_KIND, Event
+from models import ATTENDEE_KIND, EVENT_KIND, Attendee, Event
 
 
 class EventRepository:
@@ -35,3 +35,29 @@ class EventRepository:
             entity.update(event.to_entity_properties())
             self.client.put(entity)
         return True
+
+    def get(self, event_id):
+        entity = self.client.get(self.client.key(EVENT_KIND, event_id))
+        return Event.from_entity(entity) if entity is not None else None
+
+    # Attendees are stored as child entities of their event.
+
+    def _attendee_key(self, event_id, attendee_id):
+        return self.client.key(EVENT_KIND, event_id, ATTENDEE_KIND, attendee_id)
+
+    def list_attendees(self, event_id):
+        query = self.client.query(kind=ATTENDEE_KIND, ancestor=self.client.key(EVENT_KIND, event_id))
+        attendees = [Attendee.from_entity(entity) for entity in query.fetch()]
+        return sorted(attendees, key=lambda a: a.created_at)
+
+    def get_attendee(self, event_id, attendee_id):
+        entity = self.client.get(self._attendee_key(event_id, attendee_id))
+        return Attendee.from_entity(entity) if entity is not None else None
+
+    def save_attendee(self, attendee):
+        entity = datastore.Entity(key=self._attendee_key(attendee.event_id, attendee.id))
+        entity.update(attendee.to_entity_properties())
+        self.client.put(entity)
+
+    def delete_attendee(self, event_id, attendee_id):
+        self.client.delete(self._attendee_key(event_id, attendee_id))

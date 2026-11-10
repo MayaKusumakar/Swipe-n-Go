@@ -49,6 +49,7 @@ extension AppStore {
             merge(events)
             serverStatus = .online(events: events.count, at: .now)
             await uploadPendingHostedEvents()
+            await syncAttendance(baseURL: url)
         } catch {
             serverStatus = .offline(Self.describe(error))
         }
@@ -62,10 +63,24 @@ extension AppStore {
             fetched.insert(localID)
             if let i = activities.firstIndex(where: { $0.id == localID }) {
                 // Refresh server-owned details, keep what only this phone knows.
-                var updated = Activity(server: event, hostID: activities[i].hostID)
-                updated.attendeeIDs = activities[i].attendeeIDs
-                updated.coverPhotoData = activities[i].coverPhotoData
-                updated.seriesID = activities[i].seriesID
+                let old = activities[i]
+                var updated = Activity(server: event, hostID: old.hostID)
+                updated.attendeeIDs = old.attendeeIDs
+                updated.coverPhotoData = old.coverPhotoData
+                updated.seriesID = old.seriesID
+                updated.hostToken = old.hostToken
+                updated.myAttendeeID = old.myAttendeeID
+                updated.myAttendeeToken = old.myAttendeeToken
+                updated.serverAttendeeIDs = old.serverAttendeeIDs
+                if updated.locationHidden == true, old.locationHidden != true {
+                    // The public list hides private locations; keep the one this phone already has
+                    // (you're the host, or the server already shared it with you).
+                    updated.placeName = old.placeName
+                    updated.address = old.address
+                    updated.latitude = old.latitude
+                    updated.longitude = old.longitude
+                    updated.locationHidden = nil
+                }
                 activities[i] = updated
             } else {
                 let host = Person.serverHost(named: event.hostName, category: ActivityCategory(serverValue: event.category))
@@ -89,7 +104,7 @@ extension AppStore {
               !rejectedUploads.contains(activity.id) else { return }
         do {
             let created = try await EventServer.create(activity.serverBody(hostName: me.name), baseURL: url)
-            markUploaded(activity.id, serverID: created.id)
+            markUploaded(activity.id, serverID: created.id, hostToken: created.hostToken)
         } catch let error as EventServer.ServerError where error.message.contains("already exists") {
             markUploaded(activity.id, serverID: activity.id.uuidString.lowercased())
         } catch let error as EventServer.ServerError {
@@ -112,10 +127,86 @@ extension AppStore {
         }
     }
 
-    private func markUploaded(_ id: UUID, serverID: String) {
+    private func markUploaded(_ id: UUID, serverID: String, hostToken: String? = nil) {
         guard let i = activities.firstIndex(where: { $0.id == id }) else { return }
         activities[i].serverID = serverID
+        if let hostToken { activities[i].hostToken = hostToken }
         save()
+    }
+
+    // MARK: - Attendees on the server (see docs/API.md)
+
+    /// Hosts pick up requests from other phones; guests find out when a host
+    /// approved them, which is when a private location is shared.
+    private func syncAttendance(baseURL url: URL) async {
+        for activity in activities where activity.serverID != nil && !activity.isPast {
+            if isHost(activity), let token = activity.hostToken {
+                await pullServerRequests(for: activity, hostToken: token, baseURL: url)
+            } else if activity.locationHidden == true, let token = activity.myAttendeeToken {
+                await revealLocationIfApproved(activity, attendeeToken: token, baseURL: url)
+            }
+        }
+    }
+
+    private func pullServerRequests(for activity: Activity, hostToken: String, baseURL url: URL) async {
+        guard let serverID = activity.serverID,
+              let attendees = try? await EventServer.attendees(eventID: serverID, hostToken: hostToken, baseURL: url),
+              let i = activities.firstIndex(where: { $0.id == activity.id }) else { return }
+        let known = Set(activities[i].serverAttendeeIDs?.values.map { $0 } ?? [])
+            .union(requests.compactMap(\.serverAttendeeID))
+        // Requests withdrawn on the server disappear here too.
+        let listed = Set(attendees.map(\.id))
+        requests.removeAll { $0.activityID == activity.id && $0.serverAttendeeID.map { !listed.contains($0) } == true }
+        for attendee in attendees where !known.contains(attendee.id) {
+            let guest = Person.serverHost(named: attendee.name, category: activity.category, bio: "Joined from Swipe-n-Go.")
+            if person(guest.id) == nil { people.append(guest) }
+            if attendee.isApproved {
+                activities[i].serverAttendeeIDs = (activities[i].serverAttendeeIDs ?? [:]).merging([guest.id: attendee.id]) { $1 }
+                if !activities[i].attendeeIDs.contains(guest.id) { activities[i].attendeeIDs.append(guest.id) }
+            } else {
+                requests.append(JoinRequest(activityID: activity.id, personID: guest.id, note: "Wants to join your plan.", date: .now,
+                                            serverAttendeeID: attendee.id))
+                show(InAppBanner(title: "New join request", subtitle: "\(guest.firstName) wants to join \(activity.title)",
+                                 symbol: "person.crop.circle.badge.plus", color: activity.category.color))
+            }
+        }
+        save()
+    }
+
+    private func revealLocationIfApproved(_ activity: Activity, attendeeToken: String, baseURL url: URL) async {
+        guard let serverID = activity.serverID,
+              // 403 until the host approves you: the server keeps the location until then.
+              let location = try? await EventServer.location(eventID: serverID, as: .attendee(attendeeToken), baseURL: url),
+              let i = activities.firstIndex(where: { $0.id == activity.id }) else { return }
+        activities[i].placeName = location.locationName
+        activities[i].address = location.address ?? location.locationName
+        if let lat = location.latitude, let lon = location.longitude {
+            activities[i].latitude = lat
+            activities[i].longitude = lon
+        }
+        activities[i].locationHidden = nil
+        if isPending(activities[i]) {
+            confirmServerApproval(activities[i].id)
+        } else {
+            save()
+        }
+    }
+
+    /// Calls the server for host and guest actions on a shared event. Returns false (and says why) if it refused.
+    func serverAction(_ action: (URL) async throws -> Void) async -> Bool {
+        guard let url = serverURL else {
+            show(InAppBanner(title: "Server not set", subtitle: "Set a server in Profile → Server to manage shared plans.",
+                             symbol: "icloud.slash", color: .orange))
+            return false
+        }
+        do {
+            try await action(url)
+            return true
+        } catch {
+            show(InAppBanner(title: "Couldn't update the plan", subtitle: Self.describe(error),
+                             symbol: "exclamationmark.icloud", color: .orange))
+            return false
+        }
     }
 
     private static func describe(_ error: Error) -> String {
