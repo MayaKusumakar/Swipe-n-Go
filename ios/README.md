@@ -1,4 +1,5 @@
-# Partner
+# Swipe-n-Go
+
 
 **Never do it alone.** Partner is like Tinder, but for activities. Swipe on plans other people are hosting (a sunrise run, a concert, a taco crawl, a day trip), or host your own and let people come to you.
 
