@@ -81,6 +81,18 @@ private struct ProfileContent: View {
                 }
             }
 
+            Section {
+                NavigationLink { ServerSettingsView() } label: {
+                    LabeledContent {
+                        ServerStatusLabel(status: store.serverStatus)
+                    } label: {
+                        Label("Server", systemImage: "server.rack")
+                    }
+                }
+            } header: {
+                Text("Shared events")
+            }
+
             Section("Safety") {
                 NavigationLink { SafetyCenterView() } label: {
                     Label("Safety center", systemImage: "shield.lefthalf.filled")
@@ -140,7 +152,7 @@ struct ProfileHeader: View {
             avatar
             VStack(spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(showAge ? "\(person.name), \(person.age)" : person.name)
+                    Text(showAge && person.age > 0 ? "\(person.name), \(person.age)" : person.name)
                         .font(.title2.weight(.bold))
                     if person.isVerified {
                         Image(systemName: "checkmark.seal.fill").foregroundStyle(.blue)

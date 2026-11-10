@@ -44,6 +44,16 @@ final class AppStore {
     var requestedChat: UUID?                  // set to deep-link into a conversation
     private(set) var swipeHistory: [(UUID, SwipeAction)] = []
 
+    // MARK: Server (see AppStore+Server.swift)
+    var serverStatus: ServerStatus = .off
+    @ObservationIgnored var rejectedUploads: Set<UUID> = []   // plans the server refused; not retried
+    var serverURLString: String = UserDefaults.standard.string(forKey: AppStore.serverURLKey) ?? AppStore.defaultServerURL {
+        didSet { UserDefaults.standard.set(serverURLString, forKey: AppStore.serverURLKey) }
+    }
+    var showSampleEvents: Bool = UserDefaults.standard.object(forKey: AppStore.showSampleEventsKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showSampleEvents, forKey: AppStore.showSampleEventsKey) }
+    }
+
     @ObservationIgnored private var index: [UUID: Person] = [:]
     @ObservationIgnored private let fileURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -65,6 +75,17 @@ final class AppStore {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-onboarding") { hasOnboarded = false }
         if args.contains("-host") { showCreate = true }
+        if let i = args.firstIndex(of: "-server"), i + 1 < args.count { serverURLString = args[i + 1] }
+        if args.contains("-noSamples") { showSampleEvents = false }
+        if args.contains("-hostTest"), hasOnboarded {
+            // Posts a plan as if made in the Host sheet, to test the upload path.
+            let date = Calendar.current.date(byAdding: .day, value: 2, to: .now)!
+            host(Activity(id: UUID(), title: "Posted from the iPhone app", category: .coffee, hostID: me.id, date: date,
+                          durationMinutes: 60, placeName: "Mishka's Café", address: "610 2nd St, Davis, CA",
+                          latitude: 38.5440, longitude: -121.7407, capacity: 4, attendeeIDs: [],
+                          details: "Testing the shared server.", tags: ["Coffee"], level: .beginner,
+                          requiresApproval: false, costNote: "Free"))
+        }
         if args.contains("-photo") {
             // A generated test picture, so the profile-photo UI can be screenshotted.
             let image = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600)).image { ctx in
@@ -128,7 +149,7 @@ final class AppStore {
     // MARK: - Feeds
 
     var discoverDeck: [Activity] {
-        activities
+        feedActivities
             .filter { !$0.isPast && !isHost($0) && !joinedIDs.contains($0.id) && !pendingIDs.contains($0.id)
                 && !skippedIDs.contains($0.id) && !$0.isFull && Geo.miles(to: $0.coordinate) <= radiusMiles }
             .sorted { lhs, rhs in
@@ -291,6 +312,8 @@ final class AppStore {
         if !save() {
             drafts = previousDrafts
             activities = previousActivities
+        } else {
+            Task { await uploadPendingHostedEvents() }
         }
     }
 
@@ -317,6 +340,7 @@ final class AppStore {
         if let first = occurrences.first {
             simulateIncomingRequest(for: first.id)
         }
+        Task { await uploadPendingHostedEvents() }
         return true
     }
 
@@ -331,6 +355,7 @@ final class AppStore {
         appendSystem("You created “\(a.title)”. Invite people or wait for requests!", to: convo)
         save()
         simulateIncomingRequest(for: a.id)
+        Task { await upload(a) }
     }
 
     func cancel(_ activity: Activity) {

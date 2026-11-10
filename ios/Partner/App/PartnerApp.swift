@@ -50,6 +50,14 @@ struct RootView: View {
                 }
             }
         }
+        .task(id: store.hasOnboarded && scenePhase == .active) {
+            // Pull shared events from the backend while the app is open.
+            guard store.hasOnboarded, scenePhase == .active else { return }
+            while !Task.isCancelled {
+                await store.syncWithServer()
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
         .animation(.smooth(duration: 0.5), value: store.hasOnboarded)
         .sensoryFeedback(.success, trigger: store.banner?.id) { _, new in new != nil }
     }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged with the keys Xcode generates from project.yml. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Lets the app reach the development server on a Mac over plain http on the local network. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Swipe-n-Go connects to your team's development server on this Wi-Fi network to share events.</string>
+</dict>
+</plist>

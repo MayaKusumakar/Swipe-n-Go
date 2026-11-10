@@ -14,19 +14,22 @@ targets:
     type: application
     platform: iOS
     sources:
-      - Partner
+      - path: Partner
+        excludes:
+          - Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.anantkatiyar.Partner
         PRODUCT_NAME: Partner
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Partner/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: Swipe-n-Go
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSCameraUsageDescription: Take a photo of an event flyer to fill in event details.
-        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: Partner uses your location to find activities and people near you.
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: Swipe-n-Go uses your location to show events and people near you.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES

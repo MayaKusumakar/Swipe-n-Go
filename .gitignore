@@ -1,0 +1,26 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+*-key.json
+credentials*.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

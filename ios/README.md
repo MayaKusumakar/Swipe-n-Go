@@ -11,6 +11,22 @@ Native SwiftUI prototype for iOS 26+, built with Liquid Glass.
 
 If you're running on a real device, set your Team under *Signing & Capabilities*. If you change `project.yml`, regenerate the project with `xcodegen generate`.
 
+## Share events between phones (backend)
+Events you post appear on everyone's phone through the Flask server in `../backend`. See `../docs/API.md`.
+
+1. Start the server on your Mac:
+   ```
+   cd backend
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   EVENT_STORE=memory flask --app main run --host 0.0.0.0 --port 8080
+   ```
+2. **Simulator:** nothing to set, it uses `http://localhost:8080`.
+   **iPhone:** connect it to the same Wi‑Fi as the Mac, open Profile → **Server**, and enter `http://<Mac's IP>:8080`. Find the IP under System Settings → Wi‑Fi → Details. Allow "find devices on your local network" when iOS asks.
+3. Post a plan with **＋ Host**. Other phones pick it up within 15 seconds, or right away with pull-to-refresh in Explore's list.
+
+Turn off Profile → Server → **Show sample events** to see only real posts. `EVENT_STORE=memory` forgets posts when the server stops. For permanent storage, deploy to App Engine with Datastore (`backend/app.yaml`).
+
 ## What's in it
 | Tab | What you can do |
 |---|---|
@@ -24,19 +40,19 @@ If you're running on a real device, set your Team under *Signing & Capabilities*
 | **Profile** | Stats, interests, edit avatar and bio, preferences, safety center, report/block |
 
 ## Prototype notes
-- **No backend yet.** The people and plans are realistic sample data around Davis, CA. Everything you do is saved on the device (`AppStore.swift` persists to JSON).
+- **Shared events go through the backend.** Joining, chats, requests and saved plans are still only on the device (`AppStore.swift` persists to JSON). The built-in sample people and plans are around Davis, CA.
 - **The other side is simulated.** Hosts approve requests after a few seconds, someone requests to join plans you host, and people reply in chat.
 - Profile → **Refresh demo content** gets you fresh plans. **Sign out & reset** restarts onboarding.
-- Debug launch arguments for screenshots: `-demo` (skip onboarding), `-joined`, `-detail`, `-chat`, `-tab <discover|explore|plans|chats|profile>`.
+- Debug launch arguments for testing: `-demo` (skip onboarding), `-joined`, `-detail`, `-chat`, `-host`, `-photo`, `-onboarding [-step N] [-ask]`, `-server <url>`, `-noSamples`, `-hostTest`, `-tab <discover|explore|plans|chats|profile>`.
 
 ## Code map
 ```
 Partner/
   App/        PartnerApp, RootView, tab bar
   Models/     Activity, Person, Conversation, sample data
-  Store/      AppStore: state, persistence, simulation
+  Store/      AppStore: state, persistence, simulation; EventServer + AppStore+Server: backend sync
   Design/     Shared components (avatars, chips, FlowLayout, buttons, banner)
   Views/      Onboarding, Discover, Explore, Activity, Create, Plans, Chats, Profile
 ```
 
-Next steps for a real product: a backend (e.g. Firebase or Supabase), auth, push notifications, real location, and moderation.
+Next steps: deploy the backend to App Engine, @ucdavis.edu sign-in, RSVPs and chats on the server, image uploads, push notifications, and moderation.

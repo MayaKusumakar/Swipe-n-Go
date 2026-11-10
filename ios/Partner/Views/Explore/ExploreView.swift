@@ -14,7 +14,7 @@ struct ExploreView: View {
     enum Mode: String, CaseIterable { case map = "Map", list = "List" }
 
     private var results: [Activity] {
-        store.activities
+        store.feedActivities
             .filter { !$0.isPast }
             .filter { category == nil || $0.category == category }
             .filter { a in
@@ -186,6 +186,7 @@ struct ExploreView: View {
             .padding(.bottom, 20)
         }
         .background(Color(.systemGroupedBackground))
+        .refreshable { await store.syncWithServer() }
     }
 }
 

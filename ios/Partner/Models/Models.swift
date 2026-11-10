@@ -154,6 +154,8 @@ struct Activity: Codable, Identifiable, Hashable {
     var costNote: String
     var seriesID: UUID? = nil
     var coverPhotoData: Data? = nil
+    /// Set when the event exists on the backend (nil = only on this phone).
+    var serverID: String? = nil
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
