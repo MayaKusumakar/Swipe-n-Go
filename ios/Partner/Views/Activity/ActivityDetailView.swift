@@ -40,7 +40,7 @@ struct ActivityDetailView: View {
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                ShareLink(item: "Join me for \(live.title) on Partner — \(live.date.friendlyDateTime) at \(live.placeName)!") {
+                ShareLink(item: "Join me for \(live.title) on Swipe-n-Go — \(live.date.friendlyDateTime) at \(live.placeName)!") {
                     Image(systemName: "square.and.arrow.up")
                 }
                 Button {

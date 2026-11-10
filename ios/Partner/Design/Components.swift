@@ -19,7 +19,13 @@ struct AvatarView: View {
     var body: some View {
         ZStack {
             Circle().fill(person?.avatarGradient ?? LinearGradient(colors: [.gray, .secondary], startPoint: .top, endPoint: .bottom))
-            if let person, !person.emoji.isEmpty {
+            if let person, let photo = ProfilePhoto.image(for: person) {
+                Image(uiImage: photo)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else if let person, !person.emoji.isEmpty {
                 Text(person.emoji).font(.system(size: size * 0.48))
             } else {
                 Text(person?.initials ?? "?")

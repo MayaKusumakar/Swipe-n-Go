@@ -23,7 +23,11 @@ private struct ProfileContent: View {
         @Bindable var store = store
         List {
             Section {
-                ProfileHeader(person: store.me, showAge: store.showAgeOnProfile)
+                ProfileHeader(person: store.me, showAge: store.showAgeOnProfile) { photo in
+                    var me = store.me
+                    me.photoData = photo
+                    store.updateProfile(me)
+                }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             }
@@ -97,7 +101,7 @@ private struct ProfileContent: View {
                     Label("Sign out & reset", systemImage: "rectangle.portrait.and.arrow.right")
                 }
             } footer: {
-                Text("Partner prototype v1.0 · Made with ❤️ in Davis")
+                Text("Swipe-n-Go prototype v1.0 · Made with ❤️ in Davis")
                     .frame(maxWidth: .infinity)
                     .padding(.top, 12)
             }
@@ -115,7 +119,7 @@ private struct ProfileContent: View {
             }
         }
         .sheet(isPresented: $showEdit) { EditProfileView() }
-        .confirmationDialog("Reset Partner?", isPresented: $confirmReset, titleVisibility: .visible) {
+        .confirmationDialog("Reset Swipe-n-Go?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Sign out & reset", role: .destructive) { store.resetEverything() }
         } message: {
             Text("This clears your profile, plans and chats on this device.")
@@ -128,11 +132,12 @@ private struct ProfileContent: View {
 struct ProfileHeader: View {
     let person: Person
     var showAge = true
+    /// When set, the avatar becomes a "change photo" menu (your own profile only).
+    var onPhotoChange: ((Data?) -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 12) {
-            AvatarView(person: person, size: 110)
-                .shadow(color: Color(hue: person.hue, saturation: 0.6, brightness: 0.9).opacity(0.5), radius: 18, y: 8)
+            avatar
             VStack(spacing: 4) {
                 HStack(spacing: 6) {
                     Text(showAge ? "\(person.name), \(person.age)" : person.name)
@@ -142,8 +147,10 @@ struct ProfileHeader: View {
                     }
                 }
                 HStack(spacing: 6) {
-                    if !person.pronouns.isEmpty { Text(person.pronouns) }
-                    if !person.pronouns.isEmpty { Text("·") }
+                    if let pronouns = Pronouns.display(person.pronouns) {
+                        Text(pronouns)
+                        Text("·")
+                    }
                     HStack(spacing: 4) {
                         Image(systemName: "graduationcap.fill")
                         Text(person.school)
@@ -161,6 +168,28 @@ struct ProfileHeader: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
+    }
+}
+
+extension ProfileHeader {
+    @ViewBuilder var avatar: some View {
+        let picture = AvatarView(person: person, size: 110)
+            .shadow(color: Color(hue: person.hue, saturation: 0.6, brightness: 0.9).opacity(0.5), radius: 18, y: 8)
+        if let onPhotoChange {
+            ProfilePhotoMenu(hasPhoto: person.photoData != nil) { onPhotoChange($0) } onRemove: { onPhotoChange(nil) } label: {
+                picture.overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(Brand.gradient, in: Circle())
+                        .overlay(Circle().strokeBorder(.background, lineWidth: 3))
+                }
+            }
+            .accessibilityLabel("Change profile photo")
+        } else {
+            picture
+        }
     }
 }
 
@@ -194,11 +223,27 @@ struct EditProfileView: View {
             Form {
                 Section {
                     VStack(spacing: 16) {
-                        AvatarView(person: draft, size: 100)
-                            .animation(.snappy, value: draft.emoji)
+                        ProfilePhotoMenu(hasPhoto: draft.photoData != nil) { photo in
+                            draft.photoData = photo
+                        } onRemove: {
+                            draft.photoData = nil
+                        } label: {
+                            VStack(spacing: 8) {
+                                AvatarView(person: draft, size: 100)
+                                    .animation(.snappy, value: draft.emoji)
+                                Text(draft.photoData == nil ? "Add photo" : "Change photo")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+
+                        Text("Or use an emoji")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 10) {
                             ForEach(emojis, id: \.self) { e in
-                                Button { draft.emoji = e } label: {
+                                Button { draft.emoji = e; draft.photoData = nil } label: {
                                     Text(e).font(.title2)
                                         .frame(width: 36, height: 36)
                                         .background(draft.emoji == e ? Color.accentColor.opacity(0.2) : .clear, in: Circle())
@@ -217,7 +262,15 @@ struct EditProfileView: View {
 
                 Section("About you") {
                     TextField("Name", text: $draft.name)
-                    TextField("Pronouns", text: $draft.pronouns)
+                    NavigationLink {
+                        ScrollView {
+                            PronounPicker(pronouns: $draft.pronouns).padding(20)
+                        }
+                        .background(Color(.systemGroupedBackground))
+                        .navigationTitle("Pronouns")
+                    } label: {
+                        LabeledContent("Pronouns", value: Pronouns.display(draft.pronouns) ?? "Not set")
+                    }
                     Stepper("Age: \(draft.age)", value: $draft.age, in: 18...99)
                     TextField("School or work", text: $draft.school)
                 }
@@ -365,7 +418,7 @@ struct PersonProfileView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    ShareLink(item: "Check out \(person.firstName) on Partner!") {
+                    ShareLink(item: "Check out \(person.firstName) on Swipe-n-Go!") {
                         Label("Share profile", systemImage: "square.and.arrow.up")
                     }
                     Button("Report", systemImage: "flag.fill", role: .destructive) { confirmReport = true }

@@ -7,17 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-        AABB00112233445566778801 /* FlyerScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AABB00112233445566778802 /* FlyerScanner.swift */; };
 		07CBDFAA5B1B675F6199DC46 /* CreateActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC7CC9628CF6412B1E45D4A /* CreateActivityView.swift */; };
 		08E6C9E2ABFCBCAC011DF1C5 /* ExploreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCFC7561898135ED6D3A1D1B /* ExploreView.swift */; };
 		1610C3DD00C95A7CF8FE151E /* ChatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E05EC8B25B9729101DEB50E /* ChatsView.swift */; };
 		23BA3E1A45DDC7A8CB7F4BF4 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62919B82F7A8975AFF520BB /* AppStore.swift */; };
 		30231E75CDA87D2F1A8A131D /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C1783607081C68C31451F12 /* DiscoverView.swift */; };
+		46E7C5FE50451B6CA72DBA14 /* PronounPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AFBAC487ACD4EF2117F400 /* PronounPicker.swift */; };
+		67A6944618BF6C74574C30C7 /* Permissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D4831305DB706ABC16D30CE /* Permissions.swift */; };
 		73819FC9719D3CFA5958CDF0 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA89166BD207A830C832CD29 /* SampleData.swift */; };
+		932C63375B70D4DFCDC874EC /* FlyerScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B94F04FAA5B671F2CAB90D /* FlyerScanner.swift */; };
 		9853209F3AB4CD83F064CBF7 /* ActivityDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57C9A54AD348957691460A86 /* ActivityDetailView.swift */; };
 		A0056F588F25B6B5198B45DC /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F3915B230AAFF94DBEAA9D /* Models.swift */; };
 		AFB6ADA171DC3BCA889C204C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6454AD1A73FA3BE7737227D0 /* ProfileView.swift */; };
 		B3AE602941CA8E7E7460DCCE /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4393023E0A4535BA8F173B5 /* OnboardingView.swift */; };
+		B54D3B32139ED801BE8DF8A9 /* ProfilePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 924DE7FCF547701C1055B9B0 /* ProfilePhoto.swift */; };
 		CEC0531A80080212AA7A7C42 /* PartnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E743B2A5BE8F6B56B079C9 /* PartnerApp.swift */; };
 		D8AAFB79ECA15C7AE157F063 /* PlansView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D038FEF2CE810DDC9C7F1E3C /* PlansView.swift */; };
 		DA7736779BAF617D9AF17C08 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 44C2D83EF9FBF5EFBEE0B9AE /* Assets.xcassets */; };
@@ -25,8 +28,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-        AABB00112233445566778802 /* FlyerScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyerScanner.swift; sourceTree = "<group>"; };
+		04AFBAC487ACD4EF2117F400 /* PronounPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PronounPicker.swift; sourceTree = "<group>"; };
 		0E05EC8B25B9729101DEB50E /* ChatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatsView.swift; sourceTree = "<group>"; };
+		1D4831305DB706ABC16D30CE /* Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Permissions.swift; sourceTree = "<group>"; };
 		44C2D83EF9FBF5EFBEE0B9AE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		57C9A54AD348957691460A86 /* ActivityDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailView.swift; sourceTree = "<group>"; };
 		6454AD1A73FA3BE7737227D0 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -34,6 +38,8 @@
 		754167B23102BC3799231DC7 /* Partner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Partner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		78F3915B230AAFF94DBEAA9D /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		79E743B2A5BE8F6B56B079C9 /* PartnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartnerApp.swift; sourceTree = "<group>"; };
+		86B94F04FAA5B671F2CAB90D /* FlyerScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyerScanner.swift; sourceTree = "<group>"; };
+		924DE7FCF547701C1055B9B0 /* ProfilePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilePhoto.swift; sourceTree = "<group>"; };
 		9C1783607081C68C31451F12 /* DiscoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverView.swift; sourceTree = "<group>"; };
 		B2BF4E12E77B6C8F63736F0B /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		C4393023E0A4535BA8F173B5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -56,6 +62,7 @@
 			isa = PBXGroup;
 			children = (
 				C4393023E0A4535BA8F173B5 /* OnboardingView.swift */,
+				04AFBAC487ACD4EF2117F400 /* PronounPicker.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -101,7 +108,7 @@
 			isa = PBXGroup;
 			children = (
 				6AC7CC9628CF6412B1E45D4A /* CreateActivityView.swift */,
-                AABB00112233445566778802 /* FlyerScanner.swift */,
+				86B94F04FAA5B671F2CAB90D /* FlyerScanner.swift */,
 			);
 			path = Create;
 			sourceTree = "<group>";
@@ -109,6 +116,7 @@
 		6961A04562F8675E810382A2 /* Profile */ = {
 			isa = PBXGroup;
 			children = (
+				924DE7FCF547701C1055B9B0 /* ProfilePhoto.swift */,
 				6454AD1A73FA3BE7737227D0 /* ProfileView.swift */,
 			);
 			path = Profile;
@@ -118,6 +126,7 @@
 			isa = PBXGroup;
 			children = (
 				C62919B82F7A8975AFF520BB /* AppStore.swift */,
+				1D4831305DB706ABC16D30CE /* Permissions.swift */,
 			);
 			path = Store;
 			sourceTree = "<group>";
@@ -262,14 +271,17 @@
 				1610C3DD00C95A7CF8FE151E /* ChatsView.swift in Sources */,
 				E36B71B78009CCA54D315487 /* Components.swift in Sources */,
 				07CBDFAA5B1B675F6199DC46 /* CreateActivityView.swift in Sources */,
-                AABB00112233445566778801 /* FlyerScanner.swift in Sources */,
 				30231E75CDA87D2F1A8A131D /* DiscoverView.swift in Sources */,
 				08E6C9E2ABFCBCAC011DF1C5 /* ExploreView.swift in Sources */,
+				932C63375B70D4DFCDC874EC /* FlyerScanner.swift in Sources */,
 				A0056F588F25B6B5198B45DC /* Models.swift in Sources */,
 				B3AE602941CA8E7E7460DCCE /* OnboardingView.swift in Sources */,
 				CEC0531A80080212AA7A7C42 /* PartnerApp.swift in Sources */,
+				67A6944618BF6C74574C30C7 /* Permissions.swift in Sources */,
 				D8AAFB79ECA15C7AE157F063 /* PlansView.swift in Sources */,
+				B54D3B32139ED801BE8DF8A9 /* ProfilePhoto.swift in Sources */,
 				AFB6ADA171DC3BCA889C204C /* ProfileView.swift in Sources */,
+				46E7C5FE50451B6CA72DBA14 /* PronounPicker.swift in Sources */,
 				73819FC9719D3CFA5958CDF0 /* SampleData.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -352,10 +364,10 @@
 				DEVELOPMENT_TEAM = M76UVM926F;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Partner;
+				INFOPLIST_KEY_CFBundleDisplayName = "Swipe-n-Go";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo of an event flyer to fill in event details.";
-                INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Partner uses your location to find activities and people near you.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Partner uses your location to find activities and people near you.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -437,10 +449,10 @@
 				DEVELOPMENT_TEAM = M76UVM926F;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Partner;
+				INFOPLIST_KEY_CFBundleDisplayName = "Swipe-n-Go";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo of an event flyer to fill in event details.";
-                INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Partner uses your location to find activities and people near you.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Partner uses your location to find activities and people near you.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (

@@ -69,7 +69,7 @@ struct CreateActivityView: View {
     @State private var published = false
     @FocusState private var focus: Field?
 
-    enum Field { case title, details, cost }
+    enum Field { case title, previewTitle, details, cost }
 
     private var canPublish: Bool {
         !scanning && !isLoadingPhoto && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && place != nil && date > .now
@@ -256,10 +256,24 @@ struct CreateActivityView: View {
             ActivityCover(category: category, photoData: coverPhotoData)
             LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 6) {
-                Text(title.isEmpty ? "Your plan title" : title)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    TextField(text: $title, prompt: Text("Your plan title").foregroundStyle(.white.opacity(0.65)), axis: .vertical) {
+                        Text("Plan title")
+                    }
                     .font(.title2.weight(.bold))
-                    .lineLimit(2)
-                    .opacity(title.isEmpty ? 0.6 : 1)
+                    .lineLimit(1...2)
+                    .focused($focus, equals: .previewTitle)
+                    .submitLabel(.done)
+                    .onChange(of: title) { _, new in
+                        // Return ends editing instead of adding a new line.
+                        if new.contains("\n") { title = new.replacingOccurrences(of: "\n", with: ""); focus = nil }
+                    }
+                    Image(systemName: focus == .previewTitle ? "checkmark.circle.fill" : "pencil")
+                        .font(.headline)
+                        .opacity(0.85)
+                        .onTapGesture { focus = focus == .previewTitle ? nil : .previewTitle }
+                        .accessibilityLabel(focus == .previewTitle ? "Done editing title" : "Edit title")
+                }
                 Text("\(date.friendlyDateTime)\(place.map { " · \($0.name)" } ?? "")")
                     .font(.subheadline.weight(.medium))
                     .opacity(0.9)

@@ -7,8 +7,8 @@ struct OnboardingView: View {
     @State private var age = 21
     @State private var pronouns = ""
     @State private var interests: Set<ActivityCategory> = []
-    @State private var locationAllowed = false
-    @State private var notificationsAllowed = false
+    @State private var access = Permissions()
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var nameFocused: Bool
 
     private let totalSteps = 4
@@ -37,6 +37,10 @@ struct OnboardingView: View {
             }
         }
         .animation(.spring(duration: 0.5, bounce: 0.15), value: step)
+        .onChange(of: scenePhase) { _, phase in
+            // Pick up changes made in the Settings app.
+            if phase == .active { Task { await access.refresh() } }
+        }
     }
 
     // MARK: Background
@@ -109,6 +113,21 @@ struct OnboardingView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
         .sensoryFeedback(.impact(weight: .light), trigger: step)
+        #if DEBUG
+        .task {
+            // `-step N` jumps to an onboarding step; `-ask` fires the real permission prompts.
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "-step"), i + 1 < args.count, let n = Int(args[i + 1]) {
+                name = "Anant Katiyar"
+                pronouns = "he/him, they/them"
+                step = n
+            }
+            if args.contains("-ask") {
+                try? await Task.sleep(for: .seconds(1))
+                await access.requestNotifications()
+            }
+        }
+        #endif
     }
 
     private var primaryTitle: String {
@@ -149,9 +168,12 @@ struct OnboardingView: View {
             OrbitingIcons()
                 .frame(height: 300)
             VStack(spacing: 12) {
-                Text("Partner")
-                    .font(.system(size: 56, weight: .heavy, design: .rounded))
+                Text("Swipe-n-Go")
+                    .font(.system(size: 52, weight: .heavy, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .foregroundStyle(.white)
+                    .padding(.horizontal, 24)
                 Text("Never do it alone.\nFind people for runs, shows, food and everything in between.")
                     .font(.title3.weight(.medium))
                     .multilineTextAlignment(.center)
@@ -165,20 +187,22 @@ struct OnboardingView: View {
     private var aboutYou: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                stepTitle("What should we call you?", "This is how you'll appear to other Partners.")
+                stepTitle("What should we call you?", "This is how you'll appear to others on Swipe‑n‑Go.")
 
-                VStack(spacing: 0) {
-                    TextField("First and last name", text: $name)
-                        .textContentType(.name)
-                        .font(.title3.weight(.medium))
-                        .focused($nameFocused)
-                        .submitLabel(.next)
+                TextField("First and last name", text: $name)
+                    .textContentType(.name)
+                    .font(.title3.weight(.medium))
+                    .focused($nameFocused)
+                    .submitLabel(.done)
+                    .padding(18)
+                    .cardStyle(radius: 20)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Pronouns").font(.headline)
+                    PronounPicker(pronouns: $pronouns)
                         .padding(18)
-                    Divider().padding(.leading, 18)
-                    TextField("Pronouns (optional)", text: $pronouns)
-                        .padding(18)
+                        .cardStyle(radius: 20)
                 }
-                .cardStyle(radius: 20)
 
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Age").font(.headline)
@@ -194,7 +218,7 @@ struct OnboardingView: View {
                     }
                     .padding(18)
                     .cardStyle(radius: 20)
-                    Label("Partner is for adults 18+.", systemImage: "checkmark.shield.fill")
+                    Label("Swipe‑n‑Go is for adults 18+.", systemImage: "checkmark.shield.fill")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -224,14 +248,18 @@ struct OnboardingView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 stepTitle("Almost there, \(name.split(separator: " ").first.map(String.init) ?? "friend")!",
-                          "A couple of things make Partner work best.")
+                          "A couple of things make Swipe‑n‑Go work best.")
 
                 PermissionCard(symbol: "location.fill", tint: .blue, title: "Location",
                                detail: "See plans happening near you. We never share your exact location.",
-                               isOn: $locationAllowed)
+                               state: access.location,
+                               onAllow: { access.requestLocation() },
+                               onOpenSettings: { access.openSettings() })
                 PermissionCard(symbol: "bell.badge.fill", tint: .red, title: "Notifications",
                                detail: "Know instantly when someone joins your plan or messages you.",
-                               isOn: $notificationsAllowed)
+                               state: access.notifications,
+                               onAllow: { Task { await access.requestNotifications() } },
+                               onOpenSettings: { access.openSettings() })
 
                 VStack(alignment: .leading, spacing: 14) {
                     Label("Meet in public places first", systemImage: "person.2.fill")
@@ -304,7 +332,9 @@ private struct PermissionCard: View {
     let tint: Color
     let title: String
     let detail: String
-    @Binding var isOn: Bool
+    let state: Permissions.State
+    let onAllow: () -> Void
+    let onOpenSettings: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -318,21 +348,56 @@ private struct PermissionCard: View {
                 Text(detail).font(.subheadline).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button {
-                    withAnimation(.spring(duration: 0.35, bounce: 0.4)) { isOn = true }
+                    switch state {
+                    case .notAsked: onAllow()          // shows the system dialog
+                    case .denied: onOpenSettings()
+                    case .allowed: break
+                    }
                 } label: {
-                    Label(isOn ? "Allowed" : "Allow", systemImage: isOn ? "checkmark" : "arrow.right")
+                    Label(buttonTitle, systemImage: buttonSymbol)
                         .font(.subheadline.weight(.semibold))
                         .contentTransition(.symbolEffect(.replace))
                 }
                 .buttonStyle(.bordered)
-                .tint(isOn ? .green : tint)
+                .tint(buttonTint)
+                .allowsHitTesting(state != .allowed)
                 .padding(.top, 6)
-                .sensoryFeedback(.success, trigger: isOn)
+                if state == .denied {
+                    Text("Turned off. You can change this anytime in Settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(18)
         .cardStyle(radius: 20)
+        .animation(.spring(duration: 0.35, bounce: 0.4), value: state)
+        .sensoryFeedback(.success, trigger: state) { _, new in new == .allowed }
+    }
+
+    private var buttonTitle: String {
+        switch state {
+        case .notAsked: "Allow"
+        case .allowed: "Allowed"
+        case .denied: "Open Settings"
+        }
+    }
+
+    private var buttonSymbol: String {
+        switch state {
+        case .notAsked: "arrow.right"
+        case .allowed: "checkmark"
+        case .denied: "gear"
+        }
+    }
+
+    private var buttonTint: Color {
+        switch state {
+        case .notAsked: tint
+        case .allowed: .green
+        case .denied: .orange
+        }
     }
 }
 

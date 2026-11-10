@@ -63,7 +63,17 @@ final class AppStore {
     /// `-demo` skips onboarding with a sample profile; `-tab <name>` opens a tab. Handy for screenshots.
     private func applyDebugLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-demo"), !hasOnboarded {
+        if args.contains("-onboarding") { hasOnboarded = false }
+        if args.contains("-host") { showCreate = true }
+        if args.contains("-photo") {
+            // A generated test picture, so the profile-photo UI can be screenshotted.
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 600)).image { ctx in
+                UIColor.systemTeal.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 600))
+                UIColor.systemYellow.setFill(); ctx.cgContext.fillEllipse(in: CGRect(x: 150, y: 120, width: 300, height: 300))
+            }
+            me.photoData = image.jpegData(compressionQuality: 0.8)
+        }
+        if args.contains("-demo"), !hasOnboarded, !args.contains("-onboarding") {
             completeOnboarding(name: "Anant Katiyar", age: 21, pronouns: "", interests: [.run, .concert, .food, .coffee, .hike])
             me.emoji = "😎"
             save()
@@ -149,7 +159,7 @@ final class AppStore {
         me.pronouns = pronouns
         me.interests = interests
         me.hue = Double.random(in: 0...1)
-        if me.bio.isEmpty { me.bio = "New to Partner — say hi! 👋" }
+        if me.bio.isEmpty { me.bio = "New to Swipe-n-Go — say hi! 👋" }
         hasOnboarded = true
         // Seed conversations reference the old `me` id; re-key them.
         seed(keepingMe: true)

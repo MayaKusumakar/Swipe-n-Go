@@ -69,11 +69,11 @@ struct MainTabView: View {
             }
         )
         TabView(selection: selection) {
-            Tab("Discover", systemImage: "sparkles.rectangle.stack.fill", value: AppTab.discover) {
-                DiscoverView()
-            }
             Tab("Explore", systemImage: "map.fill", value: AppTab.explore) {
                 ExploreView()
+            }
+            Tab("Discover", systemImage: "sparkles.rectangle.stack.fill", value: AppTab.discover) {
+                DiscoverView()
             }
             Tab("Host", systemImage: "plus.circle.fill", value: AppTab.create) {
                 Color.clear

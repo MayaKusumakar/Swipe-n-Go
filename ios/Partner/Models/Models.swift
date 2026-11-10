@@ -103,6 +103,7 @@ struct Person: Codable, Identifiable, Hashable {
     var rating: Double
     var activitiesDone: Int
     var school: String
+    var photoData: Data? = nil
 
     var firstName: String { name.split(separator: " ").first.map(String.init) ?? name }
 
