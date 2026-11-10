@@ -1,0 +1,7 @@
+runtime: python312
+entrypoint: gunicorn -b :$PORT main:app
+
+# Uncomment to have the deployed app read the seeded dev data instead of the
+# default (production) namespace. Team decision pending.
+# env_variables:
+#   DATASTORE_NAMESPACE: dev
