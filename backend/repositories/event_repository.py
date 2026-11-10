@@ -24,3 +24,14 @@ class EventRepository:
         query.add_filter(filter=PropertyFilter("start_time", ">=", now))
         query.order = ["start_time"]
         return [Event.from_entity(entity) for entity in query.fetch(limit=limit)]
+
+    def add(self, event):
+        """Stores a new event. Returns False if one with the same id exists."""
+        key = self.client.key(EVENT_KIND, event.id)
+        with self.client.transaction():
+            if self.client.get(key) is not None:
+                return False
+            entity = datastore.Entity(key=key, exclude_from_indexes=("description",))
+            entity.update(event.to_entity_properties())
+            self.client.put(entity)
+        return True

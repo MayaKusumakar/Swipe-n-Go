@@ -28,6 +28,14 @@ class FakeEventRepository:
             raise self.error
         return self.events[:limit]
 
+    def add(self, event):
+        if self.error:
+            raise self.error
+        if any(e.id == event.id for e in self.events):
+            return False
+        self.events.append(event)
+        return True
+
 
 def make_event(event_id="seed-001", **overrides):
     fields = dict(

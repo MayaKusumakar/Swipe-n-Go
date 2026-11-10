@@ -11,7 +11,7 @@ def test_unknown_route_returns_json_404(client):
 
 
 def test_wrong_method_returns_json_405(client):
-    response = client.post("/api/events")
+    response = client.delete("/api/events")
 
     assert response.status_code == 405
     assert response.get_json()["error"]["code"] == "method_not_allowed"
