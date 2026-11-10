@@ -14,7 +14,7 @@ struct PartnerApp: App {
 }
 
 enum AppTab: Hashable {
-    case discover, explore, plans, chats, profile
+    case discover, explore, create, chats, plans
 }
 
 struct RootView: View {
@@ -60,25 +60,35 @@ struct MainTabView: View {
 
     var body: some View {
         @Bindable var store = store
-        TabView(selection: $store.selectedTab) {
+        // The center "+" tab is an action, not a screen: selecting it opens the
+        // Host sheet and leaves the current tab selected.
+        let selection = Binding<AppTab>(
+            get: { store.selectedTab },
+            set: { tab in
+                if tab == .create { store.showCreate = true } else { store.selectedTab = tab }
+            }
+        )
+        TabView(selection: selection) {
             Tab("Discover", systemImage: "sparkles.rectangle.stack.fill", value: AppTab.discover) {
                 DiscoverView()
             }
             Tab("Explore", systemImage: "map.fill", value: AppTab.explore) {
                 ExploreView()
             }
-            Tab("Plans", systemImage: "calendar", value: AppTab.plans) {
-                PlansView()
+            Tab("Host", systemImage: "plus.circle.fill", value: AppTab.create) {
+                Color.clear
             }
-            .badge(store.requests.count)
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
                 ChatsView()
             }
             .badge(store.totalUnread)
-            Tab("Profile", systemImage: "person.crop.circle.fill", value: AppTab.profile) {
-                ProfileView()
+            Tab("Plans", systemImage: "calendar", value: AppTab.plans) {
+                PlansView()
             }
+            .badge(store.requests.count)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .sheet(isPresented: $store.showCreate) { CreateActivityView() }
+        .sheet(isPresented: $store.showProfile) { ProfileView() }
     }
 }

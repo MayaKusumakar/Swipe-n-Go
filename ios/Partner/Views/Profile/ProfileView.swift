@@ -7,13 +7,15 @@ struct ProfileView: View {
         if embedded {
             ProfileContent()
         } else {
-            NavigationStack { ProfileContent() }
+            NavigationStack { ProfileContent(showsDone: true) }
         }
     }
 }
 
 private struct ProfileContent: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    var showsDone = false
     @State private var showEdit = false
     @State private var confirmReset = false
 
@@ -103,6 +105,11 @@ private struct ProfileContent: View {
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if showsDone {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Done", systemImage: "xmark") { dismiss() }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Edit") { showEdit = true }
             }

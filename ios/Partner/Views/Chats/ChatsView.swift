@@ -39,6 +39,7 @@ struct ChatsView: View {
             .listStyle(.insetGrouped)
             .searchable(text: $query, prompt: "Search chats")
             .navigationTitle("Chats")
+            .profileToolbarButton()
             .navigationDestination(for: UUID.self) { ChatView(conversationID: $0) }
             .animation(.snappy, value: store.conversations.map(\.id))
         }

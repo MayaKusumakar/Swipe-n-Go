@@ -46,6 +46,7 @@ struct ExploreView: View {
                     .frame(width: 180)
                 }
             }
+            .profileToolbarButton()
             .navigationDestination(for: Activity.self) { ActivityDetailView(activity: $0) }
         }
     }

@@ -301,3 +301,27 @@ struct ActivityCover: View {
         }
     }
 }
+
+// MARK: - Profile button (top-right of every tab)
+
+struct ProfileButton: View {
+    @Environment(AppStore.self) private var store
+
+    var body: some View {
+        Button { store.showProfile = true } label: {
+            AvatarView(person: store.me, size: 34)
+        }
+        .buttonStyle(PressableStyle())
+        .accessibilityLabel("Profile")
+    }
+}
+
+extension View {
+    /// Adds the profile avatar to the top-right of a tab's navigation bar.
+    func profileToolbarButton() -> some View {
+        toolbar {
+            ToolbarItem(placement: .topBarTrailing) { ProfileButton() }
+                .sharedBackgroundVisibility(.hidden)
+        }
+    }
+}

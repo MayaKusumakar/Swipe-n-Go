@@ -38,6 +38,8 @@ final class AppStore {
     var banner: InAppBanner?
     var typing: [UUID: UUID] = [:]           // conversationID → personID currently "typing"
     var selectedTab: AppTab = .discover
+    var showCreate = false                    // Host sheet, opened from the center tab
+    var showProfile = false                   // Profile sheet, opened from the top-right avatar
     var openConversationID: UUID?
     var requestedChat: UUID?                  // set to deep-link into a conversation
     private(set) var swipeHistory: [(UUID, SwipeAction)] = []
@@ -76,7 +78,8 @@ final class AppStore {
             requestedChat = c.id
         }
         if let i = args.firstIndex(of: "-tab"), i + 1 < args.count {
-            selectedTab = ["discover": .discover, "explore": .explore, "plans": .plans, "chats": .chats, "profile": .profile][args[i + 1]] ?? .discover
+            if args[i + 1] == "profile" { showProfile = true }
+            selectedTab = ["discover": .discover, "explore": .explore, "plans": .plans, "chats": .chats][args[i + 1]] ?? .discover
         }
     }
     #endif
@@ -575,6 +578,8 @@ final class AppStore {
         radiusMiles = 50
         seed()
         selectedTab = .discover
+        showProfile = false
+        showCreate = false
     }
 
     /// Keeps the profile but restores fresh demo activities and chats.

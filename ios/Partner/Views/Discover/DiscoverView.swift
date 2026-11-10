@@ -13,7 +13,6 @@ struct DiscoverView: View {
     @State private var isFlying = false
     @State private var detail: Activity?
     @State private var celebration: Celebration?
-    @State private var showCreate = false
     @State private var showFilters = false
     @State private var haptic = 0
 
@@ -54,18 +53,12 @@ struct DiscoverView: View {
                     .accessibilityLabel("Discovery settings")
                 }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showCreate = true } label: {
-                        Image(systemName: "plus")
-                    }
-                    .buttonStyle(.glassProminent)
-                    .accessibilityLabel("Host an activity")
-                }
+                ToolbarItem(placement: .topBarTrailing) { ProfileButton() }
+                    .sharedBackgroundVisibility(.hidden)
             }
             .sheet(item: $detail) { activity in
                 NavigationStack { ActivityDetailView(activity: activity, isSheet: true) }
             }
-            .sheet(isPresented: $showCreate) { CreateActivityView() }
             .sheet(isPresented: $showFilters) { DiscoverySettingsSheet().presentationDetents([.medium]) }
             .fullScreenCover(item: $celebration) { c in
                 CelebrationView(celebration: c)
@@ -223,7 +216,7 @@ struct DiscoverView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 30)
             VStack(spacing: 10) {
-                Button("Host an activity") { showCreate = true }
+                Button("Host an activity") { store.showCreate = true }
                     .buttonStyle(PrimaryButtonStyle())
                     .frame(width: 240)
                 Button("Review skipped plans") {

@@ -3,7 +3,6 @@ import SwiftUI
 struct PlansView: View {
     @Environment(AppStore.self) private var store
     @State private var segment: Segment = .upcoming
-    @State private var showCreate = false
     @State private var editingDraft: ActivityDraft?
     @State private var draftError = false
 
@@ -72,14 +71,7 @@ struct PlansView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Plans")
             .navigationDestination(for: Activity.self) { ActivityDetailView(activity: $0) }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showCreate = true } label: { Image(systemName: "plus") }
-                        .buttonStyle(.glassProminent)
-                        .accessibilityLabel("Host an activity")
-                }
-            }
-            .sheet(isPresented: $showCreate) { CreateActivityView() }
+            .profileToolbarButton()
             .sheet(item: $editingDraft) { CreateActivityView(draft: $0) }
             .alert("Could not save changes", isPresented: $draftError) {
                 Button("OK", role: .cancel) {}
@@ -157,7 +149,7 @@ struct PlansView: View {
             Text(message)
         } actions: {
             if segment == .hosting {
-                Button("Host a plan") { showCreate = true }
+                Button("Host a plan") { store.showCreate = true }
                     .buttonStyle(.borderedProminent)
             } else {
                 Button("Go to Discover") { store.selectedTab = .discover }
