@@ -77,6 +77,26 @@ enum EventServer {
         return try decoder.decode(ServerEvent.self, from: data)
     }
 
+    /// For slower endpoints like the AI planner; the timeout is set per request.
+    private static let slowSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 60
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
+    /// POSTs JSON (snake_case keys) and decodes a JSON reply. Cancelling the task cancels the request.
+    static func post<Body: Encodable, Response: Decodable>(_ path: String, body: Body, baseURL: URL,
+                                                           timeout: TimeInterval) async throws -> Response {
+        var request = URLRequest(url: baseURL.appending(path: path), timeoutInterval: timeout)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(body)
+        let (data, response) = try await slowSession.data(for: request)
+        try check(response, data)
+        return try decoder.decode(Response.self, from: data)
+    }
+
     private static func check(_ response: URLResponse, _ data: Data) throws {
         guard let http = response as? HTTPURLResponse else { throw ServerError(message: "No response from server") }
         guard (200..<300).contains(http.statusCode) else {

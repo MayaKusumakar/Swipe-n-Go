@@ -11,10 +11,12 @@ from flask import Flask
 from api.errors import register_error_handlers
 from api.events import events_bp
 from api.health import health_bp
+from api.planner import planner_bp
 from repositories.dev_sample_events import build_sample_events
 from repositories.event_repository import EventRepository
 from repositories.memory_event_repository import InMemoryEventRepository
 from services.event_service import EventService
+from services.planner_service import PlannerService
 
 
 def _default_event_service():
@@ -29,14 +31,17 @@ def _default_event_service():
     return EventService(repository)
 
 
-def create_app(event_service=None):
+def create_app(event_service=None, planner_service=None):
     app = Flask(__name__)
 
-    # Tests pass in their own service.
+    # Tests pass in their own services.
     app.extensions["event_service"] = event_service or _default_event_service()
+    # Reads ANTHROPIC_API_KEY on first use, so the server starts without one.
+    app.extensions["planner_service"] = planner_service or PlannerService()
 
     app.register_blueprint(health_bp)
     app.register_blueprint(events_bp)
+    app.register_blueprint(planner_bp)
     register_error_handlers(app)
     return app
 

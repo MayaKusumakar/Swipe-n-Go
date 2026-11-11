@@ -13,6 +13,12 @@ Current state (iOS app in `ios/`, `Anant` branch):
   - The server address is set in Profile → Server. In the simulator it defaults to `http://localhost:8080`; on a phone you type the Mac's Wi‑Fi IP. Plain `http` on the local network is allowed through `NSAllowsLocalNetworking` in `ios/Partner/Info.plist`.
   - Category mapping: the app's own category names pass straight through. The seed-data categories map as `social`→games, `music`→concert, `outdoors`→hike, `tech`→study, and anything else becomes "Day Out" (explore).
   - Hosts the app only knows by `host_name` become stand-in profiles (age hidden, rating 5.0).
+- **AI planner ("I'm free…", opened from the first chip on Discover):** code is in `ios/Partner/Planner/`, the screen in `Views/Planner/PlannerView.swift`.
+  - `PlannerModel` runs the flow: the progress steps, a cancel when a new search starts, and the last 5 searches (stored in UserDefaults).
+  - `ClaudePlanner` sends the request, the person's interests and up to 60 upcoming events to `POST /api/planner`, with times in the phone's time zone, and maps the picks back to events. Unknown ids are dropped.
+  - If there's no server, or the server answers `503 ai_unavailable` or can't be reached, `OnDevicePlanner` plans on the phone instead (keyword reading, ranking, wider search when nothing fits), and the screen says why.
+  - Results show "Planned by Claude" or "Planned on your iPhone", a reason per pick, and a Join or Request button on each card.
+  - Unit tests: `ios/PartnerTests/PlannerTests.swift` (Swift Testing, scheme `Partner`, ⌘U).
 - **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), joining and RSVPs, join requests, chats, saved events, drafts, recurring events, cover photos and flyers.
 
 Differences from our design:
