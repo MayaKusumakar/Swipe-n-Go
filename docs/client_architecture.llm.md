@@ -16,6 +16,12 @@ Current state (iOS app in `ios/`, `Anant` branch):
   - **Joining shared events, approvals and removals go through the server** (`/api/events/<id>/attendees`, see `API.md`). Creating an event returns a secret host token and joining returns an attendee token; the app keeps them in the event's local record. Hosts' phones pull requests from other phones on each sync, and Accept / Decline / Remove call the server first.
   - **Private locations:** the host can turn on "Keep location private" in Host a plan (this forces approval on). The server leaves the location out of `GET /api/events` and only returns it from `GET /api/events/<id>/location` to the host or an approved attendee. Until then the app shows "Location shared once accepted", no map pin and no distance. A removed attendee loses access on the server.
 - **Plans screen:** two tabs, Going and Hosting. Hosting has a smaller second row: Your plans · Saved · Drafts · Scheduled.
+- **AI planner ("I'm free…", opened from the "When are you free?" bar at the top of Discover, and from the empty Discover and Plans screens):** code is in `ios/Partner/Planner/`, the screen in `Views/Planner/PlannerView.swift`.
+  - `PlannerModel` runs the flow: the progress steps, a cancel when a new search starts, and the last 5 searches (stored in UserDefaults).
+  - `ClaudePlanner` sends the request, the person's interests and up to 60 upcoming events to `POST /api/planner`, with times in the phone's time zone, and maps the picks back to events. Unknown ids are dropped.
+  - If there's no server, or the server answers `503 ai_unavailable` or can't be reached, `OnDevicePlanner` plans on the phone instead (keyword reading, ranking, wider search when nothing fits), and the screen says why.
+  - Results show "Planned by Claude" or "Planned on your iPhone", a reason per pick, and a Join or Request button on each card.
+  - Unit tests: `ios/PartnerTests/PlannerTests.swift` (Swift Testing, scheme `Partner`, ⌘U).
 - **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), the simulated hosts and guests, chats, saved events, drafts, recurring events, cover photos and flyers. For sample (local) events, private locations and removals are only hidden in the app, since there's no server copy.
 
 Differences from our design:

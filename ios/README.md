@@ -27,11 +27,18 @@ Events you post appear on everyone's phone through the Flask server in `../backe
 
 Turn off Profile → Server → **Show sample events** to see only real posts. `EVENT_STORE=memory` forgets posts when the server stops. For permanent storage, deploy to App Engine with Datastore (`backend/app.yaml`).
 
+## AI planner ("I'm free…")
+Tap **I'm free…** at the start of Discover's filter row, then say when you're free, e.g. *"free tomorrow after 5, want something active but I don't know anyone"*. You get up to 5 plans that fit, each with a reason and a Join button.
+
+- **With Claude:** copy `backend/.env.example` to `backend/.env`, paste your key into `ANTHROPIC_API_KEY=`, and restart the server. `flask run` reads `.env`. Never commit `.env`.
+- **Without a key or server,** the app plans on the phone and says so. The demo never breaks.
+- Run the planner tests with **⌘U** in Xcode, and the server tests with `python -m pytest` in `backend/`.
+
 ## What's in it
 | Tab | What you can do |
 |---|---|
 | **Onboarding** | Animated welcome, name/age/pronouns, pick 3+ interests, permissions |
-| **Discover** | Swipe deck: right to join, left to pass, up to save. Undo, a "For You" ranking, category filters, a distance radius, and a celebration screen when you join |
+| **Discover** | Swipe deck: right to join, left to pass, up to save. Undo, a "For You" ranking, category filters, a distance radius, a celebration screen when you join, and the **I'm free…** AI planner |
 | **Explore** | Map with category pins and a list grouped by day. Search and filter chips |
 | **Activity detail** | Stretchy hero, host card, attendees, map and directions, share, save, join or request, leave |
 | **Host a plan** | Live preview, title suggestions, quick time presets, real place search (MapKit), group size and level, an approval toggle |
@@ -43,7 +50,7 @@ Turn off Profile → Server → **Show sample events** to see only real posts. `
 - **Shared events go through the backend.** Joining, chats, requests and saved plans are still only on the device (`AppStore.swift` persists to JSON). The built-in sample people and plans are around Davis, CA.
 - **The other side is simulated.** Hosts approve requests after a few seconds, someone requests to join plans you host, and people reply in chat.
 - Profile → **Refresh demo content** gets you fresh plans. **Sign out & reset** restarts onboarding.
-- Debug launch arguments for testing: `-demo` (skip onboarding), `-joined`, `-detail`, `-chat`, `-host`, `-photo`, `-onboarding [-step N] [-ask]`, `-server <url>`, `-noSamples`, `-hostTest`, `-tab <discover|explore|plans|chats|profile>`.
+- Debug launch arguments for testing: `-demo` (skip onboarding), `-joined`, `-detail`, `-chat`, `-host`, `-photo`, `-onboarding [-step N] [-ask]`, `-server <url>`, `-noSamples`, `-samples`, `-hostTest`, `-plan "<request>"`, `-tab <discover|explore|plans|chats|profile>`.
 
 ## Code map
 ```

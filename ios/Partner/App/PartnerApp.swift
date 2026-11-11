@@ -97,6 +97,7 @@ struct MainTabView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .sheet(isPresented: $store.showCreate) { CreateActivityView() }
+        .sheet(isPresented: $store.showPlanner) { PlannerView(initialQuery: store.debugPlannerQuery) }
         .sheet(isPresented: $store.showProfile) { ProfileView() }
     }
 }

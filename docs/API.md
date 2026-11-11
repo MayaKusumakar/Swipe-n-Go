@@ -123,6 +123,64 @@ Errors:
 
 Code: `backend/api/events.py` (route), `backend/api/event_input.py` (validation), `services/event_service.py`, `repositories/`.
 
+## POST /api/planner
+
+The AI planner behind the app's "I'm free…" screen. The app sends what the student typed, their interests, and the events it can see. Claude (`claude-opus-5-5`, low effort, structured output) reads them and returns picks with a reason for each. The Claude API key stays on the server (`ANTHROPIC_API_KEY`: in `backend/.env` locally, Secret Manager in production). Nothing is stored.
+
+Request body (JSON):
+```json
+{
+  "query": "free tomorrow after 5, want something active, I don't know anyone",
+  "now": "2026-11-11T12:00:00-08:00",
+  "interests": ["run", "food"],
+  "events": [
+    {
+      "id": "6f1c2a3e-1b2c-4d5e-8f90-123456789abc",
+      "title": "Pickup basketball 3v3",
+      "category": "sports",
+      "start_time": "2026-11-12T18:00:00-08:00",
+      "duration_minutes": 90,
+      "location_name": "ARC Courts",
+      "distance_miles": 1.1,
+      "cost": "Free",
+      "level": "intermediate",
+      "attendee_count": 3,
+      "spots_left": 3,
+      "requires_approval": false,
+      "tags": ["Casual"]
+    }
+  ]
+}
+```
+- `query`: 1–300 characters.
+- `now`: the student's current time with their UTC offset. It sets their time zone: Claude reads "tonight" and writes times in that zone.
+- `interests`: up to 15 strings.
+- `events`: up to 80 events with unique ids. `distance_miles`, `cost`, `level`, `attendee_count`, `spots_left`, `requires_approval` and `tags` are optional.
+
+Response `200`:
+```json
+{
+  "understood": "Tomorrow after 5 PM · something active · meet people",
+  "window_start": "2026-11-12T17:00:00-08:00",
+  "window_end": "2026-11-13T00:00:00-08:00",
+  "picks": [
+    { "event_id": "6f1c2a3e-1b2c-4d5e-8f90-123456789abc", "reason": "3 people already going, 6 PM at the ARC, a mile away." }
+  ],
+  "note": "",
+  "model": "claude-opus-5-5"
+}
+```
+- `picks`: at most 5, best fit first. Every `event_id` is one of the ids that were sent. The server drops unknown or repeated ids.
+- `window_start` / `window_end` may be `null`.
+- `note` is `""` unless nothing fit exactly and the search was widened.
+- With no events, Claude isn't called: `picks` is `[]` and `note` says why.
+
+Errors:
+- `400 invalid_planner_request`: the message names the bad field.
+- `503 ai_unavailable`: no API key on the server, key rejected, rate limited, Claude unreachable, or the request was declined. The message is shown to the user, and the app falls back to its on-device planner.
+
+Code: `backend/api/planner.py` (route), `backend/api/planner_input.py` (validation), `backend/services/planner_service.py` (prompt, Claude call, output checks).
+
 ---
 
 ## Attendees and private locations

@@ -23,7 +23,9 @@ struct DiscoverView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 14) {
+            VStack(spacing: 12) {
+                PlannerPromptBar()
+                    .padding(.horizontal, 16)
                 filterBar
 
                 ZStack {
@@ -219,6 +221,7 @@ struct DiscoverView: View {
                 Button("Host an activity") { store.showCreate = true }
                     .buttonStyle(PrimaryButtonStyle())
                     .frame(width: 240)
+                PlannerShortcutButton()
                 Button("Review skipped plans") {
                     withAnimation { filter = nil; store.resetSkipped() }
                 }

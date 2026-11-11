@@ -39,6 +39,7 @@ final class AppStore {
     var typing: [UUID: UUID] = [:]           // conversationID → personID currently "typing"
     var selectedTab: AppTab = .discover
     var showCreate = false                    // Host sheet, opened from the center tab
+    var showPlanner = false                   // "I'm free…" AI planner, opened from Discover or an empty state
     var showProfile = false                   // Profile sheet, opened from the top-right avatar
     var openConversationID: UUID?
     var requestedChat: UUID?                  // set to deep-link into a conversation
@@ -47,6 +48,7 @@ final class AppStore {
     // MARK: Server (see AppStore+Server.swift)
     var serverStatus: ServerStatus = .off
     @ObservationIgnored var rejectedUploads: Set<UUID> = []   // plans the server refused; not retried
+    @ObservationIgnored var debugPlannerQuery: String?         // DEBUG: `-plan "<text>"` opens I'm free… and runs it
     var serverURLString: String = UserDefaults.standard.string(forKey: AppStore.serverURLKey) ?? AppStore.defaultServerURL {
         didSet { UserDefaults.standard.set(serverURLString, forKey: AppStore.serverURLKey) }
     }
@@ -75,8 +77,14 @@ final class AppStore {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-onboarding") { hasOnboarded = false }
         if args.contains("-host") { showCreate = true }
+        if args.contains("-samples") { showSampleEvents = true; serverURLString = "" }
         if let i = args.firstIndex(of: "-server"), i + 1 < args.count { serverURLString = args[i + 1] }
         if args.contains("-noSamples") { showSampleEvents = false }
+        if let i = args.firstIndex(of: "-plan"), i + 1 < args.count {
+            debugPlannerQuery = args[i + 1]
+            showPlanner = true
+        }
+        if args.contains("-planner") { showPlanner = true }
         if args.contains("-hostTest"), hasOnboarded {
             // Posts a plan as if made in the Host sheet, to test the upload path.
             let date = Calendar.current.date(byAdding: .day, value: 2, to: .now)!
@@ -712,6 +720,7 @@ final class AppStore {
         selectedTab = .discover
         showProfile = false
         showCreate = false
+        showPlanner = false
     }
 
     /// Keeps the profile but restores fresh demo activities and chats.

@@ -178,8 +178,11 @@ struct PlansView: View {
                 Button("Host a plan") { store.showCreate = true }
                     .buttonStyle(.borderedProminent)
             } else {
-                Button("Go to Discover") { store.selectedTab = .discover }
-                    .buttonStyle(.borderedProminent)
+                VStack(spacing: 10) {
+                    PlannerShortcutButton()
+                    Button("Go to Discover") { store.selectedTab = .discover }
+                        .buttonStyle(.bordered)
+                }
             }
         }
         .padding(.top, 20)
