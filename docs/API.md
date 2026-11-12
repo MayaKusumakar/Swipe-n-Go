@@ -1,6 +1,6 @@
 # API
 
-Matches the server code in `backend/` on the `Anant` branch (`backend/api/`).
+Matches the server code in `backend/` on the `Milestone1-v1` branch (`backend/api/`).
 
 Base URL:
 - Local, in the iOS simulator: `http://localhost:8080`
@@ -12,7 +12,7 @@ Run locally with built-in sample events and no Google Cloud setup (events posted
 
 ```
 cd backend
-python3 -m venv .venv && source .venv/bin/activate
+python3.13 -m venv .venv && source .venv/bin/activate   # same Python as App Engine (app.yaml)
 pip install -r requirements-dev.txt
 EVENT_STORE=memory flask --app main run --host 0.0.0.0 --port 8080
 python -m pytest        # run the tests
@@ -24,7 +24,57 @@ Every error, including unknown routes (`404 not_found`), wrong methods (`405 met
 { "error": { "code": "string", "message": "string" } }
 ```
 
-No endpoint checks sign-in yet. Host and attendee actions are protected by secret tokens instead (see **Attendees and private locations** below).
+**Every `/api/*` endpoint needs sign-in** (except `GET /api/auth/config`): send `Authorization: Bearer <token>`, where the token is the Google ID token of a verified **@ucdavis.edu** account. See **Sign-in** below. Without a valid token: `401 unauthenticated`. A real Google account that isn't a verified @ucdavis.edu one: `403 ucdavis_only`. `/health` and `/tasks/*` aren't under `/api` and don't use it.
+
+Try it locally with dev sign-in (no Google setup): start the server with `DEV_SIGN_IN=on` and send `Authorization: Bearer dev:you@ucdavis.edu:Your Name`, e.g.
+```
+curl -H "Authorization: Bearer dev:maya@ucdavis.edu:Maya" localhost:8080/api/events
+```
+
+---
+
+## Sign-in
+
+Only verified **@ucdavis.edu** Google accounts can use Swipe-n-Go. Free: Google Sign-In costs nothing, and the server checks tokens itself (no Datastore read, no paid API).
+
+How the server checks a token (`backend/services/auth_service.py`), on every request:
+- The signature, against Google's public keys (fetched from Google at most once an hour and cached; refetched early only if Google starts using a new key).
+- `aud` is one of our OAuth client IDs (`GOOGLE_CLIENT_IDS`, comma-separated), `iss` is Google, and the token hasn't expired.
+- `email_verified` is true, `hd` (the Google Workspace domain) is `ucdavis.edu`, and the email ends in exactly `@ucdavis.edu` (so not `@health.ucdavis.edu`, not personal Gmail).
+
+The account id is Google's `sub`. Events store it as `host_id`, and an attendee's `id` is their account id.
+
+**Dev sign-in** (local testing only): with `DEV_SIGN_IN=on`, the server also accepts `dev:<email>:<name>` tokens. The email must still be @ucdavis.edu, and the account id is `dev-<email>`. It is always off on App Engine (`GAE_ENV` set), whatever the setting.
+
+Setup (one person, free, no billing): Google Cloud Console → APIs & Services → OAuth consent screen, then Credentials → Create OAuth client ID → iOS, with bundle ID `com.anantkatiyar.Partner`. Put the client ID in `ios/Partner/Info.plist` (`GoogleClientID`) and in the server's `GOOGLE_CLIENT_IDS`.
+
+### GET /api/auth/config
+
+No sign-in needed. `{"allowed_domain": "ucdavis.edu", "dev_sign_in": false}`. The app uses it to decide whether to show dev sign-in.
+
+### POST /api/auth/sign-in
+
+Called by the app once after signing in. Saves the account (a `User` entity, one write per sign-in) and returns it: `{"id": "1093…", "email": "maya@ucdavis.edu", "name": "Maya Lee", "picture_url": "https://…"}`. Errors: `401`, `403 ucdavis_only`.
+
+### GET /api/auth/me
+
+The signed-in account, same shape plus `display_name`: the profile name if one was set (below), otherwise `null`. `name` is the profile name when set, otherwise the Google name. A newly signed-in device uses `display_name` instead of sending its own, so every device shows the same name.
+
+### PATCH /api/auth/me
+
+Sets the name people see on your events and join requests (the name from the app's profile, which can differ from the Google account name). Body: `{"name": "AK"}`, 1–60 characters; extra spaces are collapsed. Returns the account (with `display_name`). Signing in again keeps it. Events you posted earlier get the new `host_name` too; join requests you already sent keep the old name. Errors: `400 invalid_name`, `401`.
+
+### Saved events
+
+Saved ("for later") events belong to the account, so every device signed in to it shows the same list. Stored as `saved_event_ids` (a list, newest last, at most 500) on the `User` entity.
+
+- `GET /api/me/saved` → `{"event_ids": ["…", …]}`. May include events that were since deleted; the app ignores ids it doesn't have.
+- `PUT /api/me/saved/<event_id>` saves it (saving twice is fine) → the new list. `404` if there's no such event.
+- `DELETE /api/me/saved/<event_id>` → the new list. Works even if the event is gone.
+
+Code: `backend/api/saved.py`, `repositories/user_repository.py`.
+
+Code: `backend/api/auth.py` (routes and the check before every request), `backend/services/auth_service.py`, `backend/repositories/user_repository.py`.
 
 ---
 
@@ -41,15 +91,19 @@ No endpoint checks sign-in yet. Host and attendee actions are protected by secre
 | `latitude`, `longitude` | number \| null | sent together or not at all. `null` in the list for private locations |
 | `category` | string | lowercase word. The iOS app uses `run, gym, hike, cycling, sports, yoga, food, coffee, drinks, concert, movies, art, study, games, explore`. Seed data also uses `social, clubs, music, outdoors, tech`. |
 | `image_url` | string \| null | always null for now (no uploads yet) |
-| `host_name` | string \| null | display name of whoever posted it |
+| `host_id` | string \| null | account id of the host (see **Sign-in**). `null` for sample data |
+| `host_name` | string \| null | the host's name from their account. Any `host_name` sent when creating is ignored |
 | `address` | string \| null | `null` in the list for private locations |
 | `capacity` | integer \| null | 2–500 |
-| `attendee_count` | integer | always 0 for now (no RSVP endpoint yet) |
+| `attendee_count` | integer | approved attendees, not counting the host. Kept on the event (Datastore has no joins) and updated together with the attendee in one transaction |
 | `cost` | string \| null | free text, e.g. `"Free"`, `"$15 cover"` |
 | `tags` | string[] | up to 10, each up to 30 characters |
 | `level` | string \| null | `anyone`, `beginner`, `intermediate` or `advanced` |
 | `requires_approval` | boolean | default `false`. Always `true` when `location_private` is true |
 | `location_private` | boolean | default `false`. The location is shared only with the host and approved attendees, through `GET /api/events/<id>/location` |
+| `summary` | string \| null | short "what it is / who's going" blurb written by the summaries job (see **Summaries**). `null` until the job has run. Never mentions the location |
+
+`capacity` counts the host, like the app's "spots left": an event is full when `attendee_count` reaches `capacity - 1`.
 
 Events stored before the optional fields existed return them as `null` / `0` / `[]` / `false`.
 
@@ -83,6 +137,44 @@ Errors:
 
 Code: `backend/api/events.py` → `services/event_service.py` → `repositories/`.
 
+## GET /api/events/nearby
+
+Upcoming events within a radius, soonest first. For the map and "near me".
+
+Query params:
+- `lat`, `lng`: required, the searcher's position
+- `radius_miles`: optional, 0.1–25, default 5
+- `limit`: optional integer 1–50, default 20
+
+Response `200`: `{"events": [ /* Event objects, each plus "distance_miles" */ ], "count": 2}`.
+
+Events with a private location are **never** returned here, so their position can't be narrowed down by searching from different spots. They still appear in `GET /api/events` with the location hidden. Events without coordinates are left out too.
+
+How it works (Datastore has no geo queries): each event stores a `geohash` of its coordinates. The server picks the geohash cell size that is at least as big as the radius, runs one prefix range query for the cell around the searcher and each of its 8 neighbours (at most 9 queries), then keeps events within the exact distance. No custom Datastore index is needed.
+
+Errors:
+- `400 invalid_parameter`: missing or out-of-range `lat`, `lng`, `radius_miles` or `limit`
+- `503 datastore_unavailable`
+
+Code: `backend/api/events.py` → `services/event_service.py` (`nearby_events`) → `services/geo.py`.
+
+## GET /api/events/recommended
+
+Events that match the student's interests, best match first. Free: no AI or embedding API is called.
+
+Query params:
+- `interests`: required, 1–15 comma-separated words or phrases, each up to 30 characters, e.g. `hiking,coffee`
+- `lat`, `lng`, `radius_miles`: optional. With them, candidates are the nearby events (same rules as `/nearby`, so no private locations); without them, the next 50 upcoming events.
+- `limit`: optional integer 1–50, default 20
+
+Response `200`: `{"events": [ /* Event objects, each plus "match_score" (0–1) and "distance_miles" (null without a location) */ ], "count": 1}`. Events that don't match at all are left out.
+
+Matching: each text becomes a small vector of related-word groups (e.g. hiking, backpacking, trail, walk and nature are one group) plus its own words, and events are ranked by cosine similarity to the interests. So "hiking, backpacking" matches "Arboretum Sunset Walk". Replace `vectorize` in `services/matching.py` to use real embeddings later.
+
+Errors: `400 invalid_parameter`, `503 datastore_unavailable`.
+
+Code: `backend/api/events.py` → `services/event_service.py` (`recommended_events`) → `services/matching.py`.
+
 ## POST /api/events
 
 Creates an event. Used by the iOS app's "Host a plan" screen.
@@ -99,7 +191,6 @@ Request body (JSON). Required: `title`, `start_time`, `location_name`, `category
   "latitude": 38.5372,
   "longitude": -121.7531,
   "category": "run",
-  "host_name": "Anant Katiyar",
   "address": "Garrod Dr, Davis, CA",
   "capacity": 6,
   "cost": "Free",
@@ -114,7 +205,7 @@ Request body (JSON). Required: `title`, `start_time`, `location_name`, `category
 
 - `location_private` is optional (`true`/`false`). When `true`, the server also sets `requires_approval` to `true`.
 
-Response `201`: the created Event object with its full location, plus `host_token`: a secret string the host's app must keep. It is returned only here (the server stores a hash of it) and is needed to approve, list or remove attendees.
+Response `201`: the created Event object with its full location. The signed-in user is the host (`host_id`), and `host_name` comes from their account.
 
 Errors:
 - `400 invalid_event`: the message names the bad field, e.g. `"capacity must be an integer from 2 to 500"`
@@ -123,43 +214,176 @@ Errors:
 
 Code: `backend/api/events.py` (route), `backend/api/event_input.py` (validation), `services/event_service.py`, `repositories/`.
 
+## POST /api/planner
+
+The AI planner behind the app's "I'm free…" screen. The app sends what the student typed, their interests, and the events it can see. Claude (`claude-opus-5-5`, low effort, structured output) reads them and returns picks with a reason for each. The Claude API key stays on the server (`ANTHROPIC_API_KEY`: in `backend/.env` locally, Secret Manager in production). Nothing is stored.
+
+Request body (JSON):
+```json
+{
+  "query": "free tomorrow after 5, want something active, I don't know anyone",
+  "now": "2026-11-11T12:00:00-08:00",
+  "interests": ["run", "food"],
+  "events": [
+    {
+      "id": "6f1c2a3e-1b2c-4d5e-8f90-123456789abc",
+      "title": "Pickup basketball 3v3",
+      "category": "sports",
+      "start_time": "2026-11-12T18:00:00-08:00",
+      "duration_minutes": 90,
+      "location_name": "ARC Courts",
+      "distance_miles": 1.1,
+      "cost": "Free",
+      "level": "intermediate",
+      "attendee_count": 3,
+      "spots_left": 3,
+      "requires_approval": false,
+      "tags": ["Casual"]
+    }
+  ]
+}
+```
+- `query`: 1–300 characters.
+- `now`: the student's current time with their UTC offset. It sets their time zone: Claude reads "tonight" and writes times in that zone.
+- `interests`: up to 15 strings.
+- `events`: up to 80 events with unique ids. `distance_miles`, `cost`, `level`, `attendee_count`, `spots_left`, `requires_approval` and `tags` are optional.
+
+Response `200`:
+```json
+{
+  "understood": "Tomorrow after 5 PM · something active · meet people",
+  "window_start": "2026-11-12T17:00:00-08:00",
+  "window_end": "2026-11-13T00:00:00-08:00",
+  "picks": [
+    { "event_id": "6f1c2a3e-1b2c-4d5e-8f90-123456789abc", "reason": "3 people already going, 6 PM at the ARC, a mile away." }
+  ],
+  "note": "",
+  "model": "claude-opus-5-5"
+}
+```
+- `picks`: at most 5, best fit first. Every `event_id` is one of the ids that were sent. The server drops unknown or repeated ids.
+- `window_start` / `window_end` may be `null`.
+- `note` is `""` unless nothing fit exactly and the search was widened.
+- With no events, Claude isn't called: `picks` is `[]` and `note` says why.
+
+Errors:
+- `400 invalid_planner_request`: the message names the bad field.
+- `503 ai_unavailable`: no API key on the server, key rejected, rate limited, Claude unreachable, or the request was declined. The message is shown to the user, and the app falls back to its on-device planner.
+
+Code: `backend/api/planner.py` (route), `backend/api/planner_input.py` (validation), `backend/services/planner_service.py` (prompt and output checks), `backend/services/claude_call.py` (the Claude call shared with the flyer reader).
+
+## POST /api/flyers/read
+
+Reads a photo of an event flyer with Claude (`claude-opus-5-5`, image input, structured output) and returns the event's details for the host to check in the Host screen. The image is not stored. Needs sign-in like every `/api` route.
+
+Request body (JSON):
+```json
+{
+  "image": "<base64 JPEG or PNG>",
+  "media_type": "image/jpeg",
+  "now": "2026-11-12T10:00:00-08:00",
+  "ocr_text": "FALL CLIMBING SOCIAL\nTHURS 11/14 7-9PM\nARC CLIMBING WALL\nFREE"
+}
+```
+- `image`: up to 5 MB after decoding. The bytes must really be a JPEG or PNG, matching `media_type`. The app sends a JPEG at most 1568 px on its long side, re-encoded on the phone so it carries no location metadata.
+- `now`: the host's current time with UTC offset. Flyers often skip the year, so dates are read as the next matching date in that time zone.
+- `ocr_text`: optional, up to 4000 characters: the text Apple's on-device recognizer found. It only helps with small print; Claude reads the image itself.
+- Requests over 8 MB are refused (`413`).
+
+Response `200`:
+```json
+{
+  "is_event_flyer": true,
+  "title": "Fall Climbing Social",
+  "start_time": "2026-11-14T19:00:00-08:00",
+  "end_time": "2026-11-14T21:00:00-08:00",
+  "location_name": "ARC Climbing Wall",
+  "address": "ARC, UC Davis",
+  "description": "Beginner-friendly climbing night with free gear rental.",
+  "cost": "Free",
+  "category": "sports",
+  "missing": [],
+  "model": "claude-opus-5-5"
+}
+```
+- `missing` lists what wasn't on the flyer or wasn't clear: any of `title`, `date`, `time`, `location`, `cost`. The app marks those for the host to fill in. When there's no start time, `date` and `time` are always listed.
+- `category` is one of the app's categories (`run, gym, hike, cycling, sports, yoga, food, coffee, drinks, concert, movies, art, study, games, explore`), or `""`.
+- `start_time` / `end_time` may be `null`. An end time that isn't after the start is dropped.
+- If the image isn't an event flyer, `is_event_flyer` is `false` and the other fields are empty.
+
+Errors:
+- `400 invalid_flyer_request`: bad base64, wrong or mismatched image type, over 5 MB, bad `now`.
+- `401`: not signed in.
+- `503 ai_unavailable`: same causes as the planner. The app falls back to reading the flyer on the phone and says why.
+
+Code: `backend/api/flyers.py` (route and validation), `backend/services/flyer_service.py` (prompt and output checks), `backend/services/claude_call.py`.
+
+---
+
+## Cover photos
+
+### PUT /api/events/\<id\>/cover
+
+Host only. Body: `{"image": "<base64 JPEG>"}`, at most 900 KB (the app sends a wide 1600 × 900 or a poster 1200 × 1600 cover, re-encoded, so photo location metadata is gone). Returns `{"image_url": "/api/events/<id>/cover?v=<12 hex>"}`; the event's `image_url` becomes that, and `v` changes whenever the picture does. Errors: `400 invalid_cover` (not base64, not a JPEG, too big), `403` (not the host), `404`.
+
+### GET /api/events/\<id\>/cover
+
+The JPEG (`image/jpeg`, `Cache-Control: private, max-age=86400`). Needs sign-in like every other route. `404` if the event has no cover.
+
+Stored as a `Cover` entity keyed by the event id (`data` not indexed), written in the same transaction as the event's `image_url`. Code: `backend/api/events.py`, `services/event_service.py`.
+
+---
+
+## Summaries (internal)
+
+`GET` or `POST /tasks/summarize-stale` rewrites up to 20 stale event summaries and answers `{"summarized": 3}`. Not for the app.
+
+- An event is marked stale when it's created and whenever its `attendee_count` changes. The summary is never written inline.
+- On App Engine, `cron.yaml` calls it every 30 minutes. Only App Engine cron (`X-Appengine-Cron`) or Cloud Tasks (`X-AppEngine-QueueName`) may call it there; App Engine strips those headers from outside requests. Anyone else gets `403 forbidden`.
+- Locally (no `GAE_ENV`), it can be called from the same machine only: `curl localhost:8080/tasks/summarize-stale`.
+- **Free by default:** summaries are built from the event's own fields. Claude writes them only when `AI_SUMMARIES=on` **and** `ANTHROPIC_API_KEY` are both set, which costs money per summary. Any Claude failure falls back to the free version.
+
+Code: `backend/api/tasks.py`, `backend/services/summary_service.py`, `backend/cron.yaml`.
+
 ---
 
 ## Attendees and private locations
 
-Callers prove who they are with tokens, sent as headers:
-- `X-Host-Token`: from `POST /api/events`. Lets you manage that one event.
-- `X-Attendee-Token`: from `POST /api/events/<id>/attendees`. Identifies you as that one attendee.
-
-A missing or wrong token gets `403 forbidden`. An unknown event or attendee gets `404 not_found`. These checks run on the server; the app hiding a button is not the protection.
+Who you are comes from your sign-in. The host is the account that created the event; an attendee entry belongs to the account it's for. Not allowed: `403 forbidden`. An unknown event or attendee: `404 not_found`. These checks run on the server; the app hiding a button is not the protection.
 
 The Attendee object:
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | string | UUID |
-| `name` | string | 1–120 characters |
+| `id` | string | the attendee's account id (one entry per person per event) |
+| `name` | string | from their account |
 | `status` | string | `pending` or `approved` |
 
 ### POST /api/events/\<id\>/attendees
 
-Ask to join. No token needed. Body: `{"name": "Maya"}`.
+Ask to join, as the signed-in user. No body.
 
-Response `201`: the Attendee plus `attendee_token` (returned only here). Status is `approved` straight away unless the event has `requires_approval`, in which case it is `pending`.
+Response `201`: the Attendee. Status is `approved` straight away unless the event has `requires_approval`, in which case it is `pending`. Asking again returns your existing entry with `200`.
 
-Errors: `400 invalid_attendee` (missing name), `404 not_found`.
+Errors: `403 forbidden` (you're the host), `404 not_found`, `409 event_full` (only for events without approval; a request to an approval event is always accepted as `pending`).
+
+### GET /api/events/\<id\>/attendees/me
+
+Your own entry for this event, e.g. to see when the host approved you. `404 not_found` if you haven't asked to join.
 
 ### GET /api/events/\<id\>/attendees
 
-Host only (`X-Host-Token`). Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`.
+Host only. Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`.
 
 ### POST /api/events/\<id\>/attendees/\<attendee_id\>/approve
 
-Host only. Accepts a pending request. Response `200`: the updated Attendee.
+Host only. Accepts a pending request. Response `200`: the updated Attendee. Approving someone already approved changes nothing.
+
+Errors: `409 event_full` (the request stays `pending`).
 
 ### DELETE /api/events/\<id\>/attendees/\<attendee_id\>
 
-Removes an attendee, or declines a request. Allowed for the host (`X-Host-Token`) or for that attendee themselves (`X-Attendee-Token`, i.e. leaving). Response `204`, no body. A removed attendee can no longer get a private location.
+Removes an attendee, or declines a request. Allowed for the host, or for that attendee themselves (leaving). Response `204`, no body. A removed attendee can no longer get a private location. Removing an approved attendee lowers `attendee_count`; declining a pending request doesn't change it.
 
 ### GET /api/events/\<id\>/location
 
@@ -169,4 +393,4 @@ Code: `backend/api/events.py` (routes), `services/event_service.py` (all permiss
 
 ---
 
-Not built yet: sign-in (@ucdavis.edu Google accounts), editing and deleting events, real accounts behind the host/attendee tokens, chats and saved events on the server, attendee counts, image uploads, filters (category, distance, date), pagination, rate limiting.
+Not built yet: deleting your account (the App Store requires it), editing and deleting events, users' live locations, chats and saved events on the server, image uploads, category and date filters, pagination, rate limiting, Cloud Tasks (cron only for now).

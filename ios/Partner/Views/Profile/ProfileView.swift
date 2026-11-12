@@ -81,6 +81,21 @@ private struct ProfileContent: View {
                 }
             }
 
+            if let account = store.auth.account {
+                Section {
+                    LabeledContent {
+                        Text(account.email)
+                    } label: {
+                        Label(account.mode == .dev ? "Dev sign-in" : "UC Davis Google", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    Button(role: .destructive) { store.auth.signOut() } label: {
+                        Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                } header: {
+                    Text("Account")
+                }
+            }
+
             Section {
                 NavigationLink { ServerSettingsView() } label: {
                     LabeledContent {

@@ -23,7 +23,9 @@ struct DiscoverView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 14) {
+            VStack(spacing: 12) {
+                PlannerPromptBar()
+                    .padding(.horizontal, 16)
                 filterBar
 
                 ZStack {
@@ -219,6 +221,7 @@ struct DiscoverView: View {
                 Button("Host an activity") { store.showCreate = true }
                     .buttonStyle(PrimaryButtonStyle())
                     .frame(width: 240)
+                PlannerShortcutButton()
                 Button("Review skipped plans") {
                     withAnimation { filter = nil; store.resetSkipped() }
                 }
@@ -441,12 +444,18 @@ struct CelebrationView: View {
                         }
                         .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(Color.white), foreground: activity.category.color))
                     }
-                    Button(joined ? "Keep swiping" : "Got it") { dismiss() }
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .glassEffect(.regular.interactive(), in: Capsule())
+                    // The size and shape belong to the label, so the whole capsule takes the tap
+                    // (as with "Say hi" above), not just the words.
+                    Button { dismiss() } label: {
+                        Text(joined ? "Keep swiping" : "Got it")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .contentShape(Capsule())
+                            .glassEffect(.regular.interactive(), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 20)

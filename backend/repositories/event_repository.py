@@ -2,7 +2,10 @@
 from google.cloud import datastore
 from google.cloud.datastore.query import PropertyFilter
 
-from models import ATTENDEE_KIND, EVENT_KIND, Attendee, Event
+from models import ATTENDEE_KIND, COVER_KIND, EVENT_KIND, UNINDEXED_EVENT_PROPERTIES, Attendee, Event
+
+# Sorts after every geohash character, so [prefix, prefix + "~") is "starts with prefix".
+_PREFIX_END = "~"
 
 
 class EventRepository:
@@ -31,7 +34,7 @@ class EventRepository:
         with self.client.transaction():
             if self.client.get(key) is not None:
                 return False
-            entity = datastore.Entity(key=key, exclude_from_indexes=("description",))
+            entity = datastore.Entity(key=key, exclude_from_indexes=UNINDEXED_EVENT_PROPERTIES)
             entity.update(event.to_entity_properties())
             self.client.put(entity)
         return True
@@ -39,6 +42,64 @@ class EventRepository:
     def get(self, event_id):
         entity = self.client.get(self.client.key(EVENT_KIND, event_id))
         return Event.from_entity(entity) if entity is not None else None
+
+    def list_in_geohash_cells(self, prefixes):
+        """Events whose geohash starts with any of `prefixes` (past ones too)."""
+        events = {}
+        for prefix in prefixes:
+            query = self.client.query(kind=EVENT_KIND)
+            query.add_filter(filter=PropertyFilter("geohash", ">=", prefix))
+            query.add_filter(filter=PropertyFilter("geohash", "<", prefix + _PREFIX_END))
+            for entity in query.fetch():
+                event = Event.from_entity(entity)
+                events[event.id] = event
+        return list(events.values())
+
+    def list_stale_summaries(self, limit):
+        query = self.client.query(kind=EVENT_KIND)
+        query.add_filter(filter=PropertyFilter("summary_stale", "=", True))
+        return [Event.from_entity(entity) for entity in query.fetch(limit=limit)]
+
+    def save_summary(self, event_id, summary, updated_at, attendee_count):
+        """Stores a summary. It stays stale if attendance changed while it was written."""
+        key = self.client.key(EVENT_KIND, event_id)
+        with self.client.transaction():
+            entity = self.client.get(key)
+            if entity is None:
+                return
+            entity["summary"] = summary
+            entity["summary_updated_at"] = updated_at
+            entity["summary_stale"] = entity.get("attendee_count", 0) != attendee_count
+            self.client.put(entity)
+
+    def rename_host(self, host_id, host_name):
+        """Puts the host's new name on every event they posted. Returns how many changed."""
+        query = self.client.query(kind=EVENT_KIND)
+        query.add_filter(filter=PropertyFilter("host_id", "=", host_id))
+        changed = [entity for entity in query.fetch() if entity.get("host_name") != host_name]
+        for entity in changed:
+            entity["host_name"] = host_name
+        # put_multi takes at most 500 entities per call.
+        for start in range(0, len(changed), 500):
+            self.client.put_multi(changed[start:start + 500])
+        return len(changed)
+
+    def save_cover(self, event_id, data, image_url):
+        """Stores the cover JPEG (under Datastore's 1 MB entity limit) and points the event at it."""
+        event_key = self.client.key(EVENT_KIND, event_id)
+        with self.client.transaction():
+            event = self.client.get(event_key)
+            if event is None:
+                return False
+            cover = datastore.Entity(key=self.client.key(COVER_KIND, event_id), exclude_from_indexes=("data",))
+            cover["data"] = data
+            event["image_url"] = image_url
+            self.client.put_multi([cover, event])
+        return True
+
+    def get_cover(self, event_id):
+        entity = self.client.get(self.client.key(COVER_KIND, event_id))
+        return entity["data"] if entity is not None else None
 
     # Attendees are stored as child entities of their event.
 
@@ -53,6 +114,34 @@ class EventRepository:
     def get_attendee(self, event_id, attendee_id):
         entity = self.client.get(self._attendee_key(event_id, attendee_id))
         return Attendee.from_entity(entity) if entity is not None else None
+
+    def update_attendance(self, event_id, attendee, delta, delete=False):
+        """In one transaction: save (or delete) `attendee` and add `delta` to the
+        event's attendee_count, so the two never disagree.
+
+        Returns None if the event is gone, False (changing nothing) if delta > 0
+        and the event is full, otherwise True.
+        """
+        event_key = self.client.key(EVENT_KIND, event_id)
+        with self.client.transaction():
+            entity = self.client.get(event_key)
+            if entity is None:
+                return None
+            event = Event.from_entity(entity)
+            if delta > 0 and event.is_full:
+                return False
+            entity["attendee_count"] = max(0, event.attendee_count + delta)
+            if delta:
+                entity["summary_stale"] = True
+            self.client.put(entity)
+            key = self._attendee_key(event_id, attendee.id)
+            if delete:
+                self.client.delete(key)
+            else:
+                attendee_entity = datastore.Entity(key=key)
+                attendee_entity.update(attendee.to_entity_properties())
+                self.client.put(attendee_entity)
+        return True
 
     def save_attendee(self, attendee):
         entity = datastore.Entity(key=self._attendee_key(attendee.event_id, attendee.id))

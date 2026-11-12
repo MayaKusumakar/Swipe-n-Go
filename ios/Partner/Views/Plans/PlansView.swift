@@ -7,18 +7,21 @@ struct PlansView: View {
     @State private var editingDraft: ActivityDraft?
     @State private var draftError = false
 
-    enum Tab: String, CaseIterable { case going = "Going", hosting = "Hosting" }
-    /// Shown inside the Hosting tab only.
-    enum HostingSection: String, CaseIterable { case plans = "Your plans", saved = "Saved", drafts = "Drafts", scheduled = "Scheduled" }
+    enum Tab: String, CaseIterable { case hosting = "Host", going = "Going", saved = "Saved" }
+    /// Shown inside the Host tab only.
+    enum HostingSection: String, CaseIterable { case plans = "Your plans", drafts = "Drafts", scheduled = "Scheduled" }
 
     /// Which list is on screen, combining the tab and, under Hosting, its section.
     private enum Segment { case upcoming, hosting, saved, drafts, scheduled }
 
     private var segment: Segment {
-        guard tab == .hosting else { return .upcoming }
+        switch tab {
+        case .going: return .upcoming
+        case .saved: return .saved
+        case .hosting: break
+        }
         switch hostingSection {
         case .plans: return .hosting
-        case .saved: return .saved
         case .drafts: return .drafts
         case .scheduled: return .scheduled
         }
@@ -74,6 +77,13 @@ struct PlansView: View {
                         }
                         .pickerStyle(.segmented)
                         .controlSize(.small)
+                    }
+
+                    if segment == .saved, store.pendingSaves.isEmpty == false, !store.serverStatus.isOnline {
+                        Label("Saved on this iPhone. Your other devices get it when the server is reachable.",
+                              systemImage: "icloud.slash")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
 
                     if segment == .drafts || segment == .scheduled {
@@ -167,7 +177,7 @@ struct PlansView: View {
         case .upcoming: ("calendar.badge.plus", "No plans yet", "Swipe right on something in Discover and it'll show up here.")
         case .hosting: ("crown", "Host your first plan", "Got an idea? Post it and let people come to you.")
         case .drafts, .scheduled: ("doc", "No posts", "Your unfinished posts appear here.")
-        case .saved: ("bookmark", "Nothing saved", "Swipe up on a card or tap the bookmark to save it for later.")
+        case .saved: ("bookmark", "Nothing saved yet", "Swipe up on a card or tap the bookmark on an event to save it for later.")
         }
         return ContentUnavailableView {
             Label(title, systemImage: symbol)
@@ -178,8 +188,11 @@ struct PlansView: View {
                 Button("Host a plan") { store.showCreate = true }
                     .buttonStyle(.borderedProminent)
             } else {
-                Button("Go to Discover") { store.selectedTab = .discover }
-                    .buttonStyle(.borderedProminent)
+                VStack(spacing: 10) {
+                    PlannerShortcutButton()
+                    Button("Go to Discover") { store.selectedTab = .discover }
+                        .buttonStyle(.bordered)
+                }
             }
         }
         .padding(.top, 20)

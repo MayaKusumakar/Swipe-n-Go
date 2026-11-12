@@ -4,6 +4,26 @@ import PhotosUI
 import ImageIO
 import AVFoundation
 
+extension Place {
+    /// Popular spots that match, then Apple Maps results near Davis.
+    static func search(_ query: String) async -> [Place] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        let local = presets.filter { $0.name.localizedCaseInsensitiveContains(q) }
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = q
+        request.region = MKCoordinateRegion(center: Geo.home, span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6))
+        guard let response = try? await MKLocalSearch(request: request).start() else { return local }
+        let found = response.mapItems.prefix(12).map { item in
+            Place(name: item.name ?? q,
+                  address: item.address?.shortAddress ?? item.address?.fullAddress ?? "",
+                  latitude: item.location.coordinate.latitude,
+                  longitude: item.location.coordinate.longitude)
+        }
+        return local + found
+    }
+}
+
 struct Place: Codable, Identifiable, Hashable {
     var id: String { "\(name)|\(latitude)|\(longitude)" }
     var name: String
@@ -61,6 +81,9 @@ struct CreateActivityView: View {
     @State private var scanning = false
     @State private var showCamera = false
     @State private var scannedLocation = ""
+    @State private var findingPlace = false
+    /// The place was matched from the flyer's text, so the host should glance at it.
+    @State private var placeFromFlyer = false
     @State private var pendingFlyerCover: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var coverPhotoData: Data?
@@ -71,6 +94,16 @@ struct CreateActivityView: View {
     @FocusState private var focus: Field?
 
     enum Field { case title, previewTitle, details, cost }
+
+    /// The Duration picker's options, in minutes.
+    static let durations = [30, 45, 60, 90, 120, 180, 240, 480]
+
+    /// Something worth keeping: swiping the sheet down asks before throwing it away.
+    private var hasChanges: Bool {
+        draft != nil || !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || place != nil || coverPhotoData != nil || !scannedLocation.isEmpty
+    }
 
     private var canPublish: Bool {
         !scanning && !isLoadingPhoto && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && place != nil && date > .now
@@ -135,6 +168,7 @@ struct CreateActivityView: View {
                 details = draft.details
                 coverPhotoData = draft.coverPhotoData
                 scannedLocation = draft.suggestedLocation ?? ""
+                if place == nil, !scannedLocation.isEmpty { Task { await findScannedPlace() } }
                 repeats = draft.recurrence != nil
                 frequency = draft.recurrence?.frequency ?? .weekly
                 occurrenceCount = draft.recurrence?.count ?? 6
@@ -142,6 +176,8 @@ struct CreateActivityView: View {
                 schedulePost = draft.scheduledAt != nil
                 publishAt = draft.scheduledAt ?? .now.addingTimeInterval(3600)
             }
+            .interactiveDismissDisabled(hasChanges)
+            .onDismissAttempt { showCloseOptions = true }
             .confirmationDialog("Keep this post?", isPresented: $showCloseOptions, titleVisibility: .visible) {
                 Button("Save draft and close") { saveDraftAndClose() }
                     .disabled(isLoadingPhoto || scanning)
@@ -173,14 +209,29 @@ struct CreateActivityView: View {
                     pendingFlyerCover = nil
                 }
             }) { result in
-                FlyerReviewView(result: result) { name, starts, venue, description, price, image in
-                    title = name
-                    date = starts
-                    scannedLocation = venue
-                    place = nil
-                    details = description
-                    cost = price
-                    pendingFlyerCover = image
+                FlyerReviewView(result: result) { fields in
+                    title = fields.title
+                    date = fields.date
+                    // The location is entered once, in the review. Use the place picked there,
+                    // or look the text up on the map; never ask for it again.
+                    if let picked = fields.place {
+                        place = picked
+                        scannedLocation = ""
+                        placeFromFlyer = false
+                    } else {
+                        scannedLocation = fields.location
+                        place = nil
+                        Task { await findScannedPlace() }
+                    }
+                    details = fields.details
+                    cost = fields.cost
+                    if let scanned = fields.category { category = scanned }
+                    if let end = fields.endDate {
+                        // Closest option in the Duration picker.
+                        let minutes = Int(end.timeIntervalSince(fields.date) / 60)
+                        duration = Self.durations.min { abs($0 - minutes) < abs($1 - minutes) } ?? duration
+                    }
+                    pendingFlyerCover = fields.cover
                 }
             }
             .task(id: flyerPhoto) {
@@ -205,7 +256,7 @@ struct CreateActivityView: View {
                 scanning = true
                 defer { scanning = false }
                 do {
-                    let result = try await FlyerScanner.scan(flyerData)
+                    let result = try await FlyerScanner.scan(flyerData, serverURL: store.serverURL)
                     try Task.checkCancellation()
                     scanResult = result
                 } catch is CancellationError {
@@ -283,8 +334,9 @@ struct CreateActivityView: View {
             .foregroundStyle(.white)
             .padding(18)
         }
-        .frame(height: 180)
+        .frame(height: CoverShape.isPoster(coverPhotoData) ? 460 : 180)
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .animation(.smooth, value: coverPhotoData)
         .animation(.smooth, value: category)
         .padding(.top, 8)
     }
@@ -315,7 +367,7 @@ struct CreateActivityView: View {
                 }
             }
             if scanning {
-                ProgressView("Reading flyer…")
+                ProgressView(store.serverURL == nil ? "Reading flyer…" : "Reading flyer with Claude…")
             }
         }
         .disabled(scanning || isLoadingPhoto)
@@ -484,7 +536,7 @@ struct CreateActivityView: View {
                     .padding(14)
                 Divider().padding(.leading, 14)
                 Picker("Duration", selection: $duration) {
-                    ForEach([30, 45, 60, 90, 120, 180, 240, 480], id: \.self) { m in
+                    ForEach(Self.durations, id: \.self) { m in
                         Text(m < 60 ? "\(m) min" : m % 60 == 0 ? "\(m / 60) hr" : "\(m / 60)h \(m % 60)m").tag(m)
                     }
                 }
@@ -494,15 +546,37 @@ struct CreateActivityView: View {
         }
     }
 
+    /// Matches the flyer's location to a real place. If nothing matches, the place picker
+    /// opens already searching for it.
+    private func findScannedPlace() async {
+        let query = scannedLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, place == nil else { return }
+        findingPlace = true
+        defer { findingPlace = false }
+        if let match = await Place.search(query).first, place == nil {
+            withAnimation(.snappy) { place = match }
+            placeFromFlyer = true
+        }
+    }
+
     private var whereSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             label("Where?")
-            if !scannedLocation.isEmpty && place == nil {
-                Text("Scanned location · \(scannedLocation). Choose a place to confirm.")
+            if findingPlace {
+                Label("Finding “\(scannedLocation)” on the map…", systemImage: "magnifyingglass")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else if placeFromFlyer, let place {
+                Label("Matched “\(scannedLocation)” to \(place.name). Tap it to choose a different spot.",
+                      systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else if !scannedLocation.isEmpty && place == nil {
+                Text("Couldn't find “\(scannedLocation)” on the map. Tap below to pick it; we've already searched for it.")
                     .font(.subheadline)
                     .foregroundStyle(.orange)
             }
-            Button { showPlacePicker = true } label: {
+            Button { placeFromFlyer = false; showPlacePicker = true } label: {
                 HStack(spacing: 14) {
                     Image(systemName: place == nil ? "mappin.and.ellipse" : "mappin.circle.fill")
                         .font(.title2)
@@ -736,27 +810,32 @@ struct PlacePickerView: View {
         defer { isSearching = false }
         try? await Task.sleep(for: .milliseconds(300))
         guard !Task.isCancelled else { return }
-
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = q
-        request.region = MKCoordinateRegion(center: Geo.home, span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6))
-        let local = Place.presets.filter { $0.name.localizedCaseInsensitiveContains(q) }
-        do {
-            let response = try await MKLocalSearch(request: request).start()
-            guard !Task.isCancelled else { return }
-            let found = response.mapItems.prefix(12).map { item in
-                Place(name: item.name ?? q,
-                      address: item.address?.shortAddress ?? item.address?.fullAddress ?? "",
-                      latitude: item.location.coordinate.latitude,
-                      longitude: item.location.coordinate.longitude)
-            }
-            results = local + found
-        } catch {
-            results = local
-        }
+        let found = await Place.search(q)
+        guard !Task.isCancelled else { return }
+        results = found
     }
 }
 
+
+/// Rule-of-thirds lines and a white border over the crop area.
+private struct CropGrid: View {
+    var body: some View {
+        GeometryReader { geometry in
+            let w = geometry.size.width, h = geometry.size.height
+            Path { path in
+                for i in 1...2 {
+                    path.move(to: CGPoint(x: w * CGFloat(i) / 3, y: 0))
+                    path.addLine(to: CGPoint(x: w * CGFloat(i) / 3, y: h))
+                    path.move(to: CGPoint(x: 0, y: h * CGFloat(i) / 3))
+                    path.addLine(to: CGPoint(x: w, y: h * CGFloat(i) / 3))
+                }
+            }
+            .stroke(.white.opacity(0.35), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white, lineWidth: 2)
+        }
+    }
+}
 
 private struct CropSource: Identifiable {
     let id = UUID()
@@ -767,59 +846,118 @@ private struct CoverPhotoCropView: View {
     @Environment(\.dismiss) private var dismiss
     let image: UIImage
     let onCrop: (Data) -> Void
+    @State private var shape: CoverShape
     @State private var zoom: CGFloat = 1
+    @State private var zoomStart: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var dragStart: CGSize = .zero
+    @State private var cropSize = CGSize(width: 16, height: 9)
     @State private var cropError = false
+
+    init(image: UIImage, onCrop: @escaping (Data) -> Void) {
+        self.image = image
+        self.onCrop = onCrop
+        // Flyers and other tall photos start as a poster, so only a sliver of the sides is trimmed.
+        _shape = State(initialValue: image.size.height > image.size.width ? .poster : .wide)
+    }
 
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                let width = max(1, geometry.size.width - 40)
-                let size = CGSize(width: width, height: width * 9 / 16)
-                VStack(spacing: 24) {
-                    Spacer()
+                let size = frameSize(in: geometry.size)
+                ZStack {
+                    Color.black
                     Image(uiImage: image)
                         .resizable()
                         .frame(width: image.size.width * scale(for: size),
                                height: image.size.height * scale(for: size))
                         .offset(offset)
+                    // The rest of the photo stays visible, dimmed, like cropping in Photos.
+                    Rectangle()
+                        .fill(.black.opacity(0.6))
+                        .mask {
+                            Rectangle().overlay {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .frame(width: size.width, height: size.height)
+                                    .blendMode(.destinationOut)
+                            }
+                            .compositingGroup()
+                        }
+                        .allowsHitTesting(false)
+                    CropGrid()
                         .frame(width: size.width, height: size.height)
-                        .clipped()
-                        .overlay(Rectangle().stroke(.white, lineWidth: 2))
-                        .contentShape(Rectangle())
-                        .gesture(DragGesture()
-                            .onChanged { value in
-                                offset = clamped(CGSize(
-                                    width: dragStart.width + value.translation.width,
-                                    height: dragStart.height + value.translation.height
-                                ), in: size)
-                            }
-                            .onEnded { _ in dragStart = offset })
-                        .accessibilityLabel("Cover photo crop preview")
-                    Text("Drag to position your photo")
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Image(systemName: "minus.magnifyingglass")
-                        Slider(value: $zoom, in: 1...4)
-                            .accessibilityLabel("Photo zoom")
-                            .onChange(of: zoom) {
-                                offset = clamped(offset, in: size)
-                                dragStart = offset
-                            }
-                        Image(systemName: "plus.magnifyingglass")
-                    }
-                    Spacer()
-                    Button("Use photo") { crop(size: size) }
-                        .buttonStyle(.borderedProminent)
+                        .allowsHitTesting(false)
                 }
-                .padding(20)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            offset = clamped(CGSize(width: dragStart.width + value.translation.width,
+                                                    height: dragStart.height + value.translation.height), in: size)
+                        }
+                        .onEnded { _ in dragStart = offset }
+                        .simultaneously(with: MagnifyGesture()
+                            .onChanged { value in
+                                zoom = min(4, max(1, zoomStart * value.magnification))
+                                offset = clamped(offset, in: size)
+                            }
+                            .onEnded { _ in
+                                zoomStart = zoom
+                                dragStart = offset
+                            })
+                )
+                .overlay(alignment: .bottom) {
+                    VStack(spacing: 14) {
+                        Picker("Shape", selection: $shape.animation(.snappy)) {
+                            ForEach(CoverShape.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 280)
+                        Text("Drag and pinch to frame your cover")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.85))
+                        HStack {
+                            Image(systemName: "minus.magnifyingglass")
+                            Slider(value: $zoom, in: 1...4)
+                                .accessibilityLabel("Photo zoom")
+                                .onChange(of: zoom) {
+                                    zoomStart = zoom
+                                    offset = clamped(offset, in: size)
+                                    dragStart = offset
+                                }
+                            Image(systemName: "plus.magnifyingglass")
+                        }
+                        .foregroundStyle(.white)
+                        .tint(.white)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Cover photo crop, \(shape.title)")
+                .onAppear { cropSize = size }
+                .onChange(of: geometry.size) { cropSize = frameSize(in: geometry.size) }
+                .onChange(of: shape) {
+                    cropSize = frameSize(in: geometry.size)
+                    zoom = 1
+                    zoomStart = 1
+                    offset = .zero
+                    dragStart = .zero
+                }
             }
-            .navigationTitle("Crop cover photo")
+            .ignoresSafeArea(edges: .bottom)
+            .background(Color.black)
+            .navigationTitle("Cover photo")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Use photo") { crop(size: cropSize) }
+                        .fontWeight(.semibold)
                 }
             }
             .alert("Could not save photo", isPresented: $cropError) {
@@ -827,6 +965,18 @@ private struct CoverPhotoCropView: View {
             } message: {
                 Text("Please try choosing another photo.")
             }
+        }
+    }
+
+    /// The crop frame: full width for wide covers; for posters, as tall as fits above the controls.
+    private func frameSize(in space: CGSize) -> CGSize {
+        let width = max(1, space.width - 24)
+        switch shape {
+        case .wide:
+            return CGSize(width: width, height: width * 9 / 16)
+        case .poster:
+            let height = max(1, min(space.height - 2 * 150, width * 4 / 3))
+            return CGSize(width: height * 3 / 4, height: height)
         }
     }
 
@@ -843,7 +993,7 @@ private struct CoverPhotoCropView: View {
     }
 
     private func crop(size: CGSize) {
-        let output = CGSize(width: 1600, height: 900)
+        let output = shape.output
         let factor = output.width / size.width
         let scale = scale(for: size) * factor
         let position = clamped(offset, in: size)
@@ -864,5 +1014,24 @@ private struct CoverPhotoCropView: View {
         }
         onCrop(data)
         dismiss()
+    }
+}
+
+/// The two cover shapes: wide for photos, a 3:4 poster for flyers.
+enum CoverShape: CaseIterable {
+    case wide, poster
+
+    var title: String { self == .wide ? "Wide 16:9" : "Poster 3:4" }
+    var output: CGSize { self == .wide ? CGSize(width: 1600, height: 900) : CGSize(width: 1200, height: 1600) }
+
+    /// Whether a saved cover is a poster (taller than wide). Reads only the image header.
+    static func isPoster(_ data: Data?) -> Bool {
+        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return false }
+        // EXIF orientations 5–8 are rotated 90°.
+        let rotated = ((properties[kCGImagePropertyOrientation] as? Int) ?? 1) >= 5
+        return rotated ? width > height : height > width
     }
 }

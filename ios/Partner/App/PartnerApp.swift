@@ -23,7 +23,11 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            if store.hasOnboarded {
+            if !store.auth.isSignedIn {
+                // UC Davis students only: sign in before anything else.
+                SignInView()
+                    .transition(.opacity)
+            } else if store.hasOnboarded {
                 MainTabView()
                     .transition(.opacity.combined(with: .scale(scale: 1.02)))
             } else {
@@ -50,15 +54,16 @@ struct RootView: View {
                 }
             }
         }
-        .task(id: store.hasOnboarded && scenePhase == .active) {
+        .task(id: store.hasOnboarded && store.auth.isSignedIn && scenePhase == .active) {
             // Pull shared events from the backend while the app is open.
-            guard store.hasOnboarded, scenePhase == .active else { return }
+            guard store.hasOnboarded, store.auth.isSignedIn, scenePhase == .active else { return }
             while !Task.isCancelled {
                 await store.syncWithServer()
                 try? await Task.sleep(for: .seconds(15))
             }
         }
         .animation(.smooth(duration: 0.5), value: store.hasOnboarded)
+        .animation(.smooth(duration: 0.5), value: store.auth.isSignedIn)
         .sensoryFeedback(.success, trigger: store.banner?.id) { _, new in new != nil }
     }
 }
@@ -97,6 +102,7 @@ struct MainTabView: View {
         }
         .tabBarMinimizeBehavior(.onScrollDown)
         .sheet(isPresented: $store.showCreate) { CreateActivityView() }
+        .sheet(isPresented: $store.showPlanner) { PlannerView(initialQuery: store.debugPlannerQuery) }
         .sheet(isPresented: $store.showProfile) { ProfileView() }
     }
 }

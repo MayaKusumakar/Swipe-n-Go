@@ -1,5 +1,13 @@
-runtime: python312
+runtime: python313
 entrypoint: gunicorn -b :$PORT main:app
+
+# Stay inside the App Engine free tier (28 F1 instance-hours a day): one F1
+# instance at most is 24 hours a day. Under heavy load the app gets slower
+# instead of starting a second, billable instance.
+instance_class: F1
+automatic_scaling:
+  min_instances: 0
+  max_instances: 1
 
 # Uncomment to have the deployed app read the seeded dev data instead of the
 # default (production) namespace. Team decision pending.

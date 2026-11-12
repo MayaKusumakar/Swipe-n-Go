@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from google.cloud import datastore
 
-from models import EVENT_KIND
+from models import EVENT_KIND, UNINDEXED_EVENT_PROPERTIES
 from repositories.dev_sample_events import build_sample_events
 
 
@@ -20,20 +20,11 @@ def build_entities(client, now):
     for event in build_sample_events(now):
         entity = datastore.Entity(
             key=client.key(EVENT_KIND, event.id),
-            exclude_from_indexes=("description",),
+            exclude_from_indexes=UNINDEXED_EVENT_PROPERTIES,
         )
-        entity.update({
-            "title": event.title,
-            "description": event.description,
-            "start_time": event.start_time,
-            "end_time": event.end_time,
-            "location_name": event.location_name,
-            "latitude": event.latitude,
-            "longitude": event.longitude,
-            "category": event.category,
-            "image_url": event.image_url,
-            "is_seed_data": True,
-        })
+        # Same properties as real events (including geohash for nearby search).
+        entity.update(event.to_entity_properties())
+        entity["is_seed_data"] = True
         entities.append(entity)
     return entities
 

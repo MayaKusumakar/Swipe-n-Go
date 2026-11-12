@@ -2,7 +2,11 @@ import Foundation
 import CryptoKit
 
 /// Talks to the Flask backend (backend/ in this repo). See docs/API.md.
+/// Every /api request carries the signed-in @ucdavis.edu user's token (see Auth.swift).
 enum EventServer {
+    /// Returns the token for `Authorization: Bearer …`, or nil when signed out. Set by AppStore.
+    nonisolated(unsafe) static var tokenProvider: (@Sendable () async throws -> String?)?
+
     struct ServerEvent: Codable {
         var id: String
         var title: String
@@ -15,6 +19,8 @@ enum EventServer {
         var longitude: Double?
         var category: String
         var imageUrl: String?
+        /// Account id of the host. Matches Auth.account.id when you posted it, even from another phone.
+        var hostId: String?
         var hostName: String?
         var address: String?
         var capacity: Int?
@@ -24,16 +30,13 @@ enum EventServer {
         var level: String?
         var requiresApproval: Bool?
         var locationPrivate: Bool?
-        /// Only in the response to POST /api/events, for the host.
-        var hostToken: String?
+        var summary: String?
     }
 
     struct Attendee: Decodable {
         var id: String
         var name: String
         var status: String
-        /// Only in the response to a join request, for that person.
-        var attendeeToken: String?
         var isApproved: Bool { status == "approved" }
     }
 
@@ -44,7 +47,7 @@ enum EventServer {
         var longitude: Double?
     }
 
-    /// Body for POST /api/events.
+    /// Body for POST /api/events. The server takes the host's name from their account.
     struct NewEvent: Encodable {
         var id: String
         var title: String
@@ -55,7 +58,6 @@ enum EventServer {
         var latitude: Double
         var longitude: Double
         var category: String
-        var hostName: String
         var address: String
         var capacity: Int
         var cost: String
@@ -81,72 +83,161 @@ enum EventServer {
         return URLSession(configuration: config)
     }()
 
+    /// Adds the signed-in user's token. Requests without one get 401 from the server.
+    private static func authorize(_ request: inout URLRequest) async throws {
+        if let token = try await tokenProvider?() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+    }
+
     static func fetchEvents(baseURL: URL) async throws -> [ServerEvent] {
         var components = URLComponents(url: baseURL.appending(path: "api/events"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "limit", value: "50")]
-        let (data, response) = try await session.data(from: components.url!)
-        try check(response, data)
+        let data = try await send("GET", components.url!)
         return try decoder.decode(ListResponse.self, from: data).events
     }
 
     static func create(_ event: NewEvent, baseURL: URL) async throws -> ServerEvent {
-        var request = URLRequest(url: baseURL.appending(path: "api/events"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try encoder.encode(event)
-        let (data, response) = try await session.data(for: request)
-        try check(response, data)
+        let data = try await send("POST", baseURL.appending(path: "api/events"), body: try encoder.encode(event))
         return try decoder.decode(ServerEvent.self, from: data)
     }
 
-    // MARK: Attendees and private locations (see docs/API.md). The server checks the tokens.
+    // MARK: Cover photos (see docs/API.md)
 
-    enum Credential {
-        case host(String), attendee(String)
+    /// Uploads the host's cover (a JPEG under 900 KB). Returns the event's new `image_url`.
+    static func uploadCover(eventID: String, jpeg: Data, baseURL: URL) async throws -> String {
+        struct Body: Encodable { var image: String }
+        struct Reply: Decodable { var imageUrl: String }
+        let data = try await send("PUT", baseURL.appending(path: "api/events/\(eventID)/cover"),
+                                  body: try encoder.encode(Body(image: jpeg.base64EncodedString())))
+        return try decoder.decode(Reply.self, from: data).imageUrl
     }
 
-    private static func send(_ method: String, _ path: String, baseURL: URL, as credential: Credential? = nil,
-                             body: [String: String]? = nil) async throws -> Data {
-        var request = URLRequest(url: baseURL.appending(path: path))
+    /// Downloads a cover from its `image_url` (a path on this server).
+    static func downloadCover(_ imageURL: String, baseURL: URL) async throws -> Data {
+        guard let url = URL(string: imageURL, relativeTo: baseURL)?.absoluteURL else { throw URLError(.badURL) }
+        return try await send("GET", url)
+    }
+
+    // MARK: Your name
+
+    /// Tells the server the name from your profile; it's shown on your events and join requests.
+    static func updateMyName(_ name: String, baseURL: URL) async throws {
+        _ = try await send("PATCH", baseURL.appending(path: "api/auth/me"),
+                           body: try JSONSerialization.data(withJSONObject: ["name": name]))
+    }
+
+    // MARK: Sign-in
+
+    struct AuthConfig: Decodable { var allowedDomain: String; var devSignIn: Bool }
+    struct SignedInUser: Decodable {
+        var id: String
+        var email: String
+        var name: String
+        /// The name chosen in the app, if one was ever sent (`nil` until then).
+        var displayName: String?
+    }
+
+    /// The account as the server has it, including a profile name set from another device.
+    static func me(baseURL: URL) async throws -> SignedInUser {
+        try decoder.decode(SignedInUser.self, from: try await send("GET", baseURL.appending(path: "api/auth/me")))
+    }
+
+    // MARK: Saved events (kept on the account, so every device has the same list)
+
+    private struct SavedList: Decodable { var eventIds: [String] }
+
+    static func savedEventIDs(baseURL: URL) async throws -> [String] {
+        try decoder.decode(SavedList.self, from: try await send("GET", baseURL.appending(path: "api/me/saved"))).eventIds
+    }
+
+    static func setSaved(_ eventID: String, _ saved: Bool, baseURL: URL) async throws {
+        _ = try await send(saved ? "PUT" : "DELETE", baseURL.appending(path: "api/me/saved/\(eventID)"))
+    }
+
+    /// Public: whether the server allows dev sign-in (local servers with DEV_SIGN_IN=on only).
+    static func authConfig(baseURL: URL) async throws -> AuthConfig {
+        let data = try await send("GET", baseURL.appending(path: "api/auth/config"))
+        return try decoder.decode(AuthConfig.self, from: data)
+    }
+
+    /// Tells the server you signed in; it checks the account is a verified @ucdavis.edu one.
+    static func confirmSignIn(baseURL: URL) async throws -> SignedInUser {
+        let data = try await send("POST", baseURL.appending(path: "api/auth/sign-in"))
+        return try decoder.decode(SignedInUser.self, from: data)
+    }
+
+    // MARK: Attendees and private locations (see docs/API.md). The server checks who you are.
+
+    private static func send(_ method: String, _ url: URL, body: Data? = nil) async throws -> Data {
+        var request = URLRequest(url: url)
         request.httpMethod = method
-        switch credential {
-        case .host(let token): request.setValue(token, forHTTPHeaderField: "X-Host-Token")
-        case .attendee(let token): request.setValue(token, forHTTPHeaderField: "X-Attendee-Token")
-        case nil: break
-        }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            request.httpBody = body
         }
+        try await authorize(&request)
         let (data, response) = try await session.data(for: request)
         try check(response, data)
         return data
     }
 
-    static func requestToJoin(eventID: String, name: String, baseURL: URL) async throws -> Attendee {
-        let data = try await send("POST", "api/events/\(eventID)/attendees", baseURL: baseURL, body: ["name": name])
+    private static func send(_ method: String, _ path: String, baseURL: URL) async throws -> Data {
+        try await send(method, baseURL.appending(path: path))
+    }
+
+    /// Joins (or asks to join) as the signed-in user. Asking again returns the same entry.
+    static func requestToJoin(eventID: String, baseURL: URL) async throws -> Attendee {
+        let data = try await send("POST", "api/events/\(eventID)/attendees", baseURL: baseURL)
         return try decoder.decode(Attendee.self, from: data)
     }
 
-    static func attendees(eventID: String, hostToken: String, baseURL: URL) async throws -> [Attendee] {
+    /// Your own entry for someone else's event: pending until the host approves you.
+    static func myAttendance(eventID: String, baseURL: URL) async throws -> Attendee {
+        let data = try await send("GET", "api/events/\(eventID)/attendees/me", baseURL: baseURL)
+        return try decoder.decode(Attendee.self, from: data)
+    }
+
+    static func attendees(eventID: String, baseURL: URL) async throws -> [Attendee] {
         struct Response: Decodable { var attendees: [Attendee] }
-        let data = try await send("GET", "api/events/\(eventID)/attendees", baseURL: baseURL, as: .host(hostToken))
+        let data = try await send("GET", "api/events/\(eventID)/attendees", baseURL: baseURL)
         return try decoder.decode(Response.self, from: data).attendees
     }
 
-    static func approve(eventID: String, attendeeID: String, hostToken: String, baseURL: URL) async throws {
-        _ = try await send("POST", "api/events/\(eventID)/attendees/\(attendeeID)/approve", baseURL: baseURL, as: .host(hostToken))
+    static func approve(eventID: String, attendeeID: String, baseURL: URL) async throws {
+        _ = try await send("POST", "api/events/\(eventID)/attendees/\(attendeeID)/approve", baseURL: baseURL)
     }
 
-    /// The host removes someone (or declines a request), or an attendee removes themselves.
-    static func removeAttendee(eventID: String, attendeeID: String, as credential: Credential, baseURL: URL) async throws {
-        _ = try await send("DELETE", "api/events/\(eventID)/attendees/\(attendeeID)", baseURL: baseURL, as: credential)
+    /// The host removes someone (or declines a request), or you remove yourself.
+    static func removeAttendee(eventID: String, attendeeID: String, baseURL: URL) async throws {
+        _ = try await send("DELETE", "api/events/\(eventID)/attendees/\(attendeeID)", baseURL: baseURL)
     }
 
     /// The full location of a private event. The server answers 403 until the host has approved you.
-    static func location(eventID: String, as credential: Credential, baseURL: URL) async throws -> Location {
-        let data = try await send("GET", "api/events/\(eventID)/location", baseURL: baseURL, as: credential)
+    static func location(eventID: String, baseURL: URL) async throws -> Location {
+        let data = try await send("GET", "api/events/\(eventID)/location", baseURL: baseURL)
         return try decoder.decode(Location.self, from: data)
+    }
+
+    /// For slower endpoints like the AI planner; the timeout is set per request.
+    private static let slowSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 60
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
+    /// POSTs JSON (snake_case keys) and decodes a JSON reply. Cancelling the task cancels the request.
+    static func post<Body: Encodable, Response: Decodable>(_ path: String, body: Body, baseURL: URL,
+                                                           timeout: TimeInterval) async throws -> Response {
+        var request = URLRequest(url: baseURL.appending(path: path), timeoutInterval: timeout)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try encoder.encode(body)
+        try await authorize(&request)
+        let (data, response) = try await slowSession.data(for: request)
+        try check(response, data)
+        return try decoder.decode(Response.self, from: data)
     }
 
     private static func check(_ response: URLResponse, _ data: Data) throws {
@@ -243,15 +334,16 @@ extension Activity {
             requiresApproval: e.requiresApproval ?? false, costNote: e.cost ?? "Free",
             serverID: e.id,
             privateLocation: e.locationPrivate == true ? true : nil,
-            locationHidden: hidden ? true : nil
+            locationHidden: hidden ? true : nil,
+            serverCoverURL: e.imageUrl
         )
     }
 
-    func serverBody(hostName: String) -> EventServer.NewEvent {
+    func serverBody() -> EventServer.NewEvent {
         EventServer.NewEvent(
             id: id.uuidString.lowercased(), title: title, description: details, startTime: date, endTime: endDate,
             locationName: placeName, latitude: latitude, longitude: longitude, category: category.rawValue,
-            hostName: hostName, address: address, capacity: min(max(capacity, 2), 500), cost: costNote,
+            address: address, capacity: min(max(capacity, 2), 500), cost: costNote,
             tags: Array(tags.prefix(10)).map { String($0.prefix(30)) }, level: level.apiValue,
             requiresApproval: requiresApproval || isLocationPrivate, locationPrivate: isLocationPrivate
         )
