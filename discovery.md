@@ -78,7 +78,7 @@ We conducted a total of ___[FILL IN]___ interviews.
 ## Interview 3
 
 **Interviewer:** Haylie Tan
-**Note Taker:** Evelyn Xiao
+**Note Taker:** Anant
 **Interviewee:** Joey Mai
 **Date:** 11/10/26
 **Recording:** [Recording](https://drive.google.com/file/d/1lsXvpHIEezwLgP6P3uG5rQj755SqjnIL/view?usp=drive_link)
@@ -130,8 +130,8 @@ We conducted a total of ___[FILL IN]___ interviews.
 
 ## Interview 4
 
-**Interviewer:** Evelyn Xiao
-**Note Taker:** Haylie Tan
+**Interviewer:** Haylie Tan
+**Note Taker:** Anant
 **Interviewee:** Grace Macasaet
 **Date:** 11/10/26
 **Recording:** [Recording](https://drive.google.com/file/d/1w8PeX5WMO6rBEOi42n-7CcY-rMIEu_HH/view?usp=drive_link)
@@ -175,5 +175,109 @@ We conducted a total of ___[FILL IN]___ interviews.
 
 ### Post-Interview Synthesis
 From this interview, we found that Instagram is one of the main ways students keep up with events, but they also use Discord and emails. One interesting thing was that even if someone wants to go to an event, they might skip it if it's too late or they don't have anyone to go with. We also learned that students don't always have a good way to keep track of events and sometimes just rely on remembering them or checking Instagram again. Overall, it seems like finding events isn't the only issue, but also having people to go with and actually remembering when things are happening.
+
+---
+
+## Interview 5
+
+**Interviewer:** Haylie Tan  
+**Note Taker:** Anant  
+**Interviewee:** Varun
+**Date:** 11/11/26
+**Recording:** [Recording](https://drive.google.com/file/d/1lL4rKLBdWlNjuoCWD7xQEZ-bpBYs9AgZ/view?usp=drive_link)
+
+### Pre-Interview Hypotheses
+- We think most clubs rely on Instagram and word of mouth to promote their events, but it can be hard to reach students who don't already follow their pages. We also think newer or smaller clubs have a harder time getting people to attend because not many students know about them yet. Clubs might also struggle to figure out whether their promotions are actually reaching the right audience.
+
+### Interview Notes
+
+**1. Tell me about the last event you organized or helped promote.**
+- Hosted an event for the Tamil Sangam club
+- Wanted to attract a diverse group of attendees
+- Goal was to introduce Tamil language and culture to people who weren't already familiar with it
+
+**2. How did you advertise that event? Walk me through the process.**
+- Instagram is the main platform for advertising
+- Follows other cultural clubs to reach similar audiences
+- Tries to attract students who might already be interested in cultural events
+- Also prints out flyers and passes them out around campus
+
+**3. What was the hardest part about getting people to hear about it?**
+- Club is still new, so it's hard to get exposure
+- Difficult to find people who are genuinely interested
+- Wants to reach both native Tamil speakers and people who are new to the language
+- Hard to advertise in a way that appeals to both groups without making the event seem exclusive to Tamil speakers
+
+**4. Have you ever had an event with lower attendance than you expected? What happened?**
+- Hasn't experienced this with Tamil Sangam yet since the club hasn't hosted many events
+- Mentioned that ISA (Indian Student Association) had experienced low attendance at an event
+- Had to make adjustments to finances because of the lower turnout
+
+**5. How did you know whether your advertising was reaching the right people?**
+- Keeps track of event sign-ups
+- Most events require attendees to sign up beforehand
+- Uses surveys and questionnaires during registration to collect information
+- Uses that data to help make decisions about future events
+
+**6. What did you do differently when promoting your most recent event compared to previous events?**
+- Didn't really change much
+- Still uses the same process of making flyers and posting on Instagram
+- Hasn't tried many different promotional strategies yet
+
+### Post-Interview Synthesis
+
+- From this interview, we found that newer clubs have a hard time getting their events out there, especially when they're trying to reach people outside of their usual audience. The interviewee mainly uses Instagram and flyers to promote events, but mentioned that it's difficult to find students who would actually be interested, especially when the event is meant for both people familiar with the culture and those who are completely new to it. One interesting thing was that they use sign-ups and surveys to see who their events are reaching, but haven't really changed how they advertise. Overall, it seems like clubs could benefit from having an easier way to reach students who might be interested in their events but don't already follow their social media pages.
+
+---
+
+## Interview 6
+
+**Interviewer:** Anant
+**Note Taker:** Haylie Tan
+**Interviewee:** Ani
+**Date:** 11/11/26
+**Recording:** [Recording](https://drive.google.com/file/d/1xVksWa1wl9JxXPdUep_pAK1TnpnB0rA1/view?usp=drive_link)
+
+### Pre-Interview Hypotheses
+- We think most students find out about events through Instagram or flyers around campus, but they might miss out on events if they don't already follow certain clubs. We also think students sometimes have a hard time finding something interesting to do, especially during weekends or when they have more free time. Even if they find an event they're interested in, they might not go if they don't know anyone attending or aren't familiar with the club.
+
+### Interview Notes
+
+**1. Can you tell me about the last event or activity you attended around UC Davis or Davis?**
+- Most recent activity was an event hosted by one of the more popular clubs at UC Davis
+
+**2. What was the event, and how did you first hear about it?**
+- Already followed the club on Instagram
+- Found out about the event through the club's Instagram page
+
+**3. Think about the last time you were looking for something to do. How did you go about finding it? (What sources did you use?)**
+- Mainly uses two sources:
+  - Instagram
+  - Physical flyers and posters around campus
+
+**4. Can you remember a time when you struggled to find something interesting to do?**
+- Happens every now and then
+- Usually looks for things to do during weekends, holidays, or weeks without exams
+- Feels like finding interesting events mostly depends on luck
+- Sometimes finds something interesting, but other times doesn't come across anything
+
+**5. Tell me about the last time you saw an event you were interested in but decided not to go.**
+- Wanted to attend a game night hosted by a club
+- Found out about it through a poster on campus
+
+**6. What stopped you from attending?**
+- Had never been to that club before
+- Didn't know anyone else who was going
+- Felt hesitant about attending an unfamiliar club event alone
+
+**7. Can you walk me through how you kept track of an event you wanted to attend recently?**
+- Takes pictures of event posters
+- Keeps physical flyers that are handed out
+- Saves or screenshots Instagram posts
+- Sometimes forgets to go back and check the saved information
+
+### Post-Interview Synthesis
+
+- From this interview, we found that students mainly rely on Instagram and physical flyers to find events, but sometimes finding something interesting just comes down to luck. One thing that stood out was that the interviewee wanted to go to a game night but ended up not going because he didn't know anyone there and had never been to that club before. We also learned that even when students save posts or take pictures of flyers, they sometimes forget to check them again. This supports our idea that finding events isn't the only problem, since students also need a better way to keep track of events and might feel more comfortable attending if they knew someone else going. Overall, it seems like making events easier to discover and helping students feel more comfortable attending unfamiliar events could be useful.
 
 ---
