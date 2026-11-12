@@ -7,24 +7,20 @@ the server: it's read from ANTHROPIC_API_KEY (backend/.env locally, Secret
 Manager in production).
 """
 import json
-import logging
 from dataclasses import dataclass
 from datetime import datetime
 
-import anthropic
 from pydantic import BaseModel, Field
 
-MODEL = "claude-opus-5-5"
+from services import claude_call
+from services.claude_call import MODEL, AIUnavailableError, clip
+
 MAX_PICKS = 5
 MAX_REASON_LENGTH = 160
 MAX_UNDERSTOOD_LENGTH = 90
-NOT_CONFIGURED = "The AI planner isn't set up on this server yet (no ANTHROPIC_API_KEY)."
 
-log = logging.getLogger(__name__)
-
-
-class PlannerUnavailableError(Exception):
-    """The AI planner can't answer right now (not configured, API error, or declined)."""
+# The planner's name for "Claude can't answer right now" (see services/claude_call.py).
+PlannerUnavailableError = AIUnavailableError
 
 
 @dataclass(frozen=True)
@@ -123,10 +119,7 @@ class PlannerService:
     def client(self):
         # Created on first use so the server starts without an API key.
         if self._client is None:
-            try:
-                self._client = anthropic.Anthropic(timeout=30.0, max_retries=1)
-            except anthropic.AnthropicError as e:
-                raise PlannerUnavailableError(NOT_CONFIGURED) from e
+            self._client = claude_call.make_client()
         return self._client
 
     def plan(self, query, now, interests, events):
@@ -140,37 +133,14 @@ class PlannerService:
             "interests": interests,
             "events": [_describe(e, now.tzinfo) for e in events],
         }
-        try:
-            response = self.client.beta.messages.parse(
-                model=self._model,
-                max_tokens=4000,
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",                      # another model answers if this one declines
-                output_config={"effort": "low"},          # interactive request: keep it quick
-                system=SYSTEM_PROMPT,
-                messages=[{
-                    "role": "user",
-                    "content": f"Context:\n{json.dumps(context, ensure_ascii=False)}\n\nStudent's request: {query}",
-                }],
-                output_format=_PlanOutput,
-            )
-        except anthropic.RateLimitError as e:
-            raise PlannerUnavailableError("The AI planner is busy right now. Try again in a minute.") from e
-        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as e:
-            raise PlannerUnavailableError("The server's Claude API key was rejected.") from e
-        except anthropic.APIStatusError as e:
-            log.warning("Planner request failed: %s (request id %s)", e.status_code, getattr(e, "request_id", None))
-            raise PlannerUnavailableError("The AI planner couldn't answer right now.") from e
-        except anthropic.APIConnectionError as e:
-            raise PlannerUnavailableError("The server couldn't reach Claude.") from e
-        except TypeError as e:
-            # The SDK raises TypeError at request time when no credentials are configured.
-            log.warning("Planner has no Claude credentials: %s", e)
-            raise PlannerUnavailableError(NOT_CONFIGURED) from e
-
-        if response.stop_reason == "refusal" or response.parsed_output is None:
-            raise PlannerUnavailableError("The AI planner couldn't help with that request.")
-        return self._clean(response.parsed_output, events)
+        output = claude_call.parse(
+            self.client,
+            model=self._model,
+            system=SYSTEM_PROMPT,
+            content=f"Context:\n{json.dumps(context, ensure_ascii=False)}\n\nStudent's request: {query}",
+            output_format=_PlanOutput,
+        )
+        return self._clean(output, events)
 
     def _clean(self, output, events):
         """Trust nothing blindly: keep only real, unique event ids and short text."""
@@ -179,15 +149,15 @@ class PlannerService:
         for pick in output.picks:
             if pick.event_id in known and pick.event_id not in seen:
                 seen.add(pick.event_id)
-                picks.append(Pick(event_id=pick.event_id, reason=_clip(pick.reason, MAX_REASON_LENGTH)))
+                picks.append(Pick(event_id=pick.event_id, reason=clip(pick.reason, MAX_REASON_LENGTH)))
             if len(picks) == MAX_PICKS:
                 break
         return Plan(
-            understood=_clip(output.understood, MAX_UNDERSTOOD_LENGTH),
+            understood=clip(output.understood, MAX_UNDERSTOOD_LENGTH),
             window_start=_parse_time(output.window_start),
             window_end=_parse_time(output.window_end),
             picks=picks,
-            note=_clip(output.note, MAX_REASON_LENGTH),
+            note=clip(output.note, MAX_REASON_LENGTH),
             model=self._model,
         )
 
@@ -210,10 +180,6 @@ def _describe(e, tz):
         "tags": list(e.tags),
     }
 
-
-def _clip(text, limit):
-    text = " ".join((text or "").split())
-    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def _parse_time(value):

@@ -23,7 +23,12 @@ Current state (iOS app in `ios/`, `Milestone1-v1` branch):
   - If there's no server, or the server answers `503 ai_unavailable` or can't be reached, `OnDevicePlanner` plans on the phone instead (keyword reading, ranking, wider search when nothing fits), and the screen says why.
   - Results show "Planned by Claude" or "Planned on your iPhone", a reason per pick, and a Join or Request button on each card.
   - Unit tests: `ios/PartnerTests/PlannerTests.swift` (Swift Testing, scheme `Partner`, ⌘U).
-- **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), the simulated hosts and guests, chats, saved events, drafts, recurring events, cover photos and flyers. For sample (local) events, private locations and removals are only hidden in the app, since there's no server copy.
+- **Flyer reader (Host a plan → Upload flyer / Take flyer photo):** `Views/Create/FlyerScanner.swift` and `Planner/ClaudeFlyerReader.swift`.
+  - Apple's on-device text recognition runs first. Then the photo is shrunk to 1568 px and re-encoded as JPEG, which drops its GPS and other metadata, and is sent with the recognized text to `POST /api/flyers/read`, where Claude reads the image.
+  - The review screen shows "Read by Claude" or "Read on your iPhone", marks the fields Claude couldn't find in orange, warns if the image isn't an event flyer, and fills in the category and the duration (from the end time) too.
+  - If there's no server, or it answers `503 ai_unavailable` or can't be reached, the on-device reading is used and the screen says why.
+  - Unit tests: `ios/PartnerTests/FlyerReaderTests.swift`.
+- **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), the simulated hosts and guests, chats, saved events, drafts, recurring events, cover photos and flyer images (only the extracted details are posted). For sample (local) events, private locations and removals are only hidden in the app, since there's no server copy.
 
 Server side (`backend/`, mapped from the team's "Mapping these ideas to Google Cloud" table, 2026-11-11):
 - **Runs locally only, and must cost $0.** No Google Cloud project or billing yet; App Engine standard later. Nothing calls a paid service unless someone turns it on on purpose.

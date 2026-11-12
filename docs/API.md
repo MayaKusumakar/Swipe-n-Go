@@ -256,7 +256,53 @@ Errors:
 - `400 invalid_planner_request`: the message names the bad field.
 - `503 ai_unavailable`: no API key on the server, key rejected, rate limited, Claude unreachable, or the request was declined. The message is shown to the user, and the app falls back to its on-device planner.
 
-Code: `backend/api/planner.py` (route), `backend/api/planner_input.py` (validation), `backend/services/planner_service.py` (prompt, Claude call, output checks).
+Code: `backend/api/planner.py` (route), `backend/api/planner_input.py` (validation), `backend/services/planner_service.py` (prompt and output checks), `backend/services/claude_call.py` (the Claude call shared with the flyer reader).
+
+## POST /api/flyers/read
+
+Reads a photo of an event flyer with Claude (`claude-opus-5-5`, image input, structured output) and returns the event's details for the host to check in the Host screen. The image is not stored. Needs sign-in like every `/api` route.
+
+Request body (JSON):
+```json
+{
+  "image": "<base64 JPEG or PNG>",
+  "media_type": "image/jpeg",
+  "now": "2026-11-12T10:00:00-08:00",
+  "ocr_text": "FALL CLIMBING SOCIAL\nTHURS 11/14 7-9PM\nARC CLIMBING WALL\nFREE"
+}
+```
+- `image`: up to 5 MB after decoding. The bytes must really be a JPEG or PNG, matching `media_type`. The app sends a JPEG at most 1568 px on its long side, re-encoded on the phone so it carries no location metadata.
+- `now`: the host's current time with UTC offset. Flyers often skip the year, so dates are read as the next matching date in that time zone.
+- `ocr_text`: optional, up to 4000 characters: the text Apple's on-device recognizer found. It only helps with small print; Claude reads the image itself.
+- Requests over 8 MB are refused (`413`).
+
+Response `200`:
+```json
+{
+  "is_event_flyer": true,
+  "title": "Fall Climbing Social",
+  "start_time": "2026-11-14T19:00:00-08:00",
+  "end_time": "2026-11-14T21:00:00-08:00",
+  "location_name": "ARC Climbing Wall",
+  "address": "ARC, UC Davis",
+  "description": "Beginner-friendly climbing night with free gear rental.",
+  "cost": "Free",
+  "category": "sports",
+  "missing": [],
+  "model": "claude-opus-5-5"
+}
+```
+- `missing` lists what wasn't on the flyer or wasn't clear: any of `title`, `date`, `time`, `location`, `cost`. The app marks those for the host to fill in. When there's no start time, `date` and `time` are always listed.
+- `category` is one of the app's categories (`run, gym, hike, cycling, sports, yoga, food, coffee, drinks, concert, movies, art, study, games, explore`), or `""`.
+- `start_time` / `end_time` may be `null`. An end time that isn't after the start is dropped.
+- If the image isn't an event flyer, `is_event_flyer` is `false` and the other fields are empty.
+
+Errors:
+- `400 invalid_flyer_request`: bad base64, wrong or mismatched image type, over 5 MB, bad `now`.
+- `401`: not signed in.
+- `503 ai_unavailable`: same causes as the planner. The app falls back to reading the flyer on the phone and says why.
+
+Code: `backend/api/flyers.py` (route and validation), `backend/services/flyer_service.py` (prompt and output checks), `backend/services/claude_call.py`.
 
 ---
 

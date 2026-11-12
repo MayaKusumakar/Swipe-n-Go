@@ -72,6 +72,9 @@ struct CreateActivityView: View {
 
     enum Field { case title, previewTitle, details, cost }
 
+    /// The Duration picker's options, in minutes.
+    static let durations = [30, 45, 60, 90, 120, 180, 240, 480]
+
     private var canPublish: Bool {
         !scanning && !isLoadingPhoto && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && place != nil && date > .now
             && (!schedulePost || (publishAt > .now && publishAt < date))
@@ -173,14 +176,20 @@ struct CreateActivityView: View {
                     pendingFlyerCover = nil
                 }
             }) { result in
-                FlyerReviewView(result: result) { name, starts, venue, description, price, image in
-                    title = name
-                    date = starts
-                    scannedLocation = venue
+                FlyerReviewView(result: result) { fields in
+                    title = fields.title
+                    date = fields.date
+                    scannedLocation = fields.location
                     place = nil
-                    details = description
-                    cost = price
-                    pendingFlyerCover = image
+                    details = fields.details
+                    cost = fields.cost
+                    if let scanned = fields.category { category = scanned }
+                    if let end = fields.endDate {
+                        // Closest option in the Duration picker.
+                        let minutes = Int(end.timeIntervalSince(fields.date) / 60)
+                        duration = Self.durations.min { abs($0 - minutes) < abs($1 - minutes) } ?? duration
+                    }
+                    pendingFlyerCover = fields.cover
                 }
             }
             .task(id: flyerPhoto) {
@@ -205,7 +214,7 @@ struct CreateActivityView: View {
                 scanning = true
                 defer { scanning = false }
                 do {
-                    let result = try await FlyerScanner.scan(flyerData)
+                    let result = try await FlyerScanner.scan(flyerData, serverURL: store.serverURL)
                     try Task.checkCancellation()
                     scanResult = result
                 } catch is CancellationError {
@@ -315,7 +324,7 @@ struct CreateActivityView: View {
                 }
             }
             if scanning {
-                ProgressView("Reading flyer…")
+                ProgressView(store.serverURL == nil ? "Reading flyer…" : "Reading flyer with Claude…")
             }
         }
         .disabled(scanning || isLoadingPhoto)
@@ -484,7 +493,7 @@ struct CreateActivityView: View {
                     .padding(14)
                 Divider().padding(.leading, 14)
                 Picker("Duration", selection: $duration) {
-                    ForEach([30, 45, 60, 90, 120, 180, 240, 480], id: \.self) { m in
+                    ForEach(Self.durations, id: \.self) { m in
                         Text(m < 60 ? "\(m) min" : m % 60 == 0 ? "\(m / 60) hr" : "\(m / 60)h \(m % 60)m").tag(m)
                     }
                 }
