@@ -3,6 +3,8 @@ import MapKit
 
 struct ExploreView: View {
     @AppStorage("exploreSatelliteMap") private var satellite = false
+    /// Where the map is looking now (for the 3D button).
+    @State private var mapCamera: MapCamera?
     @Environment(AppStore.self) private var store
     @State private var mode: Mode = .map
     @State private var query = ""
@@ -71,6 +73,70 @@ struct ExploreView: View {
 
     // MARK: Map
 
+    /// Small stacked glass controls in the bottom-left corner, like Find My.
+    private var mapControls: some View {
+        VStack(spacing: 10) {
+            VStack(spacing: 0) {
+                mapButton(satellite ? "map" : "globe.americas.fill",
+                          label: satellite ? "Show standard map" : "Show satellite map") {
+                    satellite.toggle()
+                }
+                .sensoryFeedback(.selection, trigger: satellite)
+                Divider().frame(width: 24).opacity(0.4)
+                mapButton("location", label: "Recenter") {
+                    withAnimation(.smooth) {
+                        camera = .region(MKCoordinateRegion(center: Geo.home, span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
+                    }
+                }
+                Divider().frame(width: 24).opacity(0.4)
+                mapButton("arrow.up.left.and.arrow.down.right", label: "Zoom out to region") {
+                    withAnimation(.smooth) {
+                        camera = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 38.62, longitude: -121.55),
+                                                            span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6)))
+                    }
+                }
+            }
+            .glassEffect(.regular.interactive(), in: Capsule())
+
+            Button(action: toggle3D) {
+                Text(is3D ? "2D" : "3D")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+                    .contentTransition(.numericText())
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: Circle())
+            .accessibilityLabel(is3D ? "Show flat map" : "Tilt map to 3D")
+            .sensoryFeedback(.selection, trigger: is3D)
+        }
+    }
+
+    private func mapButton(_ symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var is3D: Bool { (mapCamera?.pitch ?? 0) > 10 }
+
+    /// Tilts the current view (same place, zoom and heading) to 3D, or back to flat.
+    private func toggle3D() {
+        guard let current = mapCamera else { return }
+        withAnimation(.smooth(duration: 0.6)) {
+            camera = .camera(MapCamera(centerCoordinate: current.centerCoordinate, distance: current.distance,
+                                       heading: current.heading, pitch: is3D ? 0 : 60))
+        }
+    }
+
     private var mapView: some View {
         Map(position: $camera, selection: $selection) {
             Annotation("You", coordinate: Geo.home) {
@@ -94,7 +160,8 @@ struct ExploreView: View {
         // Apple's own satellite imagery (with road and place labels). Only the style changes,
         // so the camera, pins and selection stay where they are.
         .mapStyle(satellite ? .hybrid(elevation: .realistic, pointsOfInterest: .excludingAll)
-                            : .standard(pointsOfInterest: .excludingAll))
+                            : .standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+        .onMapCameraChange(frequency: .onEnd) { mapCamera = $0.camera }
         .mapControls {
             MapCompass()
             MapScaleView()
@@ -102,42 +169,9 @@ struct ExploreView: View {
         .safeAreaInset(edge: .top) { chips }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
-                HStack {
+                HStack(alignment: .bottom) {
+                    mapControls
                     Spacer()
-                    VStack(spacing: 10) {
-                    Button {
-                        satellite.toggle()
-                    } label: {
-                        Image(systemName: satellite ? "map.fill" : "globe.americas.fill")
-                            .font(.headline)
-                            .frame(width: 46, height: 46)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
-                    .buttonStyle(.glass)
-                    .accessibilityLabel(satellite ? "Show standard map" : "Show satellite map")
-                    .sensoryFeedback(.selection, trigger: satellite)
-                    Button {
-                        withAnimation(.smooth) {
-                            camera = .region(MKCoordinateRegion(center: Geo.home, span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
-                        }
-                    } label: {
-                        Image(systemName: "location.fill").font(.headline).frame(width: 46, height: 46)
-                    }
-                    .buttonStyle(.glass)
-                    }
-                    .buttonBorderShape(.circle)
-                    .accessibilityLabel("Recenter")
-                    Button {
-                        withAnimation(.smooth) {
-                            camera = .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 38.62, longitude: -121.55),
-                                                                span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6)))
-                        }
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.headline).frame(width: 46, height: 46)
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .accessibilityLabel("Zoom out to region")
                 }
                 .padding(.horizontal, 16)
 
