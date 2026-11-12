@@ -8,7 +8,7 @@ EVENT_FIELDS = {
     "id", "title", "description", "start_time", "end_time", "location_name",
     "latitude", "longitude", "category", "image_url",
     "host_name", "address", "capacity", "attendee_count", "cost", "tags",
-    "level", "requires_approval", "location_private",
+    "level", "requires_approval", "location_private", "summary", "host_id",
 }
 
 

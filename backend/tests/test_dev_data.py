@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from conftest import FIXED_NOW, make_event
+from conftest import FIXED_NOW, make_event, signed_in
 from main import create_app
 from repositories.dev_sample_events import build_sample_events
 from repositories.memory_event_repository import InMemoryEventRepository
@@ -27,8 +27,10 @@ def test_memory_repository_filters_past_sorts_and_limits():
 
 def test_memory_event_store_serves_sample_events(monkeypatch):
     monkeypatch.setenv("EVENT_STORE", "memory")
+    monkeypatch.setenv("DEV_SIGN_IN", "on")
+    monkeypatch.delenv("GAE_ENV", raising=False)
 
-    response = create_app().test_client().get("/api/events")
+    response = signed_in(create_app()).get("/api/events")
 
     assert response.status_code == 200
     body = response.get_json()

@@ -9,6 +9,12 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- iOS OAuth client ID from Google Cloud Console (APIs & Services → Credentials), e.g.
+	     123-abc.apps.googleusercontent.com. Free; no billing needed. Empty = Google sign-in hidden
+	     (dev sign-in against a local server with DEV_SIGN_IN=on still works). The backend needs the
+	     same ID in GOOGLE_CLIENT_IDS. -->
+	<key>GoogleClientID</key>
+	<string></string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Swipe-n-Go connects to your team's development server on this Wi-Fi network to share events.</string>
 </dict>

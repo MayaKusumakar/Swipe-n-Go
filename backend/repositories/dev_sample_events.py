@@ -44,5 +44,6 @@ def build_sample_events(now):
             longitude=lng,
             category=category,
             image_url=None,
+            summary_stale=True,  # so a /tasks/summarize-stale run fills them in
         ))
     return events

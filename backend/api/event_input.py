@@ -131,7 +131,6 @@ def parse_new_event(body, now):
         "latitude": latitude,
         "longitude": longitude,
         "category": category,
-        "host_name": _text(body, "host_name", MAX_SHORT_TEXT),
         "address": _text(body, "address", MAX_SHORT_TEXT),
         "capacity": capacity,
         "cost": _text(body, "cost", 40),
@@ -140,10 +139,3 @@ def parse_new_event(body, now):
         "requires_approval": requires_approval,
         "location_private": location_private,
     }
-
-
-def parse_attendee_name(body):
-    """Name from the POST /api/events/<id>/attendees body."""
-    if not isinstance(body, dict):
-        raise InvalidEventError("body", "request body must be a JSON object")
-    return _text(body, "name", MAX_SHORT_TEXT, required=True)

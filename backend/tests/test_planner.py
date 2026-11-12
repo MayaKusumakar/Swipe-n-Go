@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import anthropic
 import pytest
 
-from main import create_app
+from conftest import make_app, signed_in
 from services.planner_service import PlannerService, PlannerUnavailableError, _PickOutput, _PlanOutput
 
 PACIFIC = timezone(timedelta(hours=-8))
@@ -74,8 +74,7 @@ def output(picks, **overrides):
 @pytest.fixture
 def make_client():
     def build(planner):
-        app = create_app(event_service=SimpleNamespace(), planner_service=planner)
-        return app.test_client()
+        return signed_in(make_app(event_service=SimpleNamespace(), planner_service=planner))
     return build
 
 

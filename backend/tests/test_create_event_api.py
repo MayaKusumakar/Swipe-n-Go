@@ -36,7 +36,7 @@ def test_creates_event_and_returns_it(client, repository):
     uuid.UUID(body["id"])  # server-generated UUID
     assert body["title"] == "Sunrise Arboretum 5K"
     assert body["start_time"] == "2026-11-06T14:30:00+00:00"
-    assert body["host_name"] == "Anant Katiyar"
+    assert body["host_name"] == "Avery"  # the signed-in host, not the request body
     assert body["capacity"] == 6
     assert body["tags"] == ["Running", "Coffee after"]
     assert body["attendee_count"] == 0

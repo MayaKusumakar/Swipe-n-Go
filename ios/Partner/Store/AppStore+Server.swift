@@ -43,6 +43,7 @@ extension AppStore {
             serverStatus = .off
             return
         }
+        guard auth.isSignedIn else { return }
         if !serverStatus.isOnline { serverStatus = .connecting }
         do {
             let events = try await EventServer.fetchEvents(baseURL: url)
@@ -50,9 +51,34 @@ extension AppStore {
             serverStatus = .online(events: events.count, at: .now)
             await uploadPendingHostedEvents()
             await syncAttendance(baseURL: url)
+        } catch let error as EventServer.ServerError where error.status == 401 || error.status == 403 {
+            // The server no longer accepts this sign-in (expired, revoked, or not @ucdavis.edu).
+            auth.signOut(message: error.message)
         } catch {
             serverStatus = .offline(Self.describe(error))
         }
+    }
+
+    // MARK: - Sign-in (see Auth.swift)
+
+    /// After signing in: the server records the account and double-checks it's @ucdavis.edu.
+    /// Without a server (or if it's unreachable) the sign-in stands; every request is checked anyway.
+    func confirmSignIn() async {
+        guard let url = serverURL, let account = auth.account else { return }
+        do {
+            let user = try await EventServer.confirmSignIn(baseURL: url)
+            if me.name.isEmpty { me.name = user.name; save() }
+        } catch let error as EventServer.ServerError where error.status == 401 || error.status == 403 {
+            if auth.account == account { auth.signOut(message: error.message) }
+        } catch {
+            // Offline: try again on the next sync.
+        }
+    }
+
+    /// Whether the server offers dev sign-in (local servers with DEV_SIGN_IN=on only).
+    func devSignInAvailable() async -> Bool {
+        guard let url = serverURL else { return false }
+        return (try? await EventServer.authConfig(baseURL: url).devSignIn) ?? false
     }
 
     private func merge(_ events: [EventServer.ServerEvent]) {
@@ -64,13 +90,11 @@ extension AppStore {
             if let i = activities.firstIndex(where: { $0.id == localID }) {
                 // Refresh server-owned details, keep what only this phone knows.
                 let old = activities[i]
-                var updated = Activity(server: event, hostID: old.hostID)
+                var updated = Activity(server: event, hostID: hostedByMe(event) ? me.id : old.hostID)
                 updated.attendeeIDs = old.attendeeIDs
                 updated.coverPhotoData = old.coverPhotoData
                 updated.seriesID = old.seriesID
-                updated.hostToken = old.hostToken
                 updated.myAttendeeID = old.myAttendeeID
-                updated.myAttendeeToken = old.myAttendeeToken
                 updated.serverAttendeeIDs = old.serverAttendeeIDs
                 if updated.locationHidden == true, old.locationHidden != true {
                     // The public list hides private locations; keep the one this phone already has
@@ -82,6 +106,9 @@ extension AppStore {
                     updated.locationHidden = nil
                 }
                 activities[i] = updated
+            } else if hostedByMe(event) {
+                // Posted from your account on another phone (or before reinstalling).
+                activities.append(Activity(server: event, hostID: me.id))
             } else {
                 let host = Person.serverHost(named: event.hostName, category: ActivityCategory(serverValue: event.category))
                 if person(host.id) == nil, !newHosts.contains(where: { $0.id == host.id }) { newHosts.append(host) }
@@ -97,14 +124,18 @@ extension AppStore {
         save()
     }
 
+    private func hostedByMe(_ event: EventServer.ServerEvent) -> Bool {
+        event.hostId != nil && event.hostId == auth.account?.id
+    }
+
     /// Sends a plan you host to the server. Safe to call more than once:
     /// the app sends its own id, so a retry can't create a duplicate.
     func upload(_ activity: Activity) async {
         guard let url = serverURL, activity.serverID == nil, isHost(activity), !activity.isPast,
               !rejectedUploads.contains(activity.id) else { return }
         do {
-            let created = try await EventServer.create(activity.serverBody(hostName: me.name), baseURL: url)
-            markUploaded(activity.id, serverID: created.id, hostToken: created.hostToken)
+            let created = try await EventServer.create(activity.serverBody(), baseURL: url)
+            markUploaded(activity.id, serverID: created.id)
         } catch let error as EventServer.ServerError where error.message.contains("already exists") {
             markUploaded(activity.id, serverID: activity.id.uuidString.lowercased())
         } catch let error as EventServer.ServerError {
@@ -127,10 +158,9 @@ extension AppStore {
         }
     }
 
-    private func markUploaded(_ id: UUID, serverID: String, hostToken: String? = nil) {
+    private func markUploaded(_ id: UUID, serverID: String) {
         guard let i = activities.firstIndex(where: { $0.id == id }) else { return }
         activities[i].serverID = serverID
-        if let hostToken { activities[i].hostToken = hostToken }
         save()
     }
 
@@ -140,17 +170,17 @@ extension AppStore {
     /// approved them, which is when a private location is shared.
     private func syncAttendance(baseURL url: URL) async {
         for activity in activities where activity.serverID != nil && !activity.isPast {
-            if isHost(activity), let token = activity.hostToken {
-                await pullServerRequests(for: activity, hostToken: token, baseURL: url)
-            } else if activity.locationHidden == true, let token = activity.myAttendeeToken {
-                await revealLocationIfApproved(activity, attendeeToken: token, baseURL: url)
+            if isHost(activity) {
+                await pullServerRequests(for: activity, baseURL: url)
+            } else if activity.locationHidden == true, activity.myAttendeeID != nil {
+                await revealLocationIfApproved(activity, baseURL: url)
             }
         }
     }
 
-    private func pullServerRequests(for activity: Activity, hostToken: String, baseURL url: URL) async {
+    private func pullServerRequests(for activity: Activity, baseURL url: URL) async {
         guard let serverID = activity.serverID,
-              let attendees = try? await EventServer.attendees(eventID: serverID, hostToken: hostToken, baseURL: url),
+              let attendees = try? await EventServer.attendees(eventID: serverID, baseURL: url),
               let i = activities.firstIndex(where: { $0.id == activity.id }) else { return }
         let known = Set(activities[i].serverAttendeeIDs?.values.map { $0 } ?? [])
             .union(requests.compactMap(\.serverAttendeeID))
@@ -173,10 +203,10 @@ extension AppStore {
         save()
     }
 
-    private func revealLocationIfApproved(_ activity: Activity, attendeeToken: String, baseURL url: URL) async {
+    private func revealLocationIfApproved(_ activity: Activity, baseURL url: URL) async {
         guard let serverID = activity.serverID,
               // 403 until the host approves you: the server keeps the location until then.
-              let location = try? await EventServer.location(eventID: serverID, as: .attendee(attendeeToken), baseURL: url),
+              let location = try? await EventServer.location(eventID: serverID, baseURL: url),
               let i = activities.firstIndex(where: { $0.id == activity.id }) else { return }
         activities[i].placeName = location.locationName
         activities[i].address = location.address ?? location.locationName

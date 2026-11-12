@@ -46,6 +46,8 @@ final class AppStore {
     private(set) var swipeHistory: [(UUID, SwipeAction)] = []
 
     // MARK: Server (see AppStore+Server.swift)
+    /// Your @ucdavis.edu sign-in. Every server request carries its token.
+    let auth = Auth()
     var serverStatus: ServerStatus = .off
     @ObservationIgnored var rejectedUploads: Set<UUID> = []   // plans the server refused; not retried
     @ObservationIgnored var debugPlannerQuery: String?         // DEBUG: `-plan "<text>"` opens I'm free… and runs it
@@ -66,6 +68,8 @@ final class AppStore {
     init() {
         me = AppStore.defaultMe()
         if !load() { seed() }
+        let auth = auth
+        EventServer.tokenProvider = { try await auth.bearerToken() }
         #if DEBUG
         applyDebugLaunchArguments()
         #endif
@@ -79,6 +83,9 @@ final class AppStore {
         if args.contains("-host") { showCreate = true }
         if args.contains("-samples") { showSampleEvents = true; serverURLString = "" }
         if let i = args.firstIndex(of: "-server"), i + 1 < args.count { serverURLString = args[i + 1] }
+        // `-devSignIn you@ucdavis.edu` signs in through a local server's dev sign-in (DEV_SIGN_IN=on).
+        if let i = args.firstIndex(of: "-devSignIn"), i + 1 < args.count { auth.signInForDevelopment(email: args[i + 1], name: "") }
+        if args.contains("-signOut") { auth.signOut() }
         if args.contains("-noSamples") { showSampleEvents = false }
         if let i = args.firstIndex(of: "-plan"), i + 1 < args.count {
             debugPlannerQuery = args[i + 1]
@@ -243,7 +250,7 @@ final class AppStore {
     func join(_ activity: Activity) -> JoinOutcome {
         skippedIDs.remove(activity.id)
         let sharedPrivate = activity.serverID != nil && activity.isLocationPrivate
-        if activity.serverID != nil, !isHost(activity), activity.myAttendeeToken == nil {
+        if activity.serverID != nil, !isHost(activity), activity.myAttendeeID == nil {
             Task { await registerJoin(activity) }
         }
         if activity.requiresApproval || sharedPrivate {
@@ -269,13 +276,12 @@ final class AppStore {
         save()
     }
 
-    /// Sends your join request for a shared event to the server and keeps its secret.
+    /// Sends your join request for a shared event to the server, as your signed-in account.
     private func registerJoin(_ activity: Activity) async {
         guard let serverID = activity.serverID, let url = serverURL,
-              let attendee = try? await EventServer.requestToJoin(eventID: serverID, name: me.name, baseURL: url),
+              let attendee = try? await EventServer.requestToJoin(eventID: serverID, baseURL: url),
               let i = activities.firstIndex(where: { $0.id == activity.id }) else { return }
         activities[i].myAttendeeID = attendee.id
-        activities[i].myAttendeeToken = attendee.attendeeToken
         save()
     }
 
@@ -292,12 +298,10 @@ final class AppStore {
         pendingIDs.remove(activity.id)
         if let i = activities.firstIndex(where: { $0.id == activity.id }) {
             activities[i].attendeeIDs.removeAll { $0 == me.id }
-            if let serverID = activities[i].serverID, let attendeeID = activities[i].myAttendeeID,
-               let token = activities[i].myAttendeeToken {
-                Task { _ = await serverAction { try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .attendee(token), baseURL: $0) } }
+            if let serverID = activities[i].serverID, let attendeeID = activities[i].myAttendeeID {
+                Task { _ = await serverAction { try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, baseURL: $0) } }
             }
             activities[i].myAttendeeID = nil
-            activities[i].myAttendeeToken = nil
             if activities[i].isLocationPrivate, activities[i].serverID != nil { activities[i].locationHidden = true }
         }
         if let c = conversations.firstIndex(where: { $0.activityID == activity.id }) {
@@ -423,10 +427,9 @@ final class AppStore {
     }
 
     func approve(_ request: JoinRequest) {
-        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID),
-           let serverID = a.serverID, let token = a.hostToken {
+        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID), let serverID = a.serverID {
             Task {
-                guard await serverAction({ try await EventServer.approve(eventID: serverID, attendeeID: attendeeID, hostToken: token, baseURL: $0) }),
+                guard await serverAction({ try await EventServer.approve(eventID: serverID, attendeeID: attendeeID, baseURL: $0) }),
                       let i = activities.firstIndex(where: { $0.id == a.id }) else { return }
                 activities[i].serverAttendeeIDs = (activities[i].serverAttendeeIDs ?? [:]).merging([request.personID: attendeeID]) { $1 }
                 acceptLocally(request)
@@ -452,10 +455,9 @@ final class AppStore {
     }
 
     func decline(_ request: JoinRequest) {
-        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID),
-           let serverID = a.serverID, let token = a.hostToken {
+        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID), let serverID = a.serverID {
             Task {
-                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .host(token), baseURL: $0) })
+                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, baseURL: $0) })
                 else { return }
                 requests.removeAll { $0.id == request.id }
                 save()
@@ -470,9 +472,9 @@ final class AppStore {
     /// so they also lose access to a private location.
     func removeAttendee(_ personID: UUID, from activity: Activity) {
         guard isHost(activity), personID != me.id else { return }
-        if let serverID = activity.serverID, let attendeeID = activity.serverAttendeeIDs?[personID], let token = activity.hostToken {
+        if let serverID = activity.serverID, let attendeeID = activity.serverAttendeeIDs?[personID] {
             Task {
-                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .host(token), baseURL: $0) })
+                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, baseURL: $0) })
                 else { return }
                 removeLocally(personID, from: activity.id)
             }
@@ -711,6 +713,7 @@ final class AppStore {
 
     /// Wipes everything, including the profile, and returns to onboarding.
     func resetEverything() {
+        auth.signOut()
         try? FileManager.default.removeItem(at: fileURL)
         hasOnboarded = false
         drafts = []

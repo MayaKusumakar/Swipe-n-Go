@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		450430EC0E1D007B35DA049F /* AuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6FAC30D60FD9C0F65BE431 /* AuthTests.swift */; };
+		45A63486B7CE34528B9A669A /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA6A73CDA8B5C9D4F7243CC6 /* SignInView.swift */; };
+		8364F3EAD39403FAEDA11B7E /* Auth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3937752088BCA1B79202B8B9 /* Auth.swift */; };
 		0057DDD590E86A2C6DBC2B86 /* PlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B258E6A7CF6C51BF22E246 /* PlannerTests.swift */; };
 		07CBDFAA5B1B675F6199DC46 /* CreateActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC7CC9628CF6412B1E45D4A /* CreateActivityView.swift */; };
 		0850A8558B56873E02EC11FF /* ClaudePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F822F3767F75086B3926BF60 /* ClaudePlanner.swift */; };
@@ -48,6 +51,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		5A6FAC30D60FD9C0F65BE431 /* AuthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthTests.swift; sourceTree = "<group>"; };
+		DA6A73CDA8B5C9D4F7243CC6 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
+		3937752088BCA1B79202B8B9 /* Auth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Auth.swift; sourceTree = "<group>"; };
 		04AFBAC487ACD4EF2117F400 /* PronounPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PronounPicker.swift; sourceTree = "<group>"; };
 		0E05EC8B25B9729101DEB50E /* ChatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatsView.swift; sourceTree = "<group>"; };
 		1D4831305DB706ABC16D30CE /* Permissions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Permissions.swift; sourceTree = "<group>"; };
@@ -94,6 +100,7 @@
 			children = (
 				C4393023E0A4535BA8F173B5 /* OnboardingView.swift */,
 				04AFBAC487ACD4EF2117F400 /* PronounPicker.swift */,
+				DA6A73CDA8B5C9D4F7243CC6 /* SignInView.swift */,
 			);
 			path = Onboarding;
 			sourceTree = "<group>";
@@ -162,6 +169,7 @@
 				7F815429750237E8356B4235 /* AppStore+Server.swift */,
 				4ABB13ADAF9E45A81E9801A0 /* EventServer.swift */,
 				1D4831305DB706ABC16D30CE /* Permissions.swift */,
+				3937752088BCA1B79202B8B9 /* Auth.swift */,
 			);
 			path = Store;
 			sourceTree = "<group>";
@@ -222,6 +230,7 @@
 			isa = PBXGroup;
 			children = (
 				81B258E6A7CF6C51BF22E246 /* PlannerTests.swift */,
+				5A6FAC30D60FD9C0F65BE431 /* AuthTests.swift */,
 			);
 			path = PartnerTests;
 			sourceTree = "<group>";
@@ -355,6 +364,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				45A63486B7CE34528B9A669A /* SignInView.swift in Sources */,
+				8364F3EAD39403FAEDA11B7E /* Auth.swift in Sources */,
 				9853209F3AB4CD83F064CBF7 /* ActivityDetailView.swift in Sources */,
 				663D1FA6F6C93A2995456400 /* AppStore+Server.swift in Sources */,
 				23BA3E1A45DDC7A8CB7F4BF4 /* AppStore.swift in Sources */,
@@ -388,6 +399,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				450430EC0E1D007B35DA049F /* AuthTests.swift in Sources */,
 				0057DDD590E86A2C6DBC2B86 /* PlannerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

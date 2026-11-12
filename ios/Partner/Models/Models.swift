@@ -160,11 +160,8 @@ struct Activity: Codable, Identifiable, Hashable {
     var privateLocation: Bool? = nil
     /// True while the server has not shared this private location with you yet.
     var locationHidden: Bool? = nil
-    /// Secret from the server that proves you host this event (only on the host's phone).
-    var hostToken: String? = nil
-    /// Your join request on the server for someone else's event, and its secret.
+    /// Your join request on the server for someone else's event (your account id).
     var myAttendeeID: String? = nil
-    var myAttendeeToken: String? = nil
     /// Server attendee id for each person on this phone, so the host can remove them on the server.
     var serverAttendeeIDs: [UUID: String]? = nil
 
