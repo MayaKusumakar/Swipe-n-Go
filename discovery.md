@@ -296,6 +296,69 @@ From this interview, we found that Instagram is one of the main ways students ke
 - From this interview, we found that students mainly rely on Instagram and physical flyers to find events, but sometimes finding something interesting just comes down to luck. One thing that stood out was that the interviewee wanted to go to a game night but ended up not going because he didn't know anyone there and had never been to that club before. We also learned that even when students save posts or take pictures of flyers, they sometimes forget to check them again. This supports our idea that finding events isn't the only problem, since students also need a better way to keep track of events and might feel more comfortable attending if they knew someone else going. Overall, it seems like making events easier to discover and helping students feel more comfortable attending unfamiliar events could be useful.
 
 ---
+## Interview 7
+
+**Interviewer:** Angus
+**Note Taker:** Maya
+**Interviewee:** Mark
+**Date:** 11/11/26
+**Recording:** [Recording](https://drive.google.com/file/d/19PPkjMICxKzb2uJMhp8Y_zUdKGTH3mDL/view?usp=drive_link)
+
+### Pre-Interview Hypothesis: 
+
+- We think most students find out about events from word of mouth, emails, and instagram pages/posts. I think students find it hard to keep track of all of these different events, especially when timings or locations change. We also think that students miss out on opportunities because they either don't know about it or forgetting about it entirely. On the event organizers' side of things, we think that they are not reaching as many attendees as they could because of these issues as well. 
+
+### Interview Notes
+
+**1. Can you tell me about the last event or activity you attended around UC Davis or Davis? What was the event, and how did you first hear about it?**
+- Finance Club (FIC). Last attended event was a finance club GM. Heard about it by being in the club (it’s a set time every week). If it changed, they would send an email and he would miss these frequently
+**2. Think about the last time you were looking for something to do. How did you go about finding it? (what sources did you use?)**
+- People tabling at the MU, word of mouth from friends. Wishes there was a website showing all the UC Davis club meeting times
+**3. Can you remember a time when you struggled to find something interesting to do?**
+- Was looking for something to improve resume to get a job, saw it on linkdln a couple months later and he missed the application deadline.
+**4. Tell me about the last time you saw an event you were interested in but decided not to go. What stopped you from attending?**
+- Aggie Sports Analytics Club. He was very interested in the club, and decided not to go because of a scheduling conflict
+**5. Can you walk me through how you kept track of an event you wanted to attend recently? Did you save the post, take a screenshot, add it to your calendar, or use something else?**
+- Puts everything in google calendar and that is the only way he keeps track of anything that he actually cares about. 
+**6. If something changed like a location or time, how do you keep track of this?** 
+- Would update in Google Calendar if he saw it. But the problem is him not seeing it and therefore not updating it in the calendar. 
+
+### Post-Interview Synthesis
+
+- From this interview, we learned that students will rely on previous experiences regarding recurring meeting times. Incorporating this into a feature for both user sides of the app could be worth investigating. Otherwise, most of the pre-interview hypothesis points were accurate. An unexpected part of the problem is students who are interested in what a club is about, but aren't able to make it to a singular meeting due to other conflicts.
+
+---
+## Interview 8
+
+**Interviewer:** Maya
+**Note Taker:** Angus
+**Interviewee:** Omkar
+**Date:** 11/11/26
+**Recording:** [Recording](https://drive.google.com/file/d/1G6y03PnBt_ynkV0C-TKLkoE169uQI-v6/view?usp=drive_link)
+
+### Pre-Interview Hypothesis: 
+- We believe that most students rely on social media to find their club events and that they are more likely to attend said events if going with a friend. We believe there are multiple challenges that prevent students from going to events they would otherwise check out. The main challenges we believe are not knowing people there, difficulty locating event information, and scheduling conflicts.
+
+### Interview Notes
+**1. Finding Events**
+- First heard about the club fair through word of mouth and university emails.
+- Usually finds events through social media, L&S college emails, and word of mouth.
+- At UC Davis, word of mouth has been the main way of discovering events.
+**2. Challenges**
+- After freshman year, finding things to do became harder after moving out of the dorms.
+- Had to do personal research to find activities and events.
+- During sophomore year, was interested in attending a club fair and a job recruitment event but struggled to find information about when and where they were happening.
+- Had to ask friends or search through school emails for event details.
+- Unclear locations and missing information were the biggest reasons for not attending events.
+**3. Event Awareness**
+- Found it easy to attend Lawntopia because it was widely advertised around Davis.
+- Did not hear about the Whole Earth Festival until senior year.
+- Only remembers seeing one flyer for the festival.
+- Sometimes takes pictures of flyers to remember event details.
+**4. Synthesis**
+- The interview shows that finding events at UC Davis can be difficult because information is spread across emails, social media, flyers, and word of mouth. Popular events are easier to discover, while smaller or less advertised events often go unnoticed. The biggest issue is not a lack of interest, but a lack of clear information about event times, locations, and details. A centralized platform could make it easier for students to discover events and keep track of the ones they want to attend.
+
+---
 
 ## Overall Takeaways
 
