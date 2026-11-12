@@ -164,6 +164,10 @@ struct Activity: Codable, Identifiable, Hashable {
     var myAttendeeID: String? = nil
     /// Server attendee id for each person on this phone, so the host can remove them on the server.
     var serverAttendeeIDs: [UUID: String]? = nil
+    /// The server's cover photo address (`image_url`), which changes when the photo changes.
+    var serverCoverURL: String? = nil
+    /// Which server cover `coverPhotoData` holds, so it's only downloaded or uploaded once.
+    var coverSyncedURL: String? = nil
 
     var isLocationPrivate: Bool { privateLocation == true }
 
@@ -194,7 +198,10 @@ struct Conversation: Codable, Identifiable, Hashable {
     var participantIDs: [UUID]
     var messages: [Message]
     var unreadCount: Int = 0
+    /// Muted chats don't count toward the Chats badge. Optional so older saved chats still load.
+    var isMuted: Bool? = nil
 
+    var muted: Bool { isMuted ?? false }
     var lastMessage: Message? { messages.last }
 }
 

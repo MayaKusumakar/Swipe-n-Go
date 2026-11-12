@@ -1,5 +1,9 @@
-from flask import Blueprint, current_app, g, jsonify, request
+import base64
+import binascii
 
+from flask import Blueprint, Response, current_app, g, jsonify, request
+
+from api.auth import acting_user
 from api.errors import error_response
 from api.event_input import InvalidEventError, parse_new_event
 from services.event_service import (
@@ -152,7 +156,7 @@ def create_event():
         return error_response(400, "invalid_event", str(e))
 
     try:
-        event = service.create_event(g.user, **fields)
+        event = service.create_event(acting_user(), **fields)
     except DuplicateEventError:
         return error_response(409, "event_exists", "An event with this id already exists")
     except ServiceUnavailableError:
@@ -181,12 +185,43 @@ def _guarded(action):
         return _unavailable()
 
 
+# Cover photos. The app sends a JPEG it has already shrunk (1600 x 900) and
+# re-encoded, which also strips location metadata.
+MAX_COVER_BYTES = 900 * 1024
+
+
+@events_bp.put("/<event_id>/cover")
+def set_cover(event_id):
+    body = request.get_json(silent=True)
+    try:
+        data = base64.b64decode((body or {}).get("image") or "", validate=True) if isinstance(body, dict) else b""
+    except (binascii.Error, TypeError, ValueError):
+        return error_response(400, "invalid_cover", "image must be base64")
+    if not data.startswith(b"\xff\xd8\xff"):
+        return error_response(400, "invalid_cover", "image must be a JPEG")
+    if len(data) > MAX_COVER_BYTES:
+        return error_response(400, "invalid_cover", "image must be under 900 KB")
+    service = current_app.extensions["event_service"]
+    return _guarded(lambda: jsonify({"image_url": service.set_cover(event_id, g.user, data)}))
+
+
+@events_bp.get("/<event_id>/cover")
+def get_cover(event_id):
+    service = current_app.extensions["event_service"]
+
+    def run():
+        response = Response(service.cover(event_id), mimetype="image/jpeg")
+        response.headers["Cache-Control"] = "private, max-age=86400"
+        return response
+    return _guarded(run)
+
+
 @events_bp.post("/<event_id>/attendees")
 def request_to_join(event_id):
     service = current_app.extensions["event_service"]
 
     def run():
-        attendee, created = service.request_to_join(event_id, g.user)
+        attendee, created = service.request_to_join(event_id, acting_user())
         return jsonify(attendee.to_dict()), 201 if created else 200
     return _guarded(run)
 

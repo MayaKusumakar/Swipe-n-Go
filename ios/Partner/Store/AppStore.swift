@@ -200,7 +200,7 @@ final class AppStore {
         activities.filter { savedIDs.contains($0.id) && !$0.isPast }.sorted { $0.date < $1.date }
     }
 
-    var totalUnread: Int { conversations.reduce(0) { $0 + $1.unreadCount } }
+    var totalUnread: Int { conversations.reduce(0) { $0 + ($1.muted ? 0 : $1.unreadCount) } }
 
     // MARK: - Onboarding & profile
 
@@ -215,11 +215,14 @@ final class AppStore {
         // Seed conversations reference the old `me` id; re-key them.
         seed(keepingMe: true)
         save()
+        Task { await syncMyName() }
     }
 
     func updateProfile(_ person: Person) {
+        let renamed = person.name != me.name
         me = person
         save()
+        if renamed { Task { await syncMyName() } }
     }
 
     // MARK: - Swiping & joining
@@ -538,6 +541,19 @@ final class AppStore {
 
         guard let responder = others(in: conversations[0]).randomElement() else { return }
         scheduleReply(in: conversationID, from: responder.id, text: reply(to: trimmed), after: Double.random(in: 1.6...3.2))
+    }
+
+    func toggleMute(_ conversationID: UUID) {
+        guard let i = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        conversations[i].isMuted = !conversations[i].muted
+        save()
+    }
+
+    /// Removes the chat from this phone. It doesn't leave the plan.
+    func deleteConversation(_ conversationID: UUID) {
+        conversations.removeAll { $0.id == conversationID }
+        if openConversationID == conversationID { openConversationID = nil }
+        save()
     }
 
     func markRead(_ conversationID: UUID) {

@@ -5,6 +5,8 @@ from datetime import datetime
 from services import geo
 
 EVENT_KIND = "Event"
+# One cover photo per event, stored apart from the event so lists stay small.
+COVER_KIND = "Cover"
 ATTENDEE_KIND = "Attendee"
 USER_KIND = "User"
 
@@ -199,6 +201,13 @@ class User:
     picture_url: str | None
     created_at: datetime
     last_sign_in_at: datetime
+    # The name they chose in the app's profile. Shown on their events and join
+    # requests instead of the sign-in name when set.
+    display_name: str | None = None
+
+    @property
+    def shown_name(self):
+        return self.display_name or self.name
 
     @classmethod
     def from_entity(cls, entity):
@@ -209,6 +218,7 @@ class User:
             picture_url=entity.get("picture_url"),
             created_at=entity["created_at"],
             last_sign_in_at=entity["last_sign_in_at"],
+            display_name=entity.get("display_name"),
         )
 
     def to_entity_properties(self):
@@ -218,7 +228,8 @@ class User:
             "picture_url": self.picture_url,
             "created_at": self.created_at,
             "last_sign_in_at": self.last_sign_in_at,
+            "display_name": self.display_name,
         }
 
     def to_dict(self):
-        return {"id": self.id, "email": self.email, "name": self.name, "picture_url": self.picture_url}
+        return {"id": self.id, "email": self.email, "name": self.shown_name, "picture_url": self.picture_url}

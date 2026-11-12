@@ -14,6 +14,7 @@
 		0AB55B1F9C8E2B89F63B89D7 /* OnDevicePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27AA67D852A1EFBEBA57A2B5 /* OnDevicePlanner.swift */; };
 		1610C3DD00C95A7CF8FE151E /* ChatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E05EC8B25B9729101DEB50E /* ChatsView.swift */; };
 		23BA3E1A45DDC7A8CB7F4BF4 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62919B82F7A8975AFF520BB /* AppStore.swift */; };
+		2C25F0BE5709F5C2CE2022F0 /* GlitchFixTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E9134B801F8C6935042B23 /* GlitchFixTests.swift */; };
 		30231E75CDA87D2F1A8A131D /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C1783607081C68C31451F12 /* DiscoverView.swift */; };
 		3DDD3EDEC91F6CEB24A99BAE /* AuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4609AE8EE48C3D84D6089DAF /* AuthTests.swift */; };
 		46E7C5FE50451B6CA72DBA14 /* PronounPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AFBAC487ACD4EF2117F400 /* PronounPicker.swift */; };
@@ -40,6 +41,7 @@
 		DA7736779BAF617D9AF17C08 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 44C2D83EF9FBF5EFBEE0B9AE /* Assets.xcassets */; };
 		E36B71B78009CCA54D315487 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2BF4E12E77B6C8F63736F0B /* Components.swift */; };
 		E447CB49D6B542BE93454964 /* PlannerPromptBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7FE874621DE5D539FE53C9B /* PlannerPromptBar.swift */; };
+		F11100A852F18112EF099004 /* DismissAttempt.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A5153CFB51D39F602DFB70 /* DismissAttempt.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,8 +83,10 @@
 		C62919B82F7A8975AFF520BB /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		CA07D3539E217DE077A7F7C8 /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
 		D038FEF2CE810DDC9C7F1E3C /* PlansView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlansView.swift; sourceTree = "<group>"; };
+		D3E9134B801F8C6935042B23 /* GlitchFixTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlitchFixTests.swift; sourceTree = "<group>"; };
 		DA89166BD207A830C832CD29 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
 		DF4C2CA921922BDBAF3F39EE /* PlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerView.swift; sourceTree = "<group>"; };
+		E1A5153CFB51D39F602DFB70 /* DismissAttempt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DismissAttempt.swift; sourceTree = "<group>"; };
 		E7FE874621DE5D539FE53C9B /* PlannerPromptBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerPromptBar.swift; sourceTree = "<group>"; };
 		E8EE60ADEE18E38E66282DDE /* FlyerReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlyerReaderTests.swift; sourceTree = "<group>"; };
 		F822F3767F75086B3926BF60 /* ClaudePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudePlanner.swift; sourceTree = "<group>"; };
@@ -182,6 +186,7 @@
 			isa = PBXGroup;
 			children = (
 				B2BF4E12E77B6C8F63736F0B /* Components.swift */,
+				E1A5153CFB51D39F602DFB70 /* DismissAttempt.swift */,
 			);
 			path = Design;
 			sourceTree = "<group>";
@@ -236,6 +241,7 @@
 			children = (
 				4609AE8EE48C3D84D6089DAF /* AuthTests.swift */,
 				E8EE60ADEE18E38E66282DDE /* FlyerReaderTests.swift */,
+				D3E9134B801F8C6935042B23 /* GlitchFixTests.swift */,
 				81B258E6A7CF6C51BF22E246 /* PlannerTests.swift */,
 			);
 			path = PartnerTests;
@@ -380,6 +386,7 @@
 				E36B71B78009CCA54D315487 /* Components.swift in Sources */,
 				07CBDFAA5B1B675F6199DC46 /* CreateActivityView.swift in Sources */,
 				30231E75CDA87D2F1A8A131D /* DiscoverView.swift in Sources */,
+				F11100A852F18112EF099004 /* DismissAttempt.swift in Sources */,
 				9F40004C9DEDBB7354A876C5 /* EventServer.swift in Sources */,
 				08E6C9E2ABFCBCAC011DF1C5 /* ExploreView.swift in Sources */,
 				932C63375B70D4DFCDC874EC /* FlyerScanner.swift in Sources */,
@@ -408,6 +415,7 @@
 			files = (
 				3DDD3EDEC91F6CEB24A99BAE /* AuthTests.swift in Sources */,
 				D7B28CFCE3E4249C4C780075 /* FlyerReaderTests.swift in Sources */,
+				2C25F0BE5709F5C2CE2022F0 /* GlitchFixTests.swift in Sources */,
 				0057DDD590E86A2C6DBC2B86 /* PlannerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -4,6 +4,8 @@ Every /api/* route needs `Authorization: Bearer <Google ID token>` from a
 verified @ucdavis.edu account, except GET /api/auth/config (the app asks it
 before signing in). /health and /tasks/* are not under /api.
 """
+from dataclasses import replace
+
 from flask import Blueprint, current_app, g, jsonify, request
 
 from api.errors import error_response
@@ -51,4 +53,37 @@ def sign_in():
 
 @auth_bp.get("/me")
 def me():
-    return jsonify(g.user.to_dict())
+    return jsonify(acting_user().to_dict())
+
+
+MAX_DISPLAY_NAME = 60
+
+
+@auth_bp.patch("/me")
+def update_me():
+    """Sets the name shown on your events and join requests (the name from your profile)."""
+    body = request.get_json(silent=True)
+    name = body.get("name") if isinstance(body, dict) else None
+    if not isinstance(name, str) or not name.strip():
+        return error_response(400, "invalid_name", "name must be a non-empty string")
+    name = " ".join(name.split())
+    if len(name) > MAX_DISPLAY_NAME:
+        return error_response(400, "invalid_name", f"name must be at most {MAX_DISPLAY_NAME} characters")
+    users = current_app.extensions["user_repository"]
+    saved = users.set_display_name(g.user.id, name, current_app.extensions["event_service"].now(),
+                                   email=g.user.email, name=g.user.name)
+    return jsonify({"id": saved.id, "email": saved.email, "name": saved.shown_name,
+                    "picture_url": saved.picture_url})
+
+
+def acting_user():
+    """The signed-in user, named the way they chose in the app (one read; only
+    called where a name gets saved: posting an event or asking to join)."""
+    try:
+        saved = current_app.extensions["user_repository"].get(g.user.id)
+    except Exception:  # noqa: BLE001 - fall back to the sign-in name
+        current_app.logger.exception("Couldn't load the user's display name")
+        return g.user
+    if saved is not None and saved.display_name:
+        return replace(g.user, name=saved.display_name)
+    return g.user

@@ -2,7 +2,7 @@
 from google.cloud import datastore
 from google.cloud.datastore.query import PropertyFilter
 
-from models import ATTENDEE_KIND, EVENT_KIND, UNINDEXED_EVENT_PROPERTIES, Attendee, Event
+from models import ATTENDEE_KIND, COVER_KIND, EVENT_KIND, UNINDEXED_EVENT_PROPERTIES, Attendee, Event
 
 # Sorts after every geohash character, so [prefix, prefix + "~") is "starts with prefix".
 _PREFIX_END = "~"
@@ -71,6 +71,23 @@ class EventRepository:
             entity["summary_updated_at"] = updated_at
             entity["summary_stale"] = entity.get("attendee_count", 0) != attendee_count
             self.client.put(entity)
+
+    def save_cover(self, event_id, data, image_url):
+        """Stores the cover JPEG (under Datastore's 1 MB entity limit) and points the event at it."""
+        event_key = self.client.key(EVENT_KIND, event_id)
+        with self.client.transaction():
+            event = self.client.get(event_key)
+            if event is None:
+                return False
+            cover = datastore.Entity(key=self.client.key(COVER_KIND, event_id), exclude_from_indexes=("data",))
+            cover["data"] = data
+            event["image_url"] = image_url
+            self.client.put_multi([cover, event])
+        return True
+
+    def get_cover(self, event_id):
+        entity = self.client.get(self.client.key(COVER_KIND, event_id))
+        return entity["data"] if entity is not None else None
 
     # Attendees are stored as child entities of their event.
 

@@ -50,6 +50,7 @@ extension AppStore {
             merge(events)
             serverStatus = .online(events: events.count, at: .now)
             await uploadPendingHostedEvents()
+            await syncCovers(baseURL: url)
             await syncAttendance(baseURL: url)
         } catch let error as EventServer.ServerError where error.status == 401 || error.status == 403 {
             // The server no longer accepts this sign-in (expired, revoked, or not @ucdavis.edu).
@@ -67,7 +68,7 @@ extension AppStore {
         guard let url = serverURL, let account = auth.account else { return }
         do {
             let user = try await EventServer.confirmSignIn(baseURL: url)
-            if me.name.isEmpty { me.name = user.name; save() }
+            if me.name.isEmpty { me.name = user.name; save() } else { await syncMyName() }
         } catch let error as EventServer.ServerError where error.status == 401 || error.status == 403 {
             if auth.account == account { auth.signOut(message: error.message) }
         } catch {
@@ -93,6 +94,7 @@ extension AppStore {
                 var updated = Activity(server: event, hostID: hostedByMe(event) ? me.id : old.hostID)
                 updated.attendeeIDs = old.attendeeIDs
                 updated.coverPhotoData = old.coverPhotoData
+                updated.coverSyncedURL = old.coverSyncedURL
                 updated.seriesID = old.seriesID
                 updated.myAttendeeID = old.myAttendeeID
                 updated.serverAttendeeIDs = old.serverAttendeeIDs
@@ -122,6 +124,44 @@ extension AppStore {
         }
         activities.sort { $0.date < $1.date }
         save()
+    }
+
+    /// Sends the name from your profile, so your events show it instead of the sign-in name.
+    func syncMyName() async {
+        let name = me.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = serverURL, auth.isSignedIn, !name.isEmpty else { return }
+        try? await EventServer.updateMyName(name, baseURL: url)
+    }
+
+    /// Hosts upload their cover once; everyone else downloads covers they don't have yet.
+    private func syncCovers(baseURL url: URL) async {
+        for activity in activities where activity.serverID != nil && !activity.isPast {
+            guard let serverID = activity.serverID else { continue }
+            if isHost(activity), let photo = activity.coverPhotoData, activity.coverSyncedURL == nil {
+                guard let jpeg = Self.coverJPEG(photo),
+                      let imageURL = try? await EventServer.uploadCover(eventID: serverID, jpeg: jpeg, baseURL: url),
+                      let i = activities.firstIndex(where: { $0.id == activity.id }) else { continue }
+                activities[i].serverCoverURL = imageURL
+                activities[i].coverSyncedURL = imageURL
+                save()
+            } else if let imageURL = activity.serverCoverURL, imageURL != activity.coverSyncedURL {
+                guard let data = try? await EventServer.downloadCover(imageURL, baseURL: url),
+                      UIImage(data: data) != nil,
+                      let i = activities.firstIndex(where: { $0.id == activity.id }) else { continue }
+                activities[i].coverPhotoData = data
+                activities[i].coverSyncedURL = imageURL
+                save()
+            }
+        }
+    }
+
+    /// The cover as a JPEG the server accepts (under 900 KB), shrinking quality if needed.
+    static func coverJPEG(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        for quality in [0.8, 0.65, 0.5, 0.35] {
+            if let jpeg = image.jpegData(compressionQuality: quality), jpeg.count <= 900 * 1024 { return jpeg }
+        }
+        return nil
     }
 
     private func hostedByMe(_ event: EventServer.ServerEvent) -> Bool {

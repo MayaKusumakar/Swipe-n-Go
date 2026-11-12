@@ -12,6 +12,7 @@ class InMemoryEventRepository:
         self._events = sorted(events, key=lambda event: event.start_time)
         self._lock = threading.Lock()
         self._attendees = {}  # (event_id, attendee_id) -> Attendee
+        self._covers = {}     # event_id -> JPEG bytes
 
     def list_upcoming(self, now, limit):
         with self._lock:
@@ -28,6 +29,19 @@ class InMemoryEventRepository:
     def get(self, event_id):
         with self._lock:
             return next((event for event in self._events if event.id == event_id), None)
+
+    def save_cover(self, event_id, data, image_url):
+        with self._lock:
+            event = self._find(event_id)
+            if event is None:
+                return False
+            self._covers[event_id] = data
+            event.image_url = image_url
+        return True
+
+    def get_cover(self, event_id):
+        with self._lock:
+            return self._covers.get(event_id)
 
     def list_in_geohash_cells(self, prefixes):
         with self._lock:

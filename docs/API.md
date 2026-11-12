@@ -58,7 +58,11 @@ Called by the app once after signing in. Saves the account (a `User` entity, one
 
 ### GET /api/auth/me
 
-The signed-in account, same shape. No Datastore read.
+The signed-in account, same shape. `name` is the profile name if one was set (below), otherwise the Google name.
+
+### PATCH /api/auth/me
+
+Sets the name people see on your events and join requests (the name from the app's profile, which can differ from the Google account name). Body: `{"name": "AK"}`, 1–60 characters; extra spaces are collapsed. Returns the account. Signing in again keeps it. Errors: `400 invalid_name`, `401`.
 
 Code: `backend/api/auth.py` (routes and the check before every request), `backend/services/auth_service.py`, `backend/repositories/user_repository.py`.
 
@@ -303,6 +307,20 @@ Errors:
 - `503 ai_unavailable`: same causes as the planner. The app falls back to reading the flyer on the phone and says why.
 
 Code: `backend/api/flyers.py` (route and validation), `backend/services/flyer_service.py` (prompt and output checks), `backend/services/claude_call.py`.
+
+---
+
+## Cover photos
+
+### PUT /api/events/\<id\>/cover
+
+Host only. Body: `{"image": "<base64 JPEG>"}`, at most 900 KB (the app sends 1600 × 900, re-encoded, so photo location metadata is gone). Returns `{"image_url": "/api/events/<id>/cover?v=<12 hex>"}`; the event's `image_url` becomes that, and `v` changes whenever the picture does. Errors: `400 invalid_cover` (not base64, not a JPEG, too big), `403` (not the host), `404`.
+
+### GET /api/events/\<id\>/cover
+
+The JPEG (`image/jpeg`, `Cache-Control: private, max-age=86400`). Needs sign-in like every other route. `404` if the event has no cover.
+
+Stored as a `Cover` entity keyed by the event id (`data` not indexed), written in the same transaction as the event's `image_url`. Code: `backend/api/events.py`, `services/event_service.py`.
 
 ---
 

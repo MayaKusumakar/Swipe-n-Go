@@ -4,6 +4,7 @@ Every method that changes something takes the signed-in user (see
 services/auth_service.py). Permission checks compare account ids: the host is
 whoever created the event, and an attendee entry belongs to the user it's for.
 """
+import hashlib
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -112,6 +113,25 @@ class EventService:
             raise NotFoundError("event")
         if result is False:
             raise EventFullError("This event is full")
+
+    # MARK: Cover photos
+
+    def set_cover(self, event_id, user, data):
+        """The host's cover photo (validated JPEG bytes). Returns the event's new image_url."""
+        event = self._event(event_id)
+        if not self._is_host(event, user):
+            raise ForbiddenError("Only the host can change the cover photo")
+        # The version changes with the picture, so phones know to download it again.
+        image_url = f"/api/events/{event.id}/cover?v={hashlib.sha256(data).hexdigest()[:12]}"
+        if not self._store(self._repository.save_cover, event.id, data, image_url):
+            raise NotFoundError("event")
+        return image_url
+
+    def cover(self, event_id):
+        data = self._store(self._repository.get_cover, event_id)
+        if data is None:
+            raise NotFoundError("cover photo")
+        return data
 
     def request_to_join(self, event_id, user):
         """Returns (attendee, created). Approved at once unless the event needs approval.

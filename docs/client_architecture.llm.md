@@ -28,7 +28,9 @@ Current state (iOS app in `ios/`, `Milestone1-v1` branch):
   - The review screen shows "Read by Claude" or "Read on your iPhone", marks the fields Claude couldn't find in orange, warns if the image isn't an event flyer, and fills in the category and the duration (from the end time) too.
   - If there's no server, or it answers `503 ai_unavailable` or can't be reached, the on-device reading is used and the screen says why.
   - Unit tests: `ios/PartnerTests/FlyerReaderTests.swift`.
-- **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), the simulated hosts and guests, chats, saved events, drafts, recurring events, cover photos and flyer images (only the extracted details are posted). For sample (local) events, private locations and removals are only hidden in the app, since there's no server copy.
+- **Cover photos (2026-11-12):** the host's phone uploads the cover (`PUT /api/events/<id>/cover`) on the next sync; other phones download it when the event's `image_url` changes (`Activity.serverCoverURL` / `coverSyncedURL`, both optional so old saves load). The crop screen is now full width, 16:9, with pinch to zoom.
+- **Glitch fixes (2026-11-12):** a scanned flyer's location is looked up on the map automatically (`Place.search`), so it isn't typed twice. Swiping the Host sheet down with unsaved changes asks to save a draft or discard (`onDismissAttempt`, `Design/DismissAttempt.swift`). Chats can be muted or deleted by swiping or with a long press; muted chats don't count toward the Chats badge (`Conversation.isMuted`). Deleting a chat only removes it from the phone.
+- **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), the simulated hosts and guests, chats, saved events, drafts, recurring events, and flyer images (only the extracted details are posted). For sample (local) events, private locations and removals are only hidden in the app, since there's no server copy.
 
 Server side (`backend/`, mapped from the team's "Mapping these ideas to Google Cloud" table, 2026-11-11):
 - **Runs locally only, and must cost $0.** No Google Cloud project or billing yet; App Engine standard later. Nothing calls a paid service unless someone turns it on on purpose.
@@ -46,7 +48,7 @@ Differences from our design:
 - `docs/overview.md` says events show who's interested, while the Security section of `Prompt.md` says hosts only see counts. The app shows attendees today, but only from on-device sample data.
 - Saved events now sit under Plans → Hosting, as requested, even though saved events are other people's plans rather than ones you host.
 - Sign-in replaced the host/attendee secret tokens. Events created before that have no `host_id`, so nobody can manage them; sample data is unaffected.
-- The host's name on the server now comes from their Google account, not the name typed in onboarding. The team should decide which one people see.
+- The host's name on the server is now the name from the app's profile (sent with `PATCH /api/auth/me` after onboarding, sign-in and profile edits). Before any is sent it falls back to the sign-in name. Events created before the change keep the old name.
 - Deleting your account isn't built yet. The App Store requires it for apps with sign-in.
 - `docs/server_architecture.md` is still blank. The server notes above are what `backend/` follows today.
 - The team's table suggested 5–6 character geohashes. At a 5-mile radius those cells are smaller than the circle and miss events near the edge, so the server picks the cell size from the radius (4 characters in Davis at 5 miles).

@@ -102,6 +102,31 @@ enum EventServer {
         return try decoder.decode(ServerEvent.self, from: data)
     }
 
+    // MARK: Cover photos (see docs/API.md)
+
+    /// Uploads the host's cover (a JPEG under 900 KB). Returns the event's new `image_url`.
+    static func uploadCover(eventID: String, jpeg: Data, baseURL: URL) async throws -> String {
+        struct Body: Encodable { var image: String }
+        struct Reply: Decodable { var imageUrl: String }
+        let data = try await send("PUT", baseURL.appending(path: "api/events/\(eventID)/cover"),
+                                  body: try encoder.encode(Body(image: jpeg.base64EncodedString())))
+        return try decoder.decode(Reply.self, from: data).imageUrl
+    }
+
+    /// Downloads a cover from its `image_url` (a path on this server).
+    static func downloadCover(_ imageURL: String, baseURL: URL) async throws -> Data {
+        guard let url = URL(string: imageURL, relativeTo: baseURL)?.absoluteURL else { throw URLError(.badURL) }
+        return try await send("GET", url)
+    }
+
+    // MARK: Your name
+
+    /// Tells the server the name from your profile; it's shown on your events and join requests.
+    static func updateMyName(_ name: String, baseURL: URL) async throws {
+        _ = try await send("PATCH", baseURL.appending(path: "api/auth/me"),
+                           body: try JSONSerialization.data(withJSONObject: ["name": name]))
+    }
+
     // MARK: Sign-in
 
     struct AuthConfig: Decodable { var allowedDomain: String; var devSignIn: Bool }
@@ -286,7 +311,8 @@ extension Activity {
             requiresApproval: e.requiresApproval ?? false, costNote: e.cost ?? "Free",
             serverID: e.id,
             privateLocation: e.locationPrivate == true ? true : nil,
-            locationHidden: hidden ? true : nil
+            locationHidden: hidden ? true : nil,
+            serverCoverURL: e.imageUrl
         )
     }
 
