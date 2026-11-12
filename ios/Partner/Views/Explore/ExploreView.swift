@@ -159,8 +159,8 @@ struct ExploreView: View {
         }
         // Apple's own satellite imagery (with road and place labels). Only the style changes,
         // so the camera, pins and selection stay where they are.
-        .mapStyle(satellite ? .hybrid(elevation: .realistic, pointsOfInterest: .excludingAll)
-                            : .standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+        .mapStyle(satellite ? .hybrid(pointsOfInterest: .excludingAll)
+                            : .standard(pointsOfInterest: .excludingAll))
         .onMapCameraChange(frequency: .onEnd) { mapCamera = $0.camera }
         .mapControls {
             MapCompass()

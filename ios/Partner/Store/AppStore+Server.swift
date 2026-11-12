@@ -85,6 +85,9 @@ extension AppStore {
     }
 
     private func merge(_ events: [EventServer.ServerEvent]) {
+        // Runs every 15 seconds: only touch (and save) what actually changed, so the screen
+        // isn't redrawn and the state file isn't rewritten when nothing is new.
+        let before = activities
         var newHosts: [Person] = []
         var fetched = Set<UUID>()
         for event in events {
@@ -109,7 +112,7 @@ extension AppStore {
                     updated.longitude = old.longitude
                     updated.locationHidden = nil
                 }
-                activities[i] = updated
+                if activities[i] != updated { activities[i] = updated }
             } else if hostedByMe(event) {
                 // Posted from your account on another phone (or before reinstalling).
                 activities.append(Activity(server: event, hostID: me.id))
@@ -121,11 +124,15 @@ extension AppStore {
         }
         if !newHosts.isEmpty { people.append(contentsOf: newHosts) }
         // Drop server events that disappeared, unless you're part of them.
-        activities.removeAll { a in
+        if activities.contains(where: { a in
             a.serverID != nil && !fetched.contains(a.id) && !isHost(a) && !isGoing(a) && !isPending(a)
+        }) {
+            activities.removeAll { a in
+                a.serverID != nil && !fetched.contains(a.id) && !isHost(a) && !isGoing(a) && !isPending(a)
+            }
         }
-        activities.sort { $0.date < $1.date }
-        save()
+        if !activities.isSorted(by: { $0.date <= $1.date }) { activities.sort { $0.date < $1.date } }
+        if activities != before || !newHosts.isEmpty { save() }
     }
 
     /// Sends the name from your profile, so your events show it instead of the sign-in name.
@@ -171,7 +178,8 @@ extension AppStore {
 
     /// Sends saves made on this phone. Each one is kept until the server confirms it.
     func sendPendingSaves() async {
-        guard let url = serverURL, auth.isSignedIn else { return }
+        guard let url = serverURL, auth.isSignedIn, !pendingSaves.isEmpty else { return }
+        let pendingBefore = pendingSaves.count
         for (eventID, saved) in pendingSaves {
             do {
                 try await EventServer.setSaved(eventID, saved, baseURL: url)
@@ -183,7 +191,7 @@ extension AppStore {
             // Only clear it if it wasn't changed again while the request was in flight.
             if pendingSaves[eventID] == saved { pendingSaves[eventID] = nil }
         }
-        save()
+        if pendingSaves.count != pendingBefore { save() }
     }
 
     /// The server's list is the truth for server events once this phone's changes are sent.
@@ -372,5 +380,11 @@ extension AppStore {
             }
         }
         return error.localizedDescription
+    }
+}
+
+private extension Array {
+    func isSorted(by inOrder: (Element, Element) -> Bool) -> Bool {
+        zip(self, dropFirst()).allSatisfy { inOrder($0, $1) }
     }
 }

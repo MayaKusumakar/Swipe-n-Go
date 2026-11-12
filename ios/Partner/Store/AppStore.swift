@@ -68,6 +68,16 @@ final class AppStore {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appending(path: "partner-state.json")
     }()
+    /// Cover photos live in their own files (one per plan), written only when they change, so
+    /// saving the app's state doesn't re-encode megabytes of images on every tap or sync.
+    @ObservationIgnored private let coversURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "covers", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+    /// What's already on disk for each plan's cover (shares storage with the plan's own copy).
+    @ObservationIgnored private var coversOnDisk: [UUID: Data] = [:]
 
     init() {
         me = AppStore.defaultMe()
@@ -680,7 +690,7 @@ final class AppStore {
 
     @discardableResult
     func save() -> Bool {
-        let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activities, drafts: drafts,
+        let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activitiesWithoutCovers(), drafts: drafts,
                             joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, pendingSaves: pendingSaves, skippedIDs: skippedIDs,
                             conversations: conversations, requests: requests, notificationsEnabled: notificationsEnabled,
                             radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile)
@@ -694,6 +704,41 @@ final class AppStore {
         }
     }
 
+    /// The plans as saved in the state file: covers are written to their own files instead.
+    /// A cover that can't be written stays in the state file, so nothing is lost.
+    private func activitiesWithoutCovers() -> [Activity] {
+        var withCover = Set<UUID>()
+        let saved = activities.map { activity -> Activity in
+            guard let cover = activity.coverPhotoData else { return activity }
+            withCover.insert(activity.id)
+            if coversOnDisk[activity.id] != cover {
+                guard (try? cover.write(to: coverFile(activity.id), options: .atomic)) != nil else { return activity }
+                coversOnDisk[activity.id] = cover
+            }
+            var copy = activity
+            copy.coverPhotoData = nil
+            return copy
+        }
+        for id in coversOnDisk.keys where !withCover.contains(id) {
+            try? FileManager.default.removeItem(at: coverFile(id))
+            coversOnDisk[id] = nil
+        }
+        return saved
+    }
+
+    private func withCoverFromDisk(_ activity: Activity) -> Activity {
+        // Saves from before covers had their own files still have them inline.
+        guard activity.coverPhotoData == nil, let cover = try? Data(contentsOf: coverFile(activity.id)) else {
+            return activity
+        }
+        coversOnDisk[activity.id] = cover
+        var copy = activity
+        copy.coverPhotoData = cover
+        return copy
+    }
+
+    private func coverFile(_ id: UUID) -> URL { coversURL.appending(path: "\(id.uuidString).jpg") }
+
     @discardableResult
     private func load() -> Bool {
         guard let data = try? Data(contentsOf: fileURL),
@@ -702,7 +747,7 @@ final class AppStore {
         me = s.me
         people = s.people
         drafts = s.drafts ?? []
-        activities = s.activities
+        activities = s.activities.map(withCoverFromDisk)
         joinedIDs = s.joinedIDs
         pendingIDs = s.pendingIDs
         savedIDs = s.savedIDs
@@ -720,6 +765,8 @@ final class AppStore {
             activities.append(contentsOf: hosted)
             activities.sort { $0.date < $1.date }
         }
+        // Older saves kept covers inside the state file; move them to their own files once.
+        if s.activities.contains(where: { $0.coverPhotoData != nil }) { save() }
         return true
     }
 
