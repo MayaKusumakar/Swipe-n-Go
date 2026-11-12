@@ -359,6 +359,71 @@ From this interview, we found that Instagram is one of the main ways students ke
 - The interview shows that finding events at UC Davis can be difficult because information is spread across emails, social media, flyers, and word of mouth. Popular events are easier to discover, while smaller or less advertised events often go unnoticed. The biggest issue is not a lack of interest, but a lack of clear information about event times, locations, and details. A centralized platform could make it easier for students to discover events and keep track of the ones they want to attend.
 
 ---
+## Interview 9
+
+**Interviewer:** Beale
+**Note Taker:** 
+**Interviewee:** Samuel
+**Date:** 11/11/26
+**Recording:** [Recording](https://drive.google.com/file/d/1PJjZlTOKwHr1zmK-9Nlcmk4SlV7fFbuJ/view?usp=drive_link)
+
+### Pre-Interview Hypothesis: 
+
+- We think most students find out about events from social media or word of mouth. We think students find it hard to keep track of events especially when they're posted in different platforms or physically around campus and have to either manually remind themselves or write it down.
+
+### Interview Notes
+
+**1. Can you tell me about the last event or activity you attended around UC Davis or Davis? What was the event, and how did you first hear about it?**
+- Career Fair. CS Department weekly emailing.
+**2. Think about the last time you were looking for something to do. How did you go about finding it? (what sources did you use?)**
+- Used poppin app to go to a party.
+**3. Can you remember a time when you struggled to find something interesting to do?**
+- Uses filters to find interesting stories to read.
+**4. Tell me about the last time you saw an event you were interested in but decided not to go. What stopped you from attending?**
+- Involvement fair. Had class and exams at the same time and decided not to go.
+**5. Can you walk me through how you kept track of an event you wanted to attend recently? Did you save the post, take a screenshot, add it to your calendar, or use something else?**
+- Career Fair. Took a photo of the poster and took notes about specifics.
+
+### Post-Interview Synthesis
+
+- From this interview, we learned that students read the weekly emails to learn about things happening on campus. We also learned that having physical flyers can be a hassle to get all the information saved to a calendar or notes app, We could incorpate a feature to do this automatically for users. Our pre-interview hypothesis wasn't all right. Students do learn of events from outside of social media and word of mouth such as through flyers or emails. However, keeping track of these events does seem to be a pain point.
+
+
+---
+## Interview 10
+
+**Interviewer:** Beale
+**Note Taker:** 
+**Interviewee:** Ahkil
+**Date:** 11/11/26
+**Recording:** [Recording](hhttps://drive.google.com/file/d/1I9G2lC8C3-HW2S-rnWqN4ZHRsChUcMaa/view?usp=drive_link)
+
+### Pre-Interview Hypothesis: 
+
+- We think most hosts struggle to get the reach that they want and will have to rely on getting student's attention through flyers or word of mouth. We also think that clubs may suffer low attendance due to advertising being limited to certain social media platforms such as discord or instagram. This relies on students already following the club or being involved but doesn't neccesarily reach those outside the club.
+
+### Interview Notes
+
+**1. Tell me about the last event you organized or helped promote.**
+- Cybersecurity club (general meeting + cowsay). Cowsay was a recap for competetion last Saturday. General meeting tries to reach as many people as possible.
+
+**2. How did you advertise that event? Walk me through the process.**
+- Discord, flyers, CS department's weekly email. Flyers are slow to do.
+**3. What was the hardest part about getting people to hear about it?**
+- Getting people to read flyers and knowing where to place them to get visibility. 
+**4. Have you ever had an event with lower attendance than you expected? What happened?**
+- Midterms seem to lower attendance. Could be visibility but likely midterms.
+**5. How did you create and distribute the event information or flyer?**
+- Team of club Officiers print and go around hanging flyers.
+**6. How did you know whether your advertising was reaching the right people?** 
+- People who come into the event and are actively engaged. Not everyone who could be interested tables.
+**7. What did you do differently when promoting your most recent event compared to previous events?** 
+- Numbers game. Table more to get more person to person interactions.
+### Post-Interview Synthesis
+
+- From this interview, we learned that hosts will rely on flyers and weekly emails to get people to attend their events. This aligns with the premise of our app as we make it easier for students to branch out and receive information without having to manually read a flyer. Our, pre-interview hypothesis was mainly correct, one big aspect we did not consider is attnedance being affected by students being busy due to midterms or other commitments at the same time.
+
+---
 
 ## Overall Takeaways
 
