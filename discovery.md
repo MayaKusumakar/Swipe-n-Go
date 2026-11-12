@@ -9,34 +9,39 @@ We conducted a total of ___[FILL IN]___ interviews.
 
 ## Interview 1
 
-**Interviewer:**
-**Note Taker:**
-**Interviewee:**
-**Date:**
-**Recording:** Submitted via Canvas
+**Interviewer:** Evelyn Xiao
+**Note Taker:** Noah Wong
+**Interviewee:** Taylor 
+**Date:** 11/9/2026
+**Recording:** [Recording](https://drive.google.com/file/d/1gWupNF55IpOEN9O1eLk1iJNI6Me06hBv/view?usp=drive_link)
 
 ### Pre-Interview Hypotheses
-<!-- answer here --> helo
+I believe that college students want to make the most of their college experience by meeting new people and trying new things, but are not sure how to or struggle to do so. By making club events more accessible and known on Swipe-N-Go, other students on campus will be able to alleviate that pain. The friction arises on whether or not the students actually attend the club meetings they discover on the app and how their experience is at the event. Some inertia may be present from the fact that most students already have solidified groups of people that they usually hang out with, so it may be difficult for them to want to attend new events or feel the urge to make new connections/experiences. 
+
+
 
 ### Interview Notes
 
 **1. What was the last event you attended, and how did you hear about it?**
-- Insert answer here
+- It’s been quite a while, last one was the AI collective project for UC Davis.
 
 **2. How do you usually find things to do?**
-- Insert answer here
+- Instagram and through word of mouth. Tagging along with friends OR Clubs promoting other clubs. Basically, just being present with other groups on campus.
+
 
 **3. When was the last time you struggled to find an event?**
-- Insert answer here
+- Struggled to find a club I really connected with. Around last year, until I thought about interacting with other friends about it. FELT LIKE I WAS LOST AND ALONE BUT talking with friends helped to find mutual interests and part of a group.
+
 
 **4. Have you ever wanted to attend an event but didn't go? Why?**
-- Insert answer here
+- A couple weeks ago, there was a baking club event I was somewhat interested in but a bunch of conflicts came up. I had lots to do, and navigation was a big issue. THEY PROVIDED NO MAP AND THE INSTRUCTIONS WERE VERY UNCLEAR.
+
 
 **5. How do you keep track of upcoming events?**
-- Insert answer here
+- Usually what happens, if i find an event through instagram: I’ll add it to my calendar (saving the post doesn’t help me)
 
 ### Post-Interview Synthesis
-<!-- answer here --> hello
+The interviewee shared his struggle with attending club events on campus and feelings of loneliness, helping to support my hypothesis that college students have this real problem of wanting to find new experiences and connect with others on campus. His current solution is to find club events that he wants to attend through Instagram, but this comes with the complication of already needing to have known about the club to follow them on the platform for updates or through word of mouth. As such, our app can be a good solution to solve this problem as it can overcome these inconveniences with clear details and an intuitive interface. 
 ---
 
 ---
