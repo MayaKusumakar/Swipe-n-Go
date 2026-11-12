@@ -29,6 +29,9 @@ Current state (iOS app in `ios/`, `Milestone1-v1` branch):
   - If there's no server, or it answers `503 ai_unavailable` or can't be reached, the on-device reading is used and the screen says why.
   - Unit tests: `ios/PartnerTests/FlyerReaderTests.swift`.
 - **Cover photos (2026-11-12):** the host's phone uploads the cover (`PUT /api/events/<id>/cover`) on the next sync; other phones download it when the event's `image_url` changes (`Activity.serverCoverURL` / `coverSyncedURL`, both optional so old saves load). The crop screen is now full width, 16:9, with pinch to zoom.
+- **Account and saved events (2026-11-12):** the server's profile name (`display_name`) is the account's name on every device: a device adopts it on sign-in and on each sync, and only sends its own name when it was changed there (`nameNeedsSync`). Saved events moved to their own Plans tab (Host | Going | Saved) and sync through `/api/me/saved`; changes made offline wait in `pendingSaves` (persisted) and are sent first, then the server's list wins for server events. Sample events' saves stay on the phone.
+- **Explore map:** a button switches between the standard map and Apple's satellite imagery (`.hybrid`), remembered in `@AppStorage("exploreSatelliteMap")`; the camera, pins and selection don't change.
+- **Flyer location:** the review screen searches places as you type (the same `Place.search` as the place picker), and a picked match goes straight into the Host form. Typed text with no pick is looked up automatically and labeled "Matched … Tap it to choose a different spot."
 - **Glitch fixes (2026-11-12):** a scanned flyer's location is looked up on the map automatically (`Place.search`), so it isn't typed twice. Swiping the Host sheet down with unsaved changes asks to save a draft or discard (`onDismissAttempt`, `Design/DismissAttempt.swift`). Chats can be muted or deleted by swiping or with a long press; muted chats don't count toward the Chats badge (`Conversation.isMuted`). Deleting a chat only removes it from the phone.
 - **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), the simulated hosts and guests, chats, saved events, drafts, recurring events, and flyer images (only the extracted details are posted). For sample (local) events, private locations and removals are only hidden in the app, since there's no server copy.
 
@@ -46,7 +49,8 @@ Differences from our design:
 - `client_architecture.md` is still blank, so there's nothing to compare against yet. The team should fill it in. The current state above can be the starting point.
 - The app uses the category names listed in `API.md`, but the server's seed data uses different ones (`social`, `clubs`, ...). The team should pick one list.
 - `docs/overview.md` says events show who's interested, while the Security section of `Prompt.md` says hosts only see counts. The app shows attendees today, but only from on-device sample data.
-- Saved events now sit under Plans → Hosting, as requested, even though saved events are other people's plans rather than ones you host.
+- Saved events are now their own Plans tab (Host | Going | Saved), as requested on 2026-11-12. This replaces the earlier spot under Hosting.
+- Chats, muting and deleting chats are still only on the phone (the chats are simulated), so they don't sync between devices yet. Drafts are also per device.
 - Sign-in replaced the host/attendee secret tokens. Events created before that have no `host_id`, so nobody can manage them; sample data is unaffected.
 - The host's name on the server is now the name from the app's profile (sent with `PATCH /api/auth/me` after onboarding, sign-in and profile edits). Before any is sent it falls back to the sign-in name. Events created before the change keep the old name.
 - Deleting your account isn't built yet. The App Store requires it for apps with sign-in.

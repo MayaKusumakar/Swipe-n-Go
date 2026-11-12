@@ -58,11 +58,21 @@ Called by the app once after signing in. Saves the account (a `User` entity, one
 
 ### GET /api/auth/me
 
-The signed-in account, same shape. `name` is the profile name if one was set (below), otherwise the Google name.
+The signed-in account, same shape plus `display_name`: the profile name if one was set (below), otherwise `null`. `name` is the profile name when set, otherwise the Google name. A newly signed-in device uses `display_name` instead of sending its own, so every device shows the same name.
 
 ### PATCH /api/auth/me
 
-Sets the name people see on your events and join requests (the name from the app's profile, which can differ from the Google account name). Body: `{"name": "AK"}`, 1–60 characters; extra spaces are collapsed. Returns the account. Signing in again keeps it. Errors: `400 invalid_name`, `401`.
+Sets the name people see on your events and join requests (the name from the app's profile, which can differ from the Google account name). Body: `{"name": "AK"}`, 1–60 characters; extra spaces are collapsed. Returns the account (with `display_name`). Signing in again keeps it. Events you posted earlier get the new `host_name` too; join requests you already sent keep the old name. Errors: `400 invalid_name`, `401`.
+
+### Saved events
+
+Saved ("for later") events belong to the account, so every device signed in to it shows the same list. Stored as `saved_event_ids` (a list, newest last, at most 500) on the `User` entity.
+
+- `GET /api/me/saved` → `{"event_ids": ["…", …]}`. May include events that were since deleted; the app ignores ids it doesn't have.
+- `PUT /api/me/saved/<event_id>` saves it (saving twice is fine) → the new list. `404` if there's no such event.
+- `DELETE /api/me/saved/<event_id>` → the new list. Works even if the event is gone.
+
+Code: `backend/api/saved.py`, `repositories/user_repository.py`.
 
 Code: `backend/api/auth.py` (routes and the check before every request), `backend/services/auth_service.py`, `backend/repositories/user_repository.py`.
 

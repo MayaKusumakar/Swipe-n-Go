@@ -130,7 +130,30 @@ enum EventServer {
     // MARK: Sign-in
 
     struct AuthConfig: Decodable { var allowedDomain: String; var devSignIn: Bool }
-    struct SignedInUser: Decodable { var id: String; var email: String; var name: String }
+    struct SignedInUser: Decodable {
+        var id: String
+        var email: String
+        var name: String
+        /// The name chosen in the app, if one was ever sent (`nil` until then).
+        var displayName: String?
+    }
+
+    /// The account as the server has it, including a profile name set from another device.
+    static func me(baseURL: URL) async throws -> SignedInUser {
+        try decoder.decode(SignedInUser.self, from: try await send("GET", baseURL.appending(path: "api/auth/me")))
+    }
+
+    // MARK: Saved events (kept on the account, so every device has the same list)
+
+    private struct SavedList: Decodable { var eventIds: [String] }
+
+    static func savedEventIDs(baseURL: URL) async throws -> [String] {
+        try decoder.decode(SavedList.self, from: try await send("GET", baseURL.appending(path: "api/me/saved"))).eventIds
+    }
+
+    static func setSaved(_ eventID: String, _ saved: Bool, baseURL: URL) async throws {
+        _ = try await send(saved ? "PUT" : "DELETE", baseURL.appending(path: "api/me/saved/\(eventID)"))
+    }
 
     /// Public: whether the server allows dev sign-in (local servers with DEV_SIGN_IN=on only).
     static func authConfig(baseURL: URL) async throws -> AuthConfig {

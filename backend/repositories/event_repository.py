@@ -72,6 +72,18 @@ class EventRepository:
             entity["summary_stale"] = entity.get("attendee_count", 0) != attendee_count
             self.client.put(entity)
 
+    def rename_host(self, host_id, host_name):
+        """Puts the host's new name on every event they posted. Returns how many changed."""
+        query = self.client.query(kind=EVENT_KIND)
+        query.add_filter(filter=PropertyFilter("host_id", "=", host_id))
+        changed = [entity for entity in query.fetch() if entity.get("host_name") != host_name]
+        for entity in changed:
+            entity["host_name"] = host_name
+        # put_multi takes at most 500 entities per call.
+        for start in range(0, len(changed), 500):
+            self.client.put_multi(changed[start:start + 500])
+        return len(changed)
+
     def save_cover(self, event_id, data, image_url):
         """Stores the cover JPEG (under Datastore's 1 MB entity limit) and points the event at it."""
         event_key = self.client.key(EVENT_KIND, event_id)

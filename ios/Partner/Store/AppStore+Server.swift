@@ -51,6 +51,8 @@ extension AppStore {
             serverStatus = .online(events: events.count, at: .now)
             await uploadPendingHostedEvents()
             await syncCovers(baseURL: url)
+            await syncSaved(baseURL: url)
+            await syncName(baseURL: url)
             await syncAttendance(baseURL: url)
         } catch let error as EventServer.ServerError where error.status == 401 || error.status == 403 {
             // The server no longer accepts this sign-in (expired, revoked, or not @ucdavis.edu).
@@ -68,7 +70,7 @@ extension AppStore {
         guard let url = serverURL, let account = auth.account else { return }
         do {
             let user = try await EventServer.confirmSignIn(baseURL: url)
-            if me.name.isEmpty { me.name = user.name; save() } else { await syncMyName() }
+            adoptAccountName(user)
         } catch let error as EventServer.ServerError where error.status == 401 || error.status == 403 {
             if auth.account == account { auth.signOut(message: error.message) }
         } catch {
@@ -127,10 +129,73 @@ extension AppStore {
     }
 
     /// Sends the name from your profile, so your events show it instead of the sign-in name.
+    /// If the server can't be reached, it's sent on the next sync.
     func syncMyName() async {
         let name = me.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = serverURL, auth.isSignedIn, !name.isEmpty else { return }
-        try? await EventServer.updateMyName(name, baseURL: url)
+        guard !name.isEmpty else { return }
+        nameNeedsSync = true
+        guard let url = serverURL, auth.isSignedIn else { return }
+        if (try? await EventServer.updateMyName(name, baseURL: url)) != nil,
+           me.name.trimmingCharacters(in: .whitespacesAndNewlines) == name {
+            nameNeedsSync = false
+        }
+    }
+
+    /// The account's name is the one on the server, so every device signed in to it shows the same
+    /// one. This device's name is only sent when it was changed here (or none was ever chosen).
+    private func adoptAccountName(_ user: EventServer.SignedInUser) {
+        if let chosen = user.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !chosen.isEmpty {
+            if me.name != chosen, !nameNeedsSync { me.name = chosen; save() }
+            if nameNeedsSync { Task { await syncMyName() } }
+        } else if me.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            me.name = user.name
+            save()
+        } else {
+            Task { await syncMyName() }
+        }
+    }
+
+    private func syncName(baseURL url: URL) async {
+        if nameNeedsSync { await syncMyName(); return }
+        if let user = try? await EventServer.me(baseURL: url) { adoptAccountName(user) }
+    }
+
+    // MARK: Saved events
+
+    /// Records a save or unsave of a server event and sends it. Sample events stay on this phone.
+    func savedChanged(_ activity: Activity, saved: Bool) {
+        guard let serverID = activity.serverID else { return }
+        pendingSaves[serverID] = saved
+        Task { await sendPendingSaves() }
+    }
+
+    /// Sends saves made on this phone. Each one is kept until the server confirms it.
+    func sendPendingSaves() async {
+        guard let url = serverURL, auth.isSignedIn else { return }
+        for (eventID, saved) in pendingSaves {
+            do {
+                try await EventServer.setSaved(eventID, saved, baseURL: url)
+            } catch let error as EventServer.ServerError where error.status == 404 {
+                // The event is gone; nothing to save.
+            } catch {
+                break   // offline: try again on the next sync
+            }
+            // Only clear it if it wasn't changed again while the request was in flight.
+            if pendingSaves[eventID] == saved { pendingSaves[eventID] = nil }
+        }
+        save()
+    }
+
+    /// The server's list is the truth for server events once this phone's changes are sent.
+    private func syncSaved(baseURL url: URL) async {
+        await sendPendingSaves()
+        guard pendingSaves.isEmpty, let ids = try? await EventServer.savedEventIDs(baseURL: url) else { return }
+        let onServer = Set(ids.map(EventServer.localID(for:)))
+        let serverEvents = Set(activities.filter { $0.serverID != nil }.map(\.id))
+        let merged = savedIDs.subtracting(serverEvents).union(onServer)
+        guard merged != savedIDs else { return }
+        savedIDs = merged
+        save()
     }
 
     /// Hosts upload their cover once; everyone else downloads covers they don't have yet.
@@ -157,8 +222,19 @@ extension AppStore {
 
     /// The cover as a JPEG the server accepts (under 900 KB), shrinking quality if needed.
     static func coverJPEG(_ data: Data) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        for quality in [0.8, 0.65, 0.5, 0.35] {
+        guard let original = UIImage(data: data), original.size.width > 0, original.size.height > 0 else { return nil }
+        // Covers are shown at most 1600 points wide; a full-size photo or flyer is shrunk first
+        // (in pixels, scale 1), or it could never fit under the limit.
+        let pixels = CGSize(width: original.size.width * original.scale, height: original.size.height * original.scale)
+        let shrink = min(1, 1600 / max(pixels.width, pixels.height))
+        let size = CGSize(width: (pixels.width * shrink).rounded(), height: (pixels.height * shrink).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            original.draw(in: CGRect(origin: .zero, size: size))
+        }
+        for quality in [0.8, 0.65, 0.5, 0.35, 0.2] {
             if let jpeg = image.jpegData(compressionQuality: quality), jpeg.count <= 900 * 1024 { return jpeg }
         }
         return nil
@@ -176,6 +252,9 @@ extension AppStore {
         do {
             let created = try await EventServer.create(activity.serverBody(), baseURL: url)
             markUploaded(activity.id, serverID: created.id)
+            // Send the cover now rather than on the next sync. It's retried every sync until the
+            // server has it, so a failed upload never leaves other devices without one for good.
+            await syncCovers(baseURL: url)
         } catch let error as EventServer.ServerError where error.message.contains("already exists") {
             markUploaded(activity.id, serverID: activity.id.uuidString.lowercased())
         } catch let error as EventServer.ServerError {

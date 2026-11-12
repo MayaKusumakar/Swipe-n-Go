@@ -114,6 +114,13 @@ class EventService:
         if result is False:
             raise EventFullError("This event is full")
 
+    def rename_host(self, user_id, name):
+        """After someone changes their name, their events show the new one."""
+        return self._store(self._repository.rename_host, user_id, name)
+
+    def get_event(self, event_id):
+        return self._event(event_id)
+
     # MARK: Cover photos
 
     def set_cover(self, event_id, user, data):

@@ -2,6 +2,7 @@ import SwiftUI
 import MapKit
 
 struct ExploreView: View {
+    @AppStorage("exploreSatelliteMap") private var satellite = false
     @Environment(AppStore.self) private var store
     @State private var mode: Mode = .map
     @State private var query = ""
@@ -90,7 +91,10 @@ struct ExploreView: View {
                 .annotationTitles(.hidden)
             }
         }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        // Apple's own satellite imagery (with road and place labels). Only the style changes,
+        // so the camera, pins and selection stay where they are.
+        .mapStyle(satellite ? .hybrid(elevation: .realistic, pointsOfInterest: .excludingAll)
+                            : .standard(pointsOfInterest: .excludingAll))
         .mapControls {
             MapCompass()
             MapScaleView()
@@ -100,6 +104,18 @@ struct ExploreView: View {
             VStack(spacing: 10) {
                 HStack {
                     Spacer()
+                    VStack(spacing: 10) {
+                    Button {
+                        satellite.toggle()
+                    } label: {
+                        Image(systemName: satellite ? "map.fill" : "globe.americas.fill")
+                            .font(.headline)
+                            .frame(width: 46, height: 46)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .buttonStyle(.glass)
+                    .accessibilityLabel(satellite ? "Show standard map" : "Show satellite map")
+                    .sensoryFeedback(.selection, trigger: satellite)
                     Button {
                         withAnimation(.smooth) {
                             camera = .region(MKCoordinateRegion(center: Geo.home, span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)))
@@ -108,6 +124,7 @@ struct ExploreView: View {
                         Image(systemName: "location.fill").font(.headline).frame(width: 46, height: 46)
                     }
                     .buttonStyle(.glass)
+                    }
                     .buttonBorderShape(.circle)
                     .accessibilityLabel("Recenter")
                     Button {

@@ -30,6 +30,13 @@ class InMemoryEventRepository:
         with self._lock:
             return next((event for event in self._events if event.id == event_id), None)
 
+    def rename_host(self, host_id, host_name):
+        with self._lock:
+            changed = [e for e in self._events if e.host_id == host_id and e.host_name != host_name]
+            for event in changed:
+                event.host_name = host_name
+        return len(changed)
+
     def save_cover(self, event_id, data, image_url):
         with self._lock:
             event = self._find(event_id)

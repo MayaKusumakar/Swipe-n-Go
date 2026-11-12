@@ -157,6 +157,8 @@ struct FlyerFields {
     var date: Date
     var endDate: Date?
     var location: String
+    /// The map place picked in the review, if any. Without one, the Host form looks it up.
+    var place: Place? = nil
     var details: String
     var cost: String
     var category: ActivityCategory?
@@ -170,6 +172,8 @@ struct FlyerReviewView: View {
     @State private var title: String
     @State private var date: Date
     @State private var location: String
+    @State private var pickedPlace: Place?
+    @State private var suggestions: [Place] = []
     @State private var details: String
     @State private var cost: String
     @State private var category: ActivityCategory?
@@ -241,11 +245,50 @@ struct FlyerReviewView: View {
                     reviewHeader("Date and time", missing: isMissing("date") || isMissing("time"))
                 }
                 Section {
-                    TextField("Enter venue or address", text: $location)
-                    Text("After applying, choose a map location to confirm the venue.")
-                        .font(.caption)
+                    TextField("Search for the venue or address", text: $location)
+                        .textContentType(.fullStreetAddress)
+                        .onChange(of: location) {
+                            if let pickedPlace, location != pickedPlace.name { self.pickedPlace = nil }
+                        }
+                    if let pickedPlace {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(pickedPlace.name).font(.subheadline.weight(.semibold))
+                                if !pickedPlace.address.isEmpty {
+                                    Text(pickedPlace.address).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: "mappin.circle.fill").foregroundStyle(.green)
+                        }
+                        .accessibilityLabel("Pinned on the map: \(pickedPlace.name)")
+                    } else {
+                        ForEach(suggestions.prefix(4)) { place in
+                            Button {
+                                pickedPlace = place
+                                location = place.name
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(place.name).foregroundStyle(.primary)
+                                    if !place.address.isEmpty {
+                                        Text(place.address).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        Text("Pick a match to pin it on the map. If you skip this, we'll look it up for you.")
+                            .font(.caption)
+                    }
                 } header: {
                     reviewHeader("Location", missing: isMissing("location"))
+                }
+                .task(id: location) {
+                    // Same search as the Host form's place picker; waits for typing to pause.
+                    guard pickedPlace == nil else { suggestions = []; return }
+                    try? await Task.sleep(for: .milliseconds(350))
+                    guard !Task.isCancelled else { return }
+                    let found = await Place.search(location)
+                    if !Task.isCancelled { suggestions = found }
                 }
                 Section("Description") {
                     TextField("Description", text: $details, axis: .vertical)
@@ -269,8 +312,9 @@ struct FlyerReviewView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Apply details") {
                         let end = result.endDate.map { date.addingTimeInterval($0.timeIntervalSince(result.date ?? date)) }
-                        onApply(FlyerFields(title: title, date: date, endDate: end, location: location, details: details,
-                                            cost: cost, category: category, cover: useCover ? result.image : nil))
+                        onApply(FlyerFields(title: title, date: date, endDate: end, location: location, place: pickedPlace,
+                                            details: details, cost: cost, category: category,
+                                            cover: useCover ? result.image : nil))
                         dismiss()
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

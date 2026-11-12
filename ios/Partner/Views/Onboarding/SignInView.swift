@@ -88,8 +88,12 @@ struct SignInView: View {
                 .padding(12)
                 .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 12))
                 .accessibilityIdentifier("devEmail")
-            TextField("Your name", text: $devName)
+            Text("Display name (no password needed). People see this on your events.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.85))
+            TextField("Display name, e.g. Anant K", text: $devName)
                 .textContentType(.name)
+                .accessibilityLabel("Display name")
                 .padding(12)
                 .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 12))
             Button {

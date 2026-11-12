@@ -444,12 +444,18 @@ struct CelebrationView: View {
                         }
                         .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(Color.white), foreground: activity.category.color))
                     }
-                    Button(joined ? "Keep swiping" : "Got it") { dismiss() }
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .glassEffect(.regular.interactive(), in: Capsule())
+                    // The size and shape belong to the label, so the whole capsule takes the tap
+                    // (as with "Say hi" above), not just the words.
+                    Button { dismiss() } label: {
+                        Text(joined ? "Keep swiping" : "Got it")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .contentShape(Capsule())
+                            .glassEffect(.regular.interactive(), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 20)

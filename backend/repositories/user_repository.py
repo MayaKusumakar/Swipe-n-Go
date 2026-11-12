@@ -26,8 +26,10 @@ class UserRepository:
             existing = self.client.get(key)
             created_at = existing["created_at"] if existing is not None else now
             display_name = existing.get("display_name") if existing is not None else None
+            saved = list(existing.get("saved_event_ids") or []) if existing is not None else []
             user = User(id=user_id, email=email, name=name, picture_url=picture_url,
-                        created_at=created_at, last_sign_in_at=now, display_name=display_name)
+                        created_at=created_at, last_sign_in_at=now, display_name=display_name,
+                        saved_event_ids=saved)
             entity = datastore.Entity(key=key)
             entity.update(user.to_entity_properties())
             self.client.put(entity)
@@ -39,16 +41,34 @@ class UserRepository:
 
     def set_display_name(self, user_id, display_name, now, email="", name=""):
         """Saves the name chosen in the app. Creates the user if they haven't been saved yet."""
+        return self._update(user_id, now, email, name, lambda user: replace(user, display_name=display_name))
+
+    def set_saved(self, user_id, event_id, saved, now, email="", name=""):
+        """Adds or removes one saved event (idempotent). Returns the user."""
+        return self._update(user_id, now, email, name, lambda user: with_saved(user, event_id, saved))
+
+    def _update(self, user_id, now, email, name, change):
         key = self.client.key(USER_KIND, user_id)
         with self.client.transaction():
             existing = self.client.get(key)
             user = (User.from_entity(existing) if existing is not None
                     else User(id=user_id, email=email, name=name, picture_url=None, created_at=now, last_sign_in_at=now))
-            user = replace(user, display_name=display_name)
+            user = change(user)
             entity = datastore.Entity(key=key)
             entity.update(user.to_entity_properties())
             self.client.put(entity)
         return user
+
+
+# A list property on one entity; plenty for "saved for later", and well under Datastore's limits.
+MAX_SAVED_EVENTS = 500
+
+
+def with_saved(user, event_id, saved):
+    ids = [i for i in user.saved_event_ids if i != event_id]
+    if saved:
+        ids.append(event_id)
+    return replace(user, saved_event_ids=ids[-MAX_SAVED_EVENTS:])
 
 
 class InMemoryUserRepository:
@@ -71,8 +91,13 @@ class InMemoryUserRepository:
             return self._users.get(user_id)
 
     def set_display_name(self, user_id, display_name, now, email="", name=""):
+        return self._update(user_id, now, email, name, lambda user: replace(user, display_name=display_name))
+
+    def set_saved(self, user_id, event_id, saved, now, email="", name=""):
+        return self._update(user_id, now, email, name, lambda user: with_saved(user, event_id, saved))
+
+    def _update(self, user_id, now, email, name, change):
         with self._lock:
-            existing = self._users.get(user_id) or User(user_id, email, name, None, now, now)
-            user = replace(existing, display_name=display_name)
+            user = change(self._users.get(user_id) or User(user_id, email, name, None, now, now))
             self._users[user_id] = user
         return user

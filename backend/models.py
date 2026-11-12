@@ -204,6 +204,8 @@ class User:
     # The name they chose in the app's profile. Shown on their events and join
     # requests instead of the sign-in name when set.
     display_name: str | None = None
+    # Events saved for later, newest last. Kept on the account so every device sees them.
+    saved_event_ids: list[str] = field(default_factory=list)
 
     @property
     def shown_name(self):
@@ -219,6 +221,7 @@ class User:
             created_at=entity["created_at"],
             last_sign_in_at=entity["last_sign_in_at"],
             display_name=entity.get("display_name"),
+            saved_event_ids=list(entity.get("saved_event_ids") or []),
         )
 
     def to_entity_properties(self):
@@ -229,7 +232,9 @@ class User:
             "created_at": self.created_at,
             "last_sign_in_at": self.last_sign_in_at,
             "display_name": self.display_name,
+            "saved_event_ids": list(self.saved_event_ids),
         }
 
     def to_dict(self):
-        return {"id": self.id, "email": self.email, "name": self.shown_name, "picture_url": self.picture_url}
+        return {"id": self.id, "email": self.email, "name": self.shown_name, "picture_url": self.picture_url,
+                "display_name": self.display_name}

@@ -82,6 +82,8 @@ struct CreateActivityView: View {
     @State private var showCamera = false
     @State private var scannedLocation = ""
     @State private var findingPlace = false
+    /// The place was matched from the flyer's text, so the host should glance at it.
+    @State private var placeFromFlyer = false
     @State private var pendingFlyerCover: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var coverPhotoData: Data?
@@ -166,6 +168,7 @@ struct CreateActivityView: View {
                 details = draft.details
                 coverPhotoData = draft.coverPhotoData
                 scannedLocation = draft.suggestedLocation ?? ""
+                if place == nil, !scannedLocation.isEmpty { Task { await findScannedPlace() } }
                 repeats = draft.recurrence != nil
                 frequency = draft.recurrence?.frequency ?? .weekly
                 occurrenceCount = draft.recurrence?.count ?? 6
@@ -209,10 +212,17 @@ struct CreateActivityView: View {
                 FlyerReviewView(result: result) { fields in
                     title = fields.title
                     date = fields.date
-                    scannedLocation = fields.location
-                    place = nil
-                    // Use the location from the flyer: look it up on the map once, no retyping.
-                    Task { await findScannedPlace() }
+                    // The location is entered once, in the review. Use the place picked there,
+                    // or look the text up on the map; never ask for it again.
+                    if let picked = fields.place {
+                        place = picked
+                        scannedLocation = ""
+                        placeFromFlyer = false
+                    } else {
+                        scannedLocation = fields.location
+                        place = nil
+                        Task { await findScannedPlace() }
+                    }
                     details = fields.details
                     cost = fields.cost
                     if let scanned = fields.category { category = scanned }
@@ -544,6 +554,7 @@ struct CreateActivityView: View {
         defer { findingPlace = false }
         if let match = await Place.search(query).first, place == nil {
             withAnimation(.snappy) { place = match }
+            placeFromFlyer = true
         }
     }
 
@@ -554,12 +565,17 @@ struct CreateActivityView: View {
                 Label("Finding “\(scannedLocation)” on the map…", systemImage: "magnifyingglass")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+            } else if placeFromFlyer, let place {
+                Label("Matched “\(scannedLocation)” to \(place.name). Tap it to choose a different spot.",
+                      systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             } else if !scannedLocation.isEmpty && place == nil {
                 Text("Couldn't find “\(scannedLocation)” on the map. Tap below to pick it; we've already searched for it.")
                     .font(.subheadline)
                     .foregroundStyle(.orange)
             }
-            Button { showPlacePicker = true } label: {
+            Button { placeFromFlyer = false; showPlacePicker = true } label: {
                 HStack(spacing: 14) {
                     Image(systemName: place == nil ? "mappin.and.ellipse" : "mappin.circle.fill")
                         .font(.title2)
@@ -843,6 +859,16 @@ private struct CoverPhotoCropView: View {
                 let size = CGSize(width: width, height: width * 9 / 16)
                 ZStack {
                     Color.black
+                    // When the whole photo is shown (a tall poster), the sides are a blurred copy of it,
+                    // exactly like the saved cover.
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: size.width, height: size.height)
+                        .blur(radius: 24)
+                        .overlay(.black.opacity(0.25))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .allowsHitTesting(false)
                     Image(uiImage: image)
                         .resizable()
                         .frame(width: image.size.width * scale(for: size),
@@ -874,7 +900,7 @@ private struct CoverPhotoCropView: View {
                         .onEnded { _ in dragStart = offset }
                         .simultaneously(with: MagnifyGesture()
                             .onChanged { value in
-                                zoom = min(4, max(1, zoomStart * value.magnification))
+                                zoom = min(4, max(minZoom(for: size), zoomStart * value.magnification))
                                 offset = clamped(offset, in: size)
                             }
                             .onEnded { _ in
@@ -884,12 +910,30 @@ private struct CoverPhotoCropView: View {
                 )
                 .overlay(alignment: .bottom) {
                     VStack(spacing: 14) {
-                        Text("Drag and pinch to frame your cover")
+                        let fitsWhole = zoom <= minZoom(for: size) + 0.001
+                        Button {
+                            withAnimation(.snappy) {
+                                zoom = fitsWhole ? 1 : minZoom(for: size)
+                                zoomStart = zoom
+                                offset = .zero
+                                dragStart = .zero
+                            }
+                        } label: {
+                            Label(fitsWhole ? "Fill frame" : "Show whole photo",
+                                  systemImage: fitsWhole ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 16).padding(.vertical, 10)
+                                .contentShape(Capsule())
+                                .glassEffect(.regular.interactive(), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Text(fitsWhole ? "The whole photo is shown. Pinch in to fill the frame." : "Drag and pinch to frame your cover")
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.85))
                         HStack {
                             Image(systemName: "minus.magnifyingglass")
-                            Slider(value: $zoom, in: 1...4)
+                            Slider(value: $zoom, in: minZoom(for: size)...4)
                                 .accessibilityLabel("Photo zoom")
                                 .onChange(of: zoom) {
                                     zoomStart = zoom
@@ -906,7 +950,14 @@ private struct CoverPhotoCropView: View {
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Cover photo crop, 16 by 9")
-                .onAppear { cropSize = size }
+                .onAppear {
+                    cropSize = size
+                    // Posters and other tall photos start fully visible instead of cut in half.
+                    if image.size.height > image.size.width {
+                        zoom = minZoom(for: size)
+                        zoomStart = zoom
+                    }
+                }
                 .onChange(of: geometry.size) { cropSize = size }
             }
             .ignoresSafeArea(edges: .bottom)
@@ -937,6 +988,13 @@ private struct CoverPhotoCropView: View {
         max(size.width / image.size.width, size.height / image.size.height) * zoom
     }
 
+    /// The zoom at which the whole photo fits inside the 16:9 frame (1 = fills it).
+    private func minZoom(for size: CGSize) -> CGFloat {
+        let fit = min(size.width / image.size.width, size.height / image.size.height)
+        let fill = max(size.width / image.size.width, size.height / image.size.height)
+        return min(1, fit / fill)
+    }
+
     private func clamped(_ proposed: CGSize, in size: CGSize) -> CGSize {
         let scale = scale(for: size)
         let horizontal = max(0, (image.size.width * scale - size.width) / 2)
@@ -953,7 +1011,22 @@ private struct CoverPhotoCropView: View {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        let cropped = UIGraphicsImageRenderer(size: output, format: format).image { _ in
+        let cropped = UIGraphicsImageRenderer(size: output, format: format).image { context in
+            if zoom < 1 {
+                // Sides not covered by the photo: a soft, darkened copy of it (drawn tiny, then
+                // stretched, which blurs it without Core Image).
+                let small = CGSize(width: 48, height: 27)
+                let fill = max(small.width / image.size.width, small.height / image.size.height)
+                let tiny = UIGraphicsImageRenderer(size: small, format: format).image { _ in
+                    image.draw(in: CGRect(x: (small.width - image.size.width * fill) / 2,
+                                          y: (small.height - image.size.height * fill) / 2,
+                                          width: image.size.width * fill, height: image.size.height * fill))
+                }
+                context.cgContext.interpolationQuality = .high
+                tiny.draw(in: CGRect(origin: .zero, size: output))
+                UIColor.black.withAlphaComponent(0.25).setFill()
+                context.fill(CGRect(origin: .zero, size: output))
+            }
             image.draw(in: CGRect(
                 x: (output.width - image.size.width * scale) / 2 + position.width * factor,
                 y: (output.height - image.size.height * scale) / 2 + position.height * factor,

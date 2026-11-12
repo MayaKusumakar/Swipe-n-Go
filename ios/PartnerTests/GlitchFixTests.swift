@@ -39,6 +39,13 @@ struct CoverUploadTests {
         #expect(jpeg.count <= 900 * 1024)
     }
 
+    @Test func bigPhotosAreShrunkToCoverSize() throws {
+        let jpeg = try #require(AppStore.coverJPEG(photo(CGSize(width: 4000, height: 3000), noisy: false)))
+        let image = try #require(UIImage(data: jpeg))
+        #expect(max(image.size.width * image.scale, image.size.height * image.scale) <= 1600)
+        #expect(jpeg.count <= 900 * 1024)
+    }
+
     @Test func notAnImageGivesNothing() {
         #expect(AppStore.coverJPEG(Data("hello".utf8)) == nil)
     }

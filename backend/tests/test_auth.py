@@ -201,6 +201,6 @@ def test_sign_in_saves_the_account_and_me_returns_it(app_parts):
     client.post("/api/auth/sign-in", headers=headers)
 
     assert first == {"id": "1093", "email": "maya@ucdavis.edu", "name": "Maya Lee",
-                     "picture_url": "https://example.com/p.png"}
+                     "picture_url": "https://example.com/p.png", "display_name": None}
     assert users.get("1093").created_at == created
     assert client.get("/api/auth/me", headers=as_user("Hana")).get_json()["email"] == "hana@ucdavis.edu"

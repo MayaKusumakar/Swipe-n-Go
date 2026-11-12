@@ -27,6 +27,10 @@ final class AppStore {
     var joinedIDs: Set<UUID> = []
     var pendingIDs: Set<UUID> = []
     var savedIDs: Set<UUID> = []
+    /// Save / unsave of server events not yet confirmed by the server (event server id → saved).
+    var pendingSaves: [String: Bool] = [:]
+    /// The profile name changed but the server hasn't accepted it yet.
+    var nameNeedsSync = false
     var skippedIDs: Set<UUID> = []
     var conversations: [Conversation] = []
     var requests: [JoinRequest] = []
@@ -231,7 +235,7 @@ final class AppStore {
         swipeHistory.append((activity.id, action))
         switch action {
         case .skip: skippedIDs.insert(activity.id)
-        case .save: savedIDs.insert(activity.id); skippedIDs.insert(activity.id)
+        case .save: savedIDs.insert(activity.id); skippedIDs.insert(activity.id); savedChanged(activity, saved: true)
         case .join: _ = join(activity)
         }
         save()
@@ -243,7 +247,9 @@ final class AppStore {
         guard let (id, action) = swipeHistory.popLast() else { return }
         switch action {
         case .skip: skippedIDs.remove(id)
-        case .save: savedIDs.remove(id); skippedIDs.remove(id)
+        case .save:
+            savedIDs.remove(id); skippedIDs.remove(id)
+            if let a = activity(id) { savedChanged(a, saved: false) }
         case .join: if let a = activity(id) { leave(a, silently: true) }
         }
         save()
@@ -316,7 +322,9 @@ final class AppStore {
     }
 
     func toggleSaved(_ activity: Activity) {
-        if savedIDs.contains(activity.id) { savedIDs.remove(activity.id) } else { savedIDs.insert(activity.id) }
+        let saved = !savedIDs.contains(activity.id)
+        if saved { savedIDs.insert(activity.id) } else { savedIDs.remove(activity.id) }
+        savedChanged(activity, saved: saved)
         save()
     }
 
@@ -661,6 +669,7 @@ final class AppStore {
         var joinedIDs: Set<UUID>
         var pendingIDs: Set<UUID>
         var savedIDs: Set<UUID>
+        var pendingSaves: [String: Bool]? = nil
         var skippedIDs: Set<UUID>
         var conversations: [Conversation]
         var requests: [JoinRequest]
@@ -672,7 +681,7 @@ final class AppStore {
     @discardableResult
     func save() -> Bool {
         let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activities, drafts: drafts,
-                            joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, skippedIDs: skippedIDs,
+                            joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, pendingSaves: pendingSaves, skippedIDs: skippedIDs,
                             conversations: conversations, requests: requests, notificationsEnabled: notificationsEnabled,
                             radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile)
         do {
@@ -697,6 +706,7 @@ final class AppStore {
         joinedIDs = s.joinedIDs
         pendingIDs = s.pendingIDs
         savedIDs = s.savedIDs
+        pendingSaves = s.pendingSaves ?? [:]
         skippedIDs = s.skippedIDs
         conversations = s.conversations
         requests = s.requests
@@ -723,6 +733,7 @@ final class AppStore {
         joinedIDs = []
         pendingIDs = []
         savedIDs = []
+        pendingSaves = [:]
         skippedIDs = []
         swipeHistory = []
     }

@@ -14,6 +14,7 @@ from api.events import events_bp
 from api.flyers import flyers_bp
 from api.health import health_bp
 from api.planner import planner_bp
+from api.saved import saved_bp
 from api.tasks import tasks_bp
 from repositories.dev_sample_events import build_sample_events
 from repositories.event_repository import EventRepository
@@ -70,6 +71,7 @@ def create_app(event_service=None, planner_service=None, summary_service=None,
     app.register_blueprint(auth_bp)
     app.register_blueprint(events_bp)
     app.register_blueprint(planner_bp)
+    app.register_blueprint(saved_bp)
     app.register_blueprint(flyers_bp)
     app.register_blueprint(tasks_bp)
     register_error_handlers(app)

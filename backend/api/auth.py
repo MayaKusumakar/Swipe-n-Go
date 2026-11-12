@@ -53,7 +53,10 @@ def sign_in():
 
 @auth_bp.get("/me")
 def me():
-    return jsonify(acting_user().to_dict())
+    """The account as other people see it. `display_name` is null until a profile name is chosen,
+    so a newly signed-in device knows whether to use the server's name or send its own."""
+    user = acting_user()
+    return jsonify({**user.to_dict(), "display_name": user.name if user is not g.user else None})
 
 
 MAX_DISPLAY_NAME = 60
@@ -70,10 +73,14 @@ def update_me():
     if len(name) > MAX_DISPLAY_NAME:
         return error_response(400, "invalid_name", f"name must be at most {MAX_DISPLAY_NAME} characters")
     users = current_app.extensions["user_repository"]
-    saved = users.set_display_name(g.user.id, name, current_app.extensions["event_service"].now(),
-                                   email=g.user.email, name=g.user.name)
-    return jsonify({"id": saved.id, "email": saved.email, "name": saved.shown_name,
-                    "picture_url": saved.picture_url})
+    events = current_app.extensions["event_service"]
+    saved = users.set_display_name(g.user.id, name, events.now(), email=g.user.email, name=g.user.name)
+    try:
+        # Events posted before the rename (maybe from another device) show the new name too.
+        events.rename_host(g.user.id, name)
+    except Exception:  # noqa: BLE001 - the name is saved; old events catch up on the next rename
+        current_app.logger.exception("Couldn't update the host name on existing events")
+    return jsonify(saved.to_dict())
 
 
 def acting_user():
