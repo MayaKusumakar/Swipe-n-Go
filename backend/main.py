@@ -16,6 +16,7 @@ from api.health import health_bp
 from api.planner import planner_bp
 from api.saved import saved_bp
 from api.tasks import tasks_bp
+from experimental import register_experiments
 from repositories.dev_sample_events import build_sample_events
 from repositories.event_repository import EventRepository
 from repositories.memory_event_repository import InMemoryEventRepository
@@ -46,7 +47,7 @@ def _default_user_repository():
 
 
 def create_app(event_service=None, planner_service=None, summary_service=None,
-               auth_service=None, user_repository=None, flyer_service=None):
+               auth_service=None, user_repository=None, flyer_service=None, experiments=None):
     app = Flask(__name__)
     # Flyer photos are the biggest request (~0.5 MB from the app); anything over 8 MB is refused.
     app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
@@ -75,6 +76,8 @@ def create_app(event_service=None, planner_service=None, summary_service=None,
     app.register_blueprint(flyers_bp)
     app.register_blueprint(tasks_bp)
     register_error_handlers(app)
+    # Off unless named in EXPERIMENTS (see experimental/__init__.py); adds nothing by default.
+    register_experiments(app, experiments)
     return app
 
 
