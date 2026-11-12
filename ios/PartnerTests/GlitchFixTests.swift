@@ -46,6 +46,17 @@ struct CoverUploadTests {
         #expect(jpeg.count <= 900 * 1024)
     }
 
+    @Test func posterCoversAreTallAndStillUpload() throws {
+        let poster = try #require(UIImage(data: photo(CGSize(width: 1200, height: 1600), noisy: false))?
+            .jpegData(compressionQuality: 0.8))
+        #expect(CoverShape.isPoster(poster))
+        let jpeg = try #require(AppStore.coverJPEG(poster))
+        #expect(CoverShape.isPoster(jpeg))
+        #expect(jpeg.count <= 900 * 1024)
+        #expect(!CoverShape.isPoster(photo(CGSize(width: 1600, height: 900), noisy: false)))
+        #expect(!CoverShape.isPoster(nil))
+    }
+
     @Test func notAnImageGivesNothing() {
         #expect(AppStore.coverJPEG(Data("hello".utf8)) == nil)
     }

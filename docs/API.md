@@ -324,7 +324,7 @@ Code: `backend/api/flyers.py` (route and validation), `backend/services/flyer_se
 
 ### PUT /api/events/\<id\>/cover
 
-Host only. Body: `{"image": "<base64 JPEG>"}`, at most 900 KB (the app sends 1600 × 900, re-encoded, so photo location metadata is gone). Returns `{"image_url": "/api/events/<id>/cover?v=<12 hex>"}`; the event's `image_url` becomes that, and `v` changes whenever the picture does. Errors: `400 invalid_cover` (not base64, not a JPEG, too big), `403` (not the host), `404`.
+Host only. Body: `{"image": "<base64 JPEG>"}`, at most 900 KB (the app sends a wide 1600 × 900 or a poster 1200 × 1600 cover, re-encoded, so photo location metadata is gone). Returns `{"image_url": "/api/events/<id>/cover?v=<12 hex>"}`; the event's `image_url` becomes that, and `v` changes whenever the picture does. Errors: `400 invalid_cover` (not base64, not a JPEG, too big), `403` (not the host), `404`.
 
 ### GET /api/events/\<id\>/cover
 

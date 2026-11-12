@@ -334,8 +334,9 @@ struct CreateActivityView: View {
             .foregroundStyle(.white)
             .padding(18)
         }
-        .frame(height: 180)
+        .frame(height: CoverShape.isPoster(coverPhotoData) ? 460 : 180)
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .animation(.smooth, value: coverPhotoData)
         .animation(.smooth, value: category)
         .padding(.top, 8)
     }
@@ -845,35 +846,33 @@ private struct CoverPhotoCropView: View {
     @Environment(\.dismiss) private var dismiss
     let image: UIImage
     let onCrop: (Data) -> Void
+    @State private var shape: CoverShape
     @State private var zoom: CGFloat = 1
     @State private var zoomStart: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var dragStart: CGSize = .zero
+    @State private var cropSize = CGSize(width: 16, height: 9)
     @State private var cropError = false
+
+    init(image: UIImage, onCrop: @escaping (Data) -> Void) {
+        self.image = image
+        self.onCrop = onCrop
+        // Flyers and other tall photos start as a poster, so only a sliver of the sides is trimmed.
+        _shape = State(initialValue: image.size.height > image.size.width ? .poster : .wide)
+    }
 
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                // The crop frame spans the screen; the rest of the photo stays visible, dimmed.
-                let width = max(1, geometry.size.width - 24)
-                let size = CGSize(width: width, height: width * 9 / 16)
+                let size = frameSize(in: geometry.size)
                 ZStack {
                     Color.black
-                    // When the whole photo is shown (a tall poster), the sides are a blurred copy of it,
-                    // exactly like the saved cover.
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: size.width, height: size.height)
-                        .blur(radius: 24)
-                        .overlay(.black.opacity(0.25))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .allowsHitTesting(false)
                     Image(uiImage: image)
                         .resizable()
                         .frame(width: image.size.width * scale(for: size),
                                height: image.size.height * scale(for: size))
                         .offset(offset)
+                    // The rest of the photo stays visible, dimmed, like cropping in Photos.
                     Rectangle()
                         .fill(.black.opacity(0.6))
                         .mask {
@@ -900,7 +899,7 @@ private struct CoverPhotoCropView: View {
                         .onEnded { _ in dragStart = offset }
                         .simultaneously(with: MagnifyGesture()
                             .onChanged { value in
-                                zoom = min(4, max(minZoom(for: size), zoomStart * value.magnification))
+                                zoom = min(4, max(1, zoomStart * value.magnification))
                                 offset = clamped(offset, in: size)
                             }
                             .onEnded { _ in
@@ -910,30 +909,17 @@ private struct CoverPhotoCropView: View {
                 )
                 .overlay(alignment: .bottom) {
                     VStack(spacing: 14) {
-                        let fitsWhole = zoom <= minZoom(for: size) + 0.001
-                        Button {
-                            withAnimation(.snappy) {
-                                zoom = fitsWhole ? 1 : minZoom(for: size)
-                                zoomStart = zoom
-                                offset = .zero
-                                dragStart = .zero
-                            }
-                        } label: {
-                            Label(fitsWhole ? "Fill frame" : "Show whole photo",
-                                  systemImage: fitsWhole ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 16).padding(.vertical, 10)
-                                .contentShape(Capsule())
-                                .glassEffect(.regular.interactive(), in: Capsule())
+                        Picker("Shape", selection: $shape.animation(.snappy)) {
+                            ForEach(CoverShape.allCases, id: \.self) { Text($0.title).tag($0) }
                         }
-                        .buttonStyle(.plain)
-                        Text(fitsWhole ? "The whole photo is shown. Pinch in to fill the frame." : "Drag and pinch to frame your cover")
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 280)
+                        Text("Drag and pinch to frame your cover")
                             .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.85))
                         HStack {
                             Image(systemName: "minus.magnifyingglass")
-                            Slider(value: $zoom, in: minZoom(for: size)...4)
+                            Slider(value: $zoom, in: 1...4)
                                 .accessibilityLabel("Photo zoom")
                                 .onChange(of: zoom) {
                                     zoomStart = zoom
@@ -949,20 +935,20 @@ private struct CoverPhotoCropView: View {
                     .padding(.bottom, 24)
                 }
                 .accessibilityElement(children: .contain)
-                .accessibilityLabel("Cover photo crop, 16 by 9")
-                .onAppear {
-                    cropSize = size
-                    // Posters and other tall photos start fully visible instead of cut in half.
-                    if image.size.height > image.size.width {
-                        zoom = minZoom(for: size)
-                        zoomStart = zoom
-                    }
+                .accessibilityLabel("Cover photo crop, \(shape.title)")
+                .onAppear { cropSize = size }
+                .onChange(of: geometry.size) { cropSize = frameSize(in: geometry.size) }
+                .onChange(of: shape) {
+                    cropSize = frameSize(in: geometry.size)
+                    zoom = 1
+                    zoomStart = 1
+                    offset = .zero
+                    dragStart = .zero
                 }
-                .onChange(of: geometry.size) { cropSize = size }
             }
             .ignoresSafeArea(edges: .bottom)
             .background(Color.black)
-            .navigationTitle("Cover photo · 16:9")
+            .navigationTitle("Cover photo")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
@@ -982,17 +968,20 @@ private struct CoverPhotoCropView: View {
         }
     }
 
-    @State private var cropSize = CGSize(width: 16, height: 9)
+    /// The crop frame: full width for wide covers; for posters, as tall as fits above the controls.
+    private func frameSize(in space: CGSize) -> CGSize {
+        let width = max(1, space.width - 24)
+        switch shape {
+        case .wide:
+            return CGSize(width: width, height: width * 9 / 16)
+        case .poster:
+            let height = max(1, min(space.height - 2 * 150, width * 4 / 3))
+            return CGSize(width: height * 3 / 4, height: height)
+        }
+    }
 
     private func scale(for size: CGSize) -> CGFloat {
         max(size.width / image.size.width, size.height / image.size.height) * zoom
-    }
-
-    /// The zoom at which the whole photo fits inside the 16:9 frame (1 = fills it).
-    private func minZoom(for size: CGSize) -> CGFloat {
-        let fit = min(size.width / image.size.width, size.height / image.size.height)
-        let fill = max(size.width / image.size.width, size.height / image.size.height)
-        return min(1, fit / fill)
     }
 
     private func clamped(_ proposed: CGSize, in size: CGSize) -> CGSize {
@@ -1004,29 +993,14 @@ private struct CoverPhotoCropView: View {
     }
 
     private func crop(size: CGSize) {
-        let output = CGSize(width: 1600, height: 900)
+        let output = shape.output
         let factor = output.width / size.width
         let scale = scale(for: size) * factor
         let position = clamped(offset, in: size)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        let cropped = UIGraphicsImageRenderer(size: output, format: format).image { context in
-            if zoom < 1 {
-                // Sides not covered by the photo: a soft, darkened copy of it (drawn tiny, then
-                // stretched, which blurs it without Core Image).
-                let small = CGSize(width: 48, height: 27)
-                let fill = max(small.width / image.size.width, small.height / image.size.height)
-                let tiny = UIGraphicsImageRenderer(size: small, format: format).image { _ in
-                    image.draw(in: CGRect(x: (small.width - image.size.width * fill) / 2,
-                                          y: (small.height - image.size.height * fill) / 2,
-                                          width: image.size.width * fill, height: image.size.height * fill))
-                }
-                context.cgContext.interpolationQuality = .high
-                tiny.draw(in: CGRect(origin: .zero, size: output))
-                UIColor.black.withAlphaComponent(0.25).setFill()
-                context.fill(CGRect(origin: .zero, size: output))
-            }
+        let cropped = UIGraphicsImageRenderer(size: output, format: format).image { _ in
             image.draw(in: CGRect(
                 x: (output.width - image.size.width * scale) / 2 + position.width * factor,
                 y: (output.height - image.size.height * scale) / 2 + position.height * factor,
@@ -1040,5 +1014,24 @@ private struct CoverPhotoCropView: View {
         }
         onCrop(data)
         dismiss()
+    }
+}
+
+/// The two cover shapes: wide for photos, a 3:4 poster for flyers.
+enum CoverShape: CaseIterable {
+    case wide, poster
+
+    var title: String { self == .wide ? "Wide 16:9" : "Poster 3:4" }
+    var output: CGSize { self == .wide ? CGSize(width: 1600, height: 900) : CGSize(width: 1200, height: 1600) }
+
+    /// Whether a saved cover is a poster (taller than wide). Reads only the image header.
+    static func isPoster(_ data: Data?) -> Bool {
+        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return false }
+        // EXIF orientations 5–8 are rotated 90°.
+        let rotated = ((properties[kCGImagePropertyOrientation] as? Int) ?? 1) >= 5
+        return rotated ? width > height : height > width
     }
 }
