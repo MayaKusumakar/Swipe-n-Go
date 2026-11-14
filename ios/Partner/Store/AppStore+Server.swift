@@ -78,12 +78,6 @@ extension AppStore {
         }
     }
 
-    /// Whether the server offers dev sign-in (local servers with DEV_SIGN_IN=on only).
-    func devSignInAvailable() async -> Bool {
-        guard let url = serverURL else { return false }
-        return (try? await EventServer.authConfig(baseURL: url).devSignIn) ?? false
-    }
-
     private func merge(_ events: [EventServer.ServerEvent]) {
         // Runs every 15 seconds: only touch (and save) what actually changed, so the screen
         // isn't redrawn and the state file isn't rewritten when nothing is new.

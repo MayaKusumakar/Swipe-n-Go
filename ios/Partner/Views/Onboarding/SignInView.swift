@@ -7,9 +7,16 @@ struct SignInView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
     @State private var working = false
-    @State private var devAvailable = false
+    @State private var serverCheck = ServerCheck.checking
+    @State private var serverDraft = ""
+    @State private var editingServer = false
     @State private var devEmail = ""
     @State private var devName = ""
+
+    /// What the server at `store.serverURL` said about dev sign-in.
+    private enum ServerCheck: Equatable { case noServer, checking, unreachable, devOff, ready }
+
+    private var devAvailable: Bool { serverCheck == .ready }
 
     var body: some View {
         ZStack {
@@ -28,13 +35,97 @@ struct SignInView: View {
                         notice(message)
                     }
                     if devAvailable { devSignIn }
+                    serverSection
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 40)
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .task { devAvailable = await store.devSignInAvailable() }
+        .task(id: store.serverURLString) { await watchServer() }
+    }
+
+    /// Asks the server every few seconds until dev sign-in is available, so the screen updates by
+    /// itself once the server starts, or once iOS's "local network" prompt is answered (the first
+    /// request on an iPhone fails while that prompt is up).
+    private func watchServer() async {
+        serverCheck = store.serverURL == nil ? .noServer : .checking
+        while !Task.isCancelled, let url = store.serverURL {
+            do {
+                serverCheck = try await EventServer.authConfig(baseURL: url).devSignIn ? .ready : .devOff
+            } catch {
+                serverCheck = .unreachable
+            }
+            if serverCheck == .ready { return }
+            try? await Task.sleep(for: .seconds(3))
+        }
+    }
+
+    /// Where the app finds the server. On an iPhone the address starts empty, and dev sign-in only
+    /// appears once a server with DEV_SIGN_IN=on answers, so it has to be settable before signing in.
+    private var serverSection: some View {
+        VStack(spacing: 10) {
+            if editingServer || serverCheck == .noServer {
+                Text("Server address")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                TextField("http://192.168.1.20:8080", text: $serverDraft)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.go)
+                    .onSubmit(saveServer)
+                    .padding(12)
+                    .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityIdentifier("serverAddress")
+                Text("Your Mac's Wi‑Fi address and port, with the server started with DEV_SIGN_IN=on. Keep this iPhone on the same Wi‑Fi.")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: saveServer) {
+                    Text("Connect")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+                .disabled(serverDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if serverCheck != .ready { ProgressView().tint(.white).controlSize(.small) }
+                    Text(serverStatusText)
+                        .font(.footnote)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Button("Change server") {
+                    serverDraft = store.serverURLString
+                    editingServer = true
+                }
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.white)
+            }
+        }
+        .padding(16)
+        .background(.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var serverStatusText: String {
+        let address = store.serverURLString
+        return switch serverCheck {
+        case .noServer, .checking: "Connecting to \(address)…"
+        case .unreachable: "Can't reach \(address). Is the server running with --host 0.0.0.0 and this iPhone on the same Wi‑Fi? If iOS asks about your local network, tap Allow. Still trying…"
+        case .devOff: "\(address) is running, but dev sign-in is off. Restart it with DEV_SIGN_IN=on."
+        case .ready: "Server: \(address)"
+        }
+    }
+
+    private func saveServer() {
+        store.serverURLString = serverDraft.trimmingCharacters(in: .whitespaces)
+        editingServer = false
+        if store.serverURL == nil { serverCheck = .noServer }
     }
 
     private var header: some View {
