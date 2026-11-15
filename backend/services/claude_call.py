@@ -49,10 +49,17 @@ def parse(client, *, system, content, output_format, effort="low", max_tokens=40
         raise AIUnavailableError("The AI couldn't answer right now.") from e
     except anthropic.APIConnectionError as e:
         raise AIUnavailableError("The server couldn't reach Claude.") from e
-    except TypeError as e:
-        # The SDK raises TypeError at request time when no credentials are configured.
+    except (anthropic.CredentialsError, TypeError) as e:
+        # No API key: the SDK raises this at request time, not when the client is made. Which one
+        # depends on the machine: CredentialsError when it falls back to an Anthropic profile on
+        # disk that isn't there (~/.config/anthropic), TypeError when there's nothing to look at.
         log.warning("No Claude credentials: %s", e)
         raise AIUnavailableError(NOT_CONFIGURED) from e
+    except anthropic.AnthropicError as e:
+        # Anything else the SDK raises still becomes a 503, so the app falls back on-device
+        # instead of the server answering 500.
+        log.warning("Claude request failed: %s: %s", type(e).__name__, e)
+        raise AIUnavailableError("The AI couldn't answer right now.") from e
 
     if response.stop_reason == "refusal" or response.parsed_output is None:
         raise AIUnavailableError("The AI couldn't help with that request.")
