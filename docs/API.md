@@ -393,4 +393,44 @@ Code: `backend/api/events.py` (routes), `services/event_service.py` (all permiss
 
 ---
 
+## Experimental (off by default, not part of the stable API)
+
+These routes **don't exist** unless the server is started with the `EXPERIMENTS` variable naming them (comma-separated). With it unset, which is the default and how `app.yaml` deploys, they answer `404 not_found` like any unknown route. Clients shouldn't depend on them until the team moves them into the sections above. Code: `backend/experimental/`, tests: `backend/tests/test_experimental.py`.
+
+```
+EXPERIMENTS=event_parse,status DEV_SIGN_IN=on EVENT_STORE=memory flask --app main run --port 8080
+```
+
+Both need sign-in like every `/api` route.
+
+### POST /api/experimental/events/parse  (`EXPERIMENTS=event_parse`)
+
+The typed-text counterpart of `POST /api/flyers/read`: Claude turns a short description into event details for the host to check. Nothing is posted. Costs money per call once `ANTHROPIC_API_KEY` is set.
+
+Request: `{"text": "pickup soccer sat 3-5pm at the ARC fields, free", "now": "2026-11-12T10:00:00-08:00"}`
+- `text`: 1 to 1000 characters.
+- `now`: the host's current time with UTC offset; "saturday" means the next Saturday in that time zone.
+
+Response `200`: the same fields and rules as `POST /api/flyers/read`, except that `is_event_flyer` is called `is_event`.
+
+Errors: `400 invalid_parse_request`, `429 rate_limited` (more than 10 a minute per user), `503 ai_unavailable` (no API key, Claude busy or refused).
+
+### GET /api/experimental/status  (`EXPERIMENTS=status`)
+
+Server health for the team. Free: one small Datastore read, and Claude is never called. At most 30 a minute per user.
+
+```json
+{
+  "status": "ok",
+  "checked_at": "2026-11-12T18:00:00+00:00",
+  "environment": "local",
+  "datastore": {"ok": true},
+  "ai": {"configured": false, "model": "claude-opus-5-5", "summaries": "template"},
+  "experiments": ["status"]
+}
+```
+`status` is `"degraded"` and `datastore` is `{"ok": false, "error": "<exception name>"}` when the store can't be reached.
+
+---
+
 Not built yet: deleting your account (the App Store requires it), editing and deleting events, users' live locations, chats and saved events on the server, image uploads, category and date filters, pagination, rate limiting, Cloud Tasks (cron only for now).

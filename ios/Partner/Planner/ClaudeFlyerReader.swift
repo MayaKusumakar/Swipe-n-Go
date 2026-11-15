@@ -51,14 +51,68 @@ struct ClaudeFlyerReader {
 
 extension ClaudeFlyerReader.Reading {
     func result(image: UIImage) -> FlyerScanResult {
-        let place = [locationName, address].filter { !$0.isEmpty }
-        return FlyerScanResult(
+        FlyerScanResult(
             title: title, date: startTime, endDate: endTime,
-            location: place.count == 2 && !address.localizedCaseInsensitiveContains(locationName)
-                ? "\(locationName), \(address)" : (place.first ?? ""),
+            location: ClaudeFlyerReader.place(locationName, address),
             details: description, cost: cost,
             category: ActivityCategory(rawValue: category),
             missing: missing, isEventFlyer: isEventFlyer, reader: .claude, image: image
+        )
+    }
+}
+
+extension ClaudeFlyerReader {
+    /// "Venue, address", or whichever of the two is there (and no repeat when the address names the venue).
+    static func place(_ locationName: String, _ address: String) -> String {
+        let place = [locationName, address].filter { !$0.isEmpty }
+        return place.count == 2 && !address.localizedCaseInsensitiveContains(locationName)
+            ? "\(locationName), \(address)" : (place.first ?? "")
+    }
+}
+
+/// Reads a typed plan description ("pickup soccer sat 3-5pm at the ARC fields, free") with Claude
+/// through the team's server. The text counterpart of `ClaudeFlyerReader`: same fields, same review screen.
+/// Experimental on the server: it answers 404 unless started with EXPERIMENTS=event_parse (see docs/API.md).
+struct ClaudeTextReader {
+    let baseURL: URL
+
+    static let path = "api/experimental/events/parse"
+    /// The server refuses longer text.
+    static let maxCharacters = 1000
+
+    struct RequestBody: Encodable {
+        var text: String
+        var now: String
+    }
+
+    /// The flyer reader's fields, except `is_event` instead of `is_event_flyer`.
+    struct Reading: Decodable, Equatable {
+        var isEvent: Bool
+        var title: String
+        var startTime: Date?
+        var endTime: Date?
+        var locationName: String
+        var address: String
+        var description: String
+        var cost: String
+        var category: String
+        var missing: [String]
+    }
+
+    func read(_ text: String, now: Date = .now) async throws -> Reading {
+        let body = RequestBody(text: String(text.prefix(Self.maxCharacters)), now: ClaudePlanner.localTime.format(now))
+        return try await EventServer.post(Self.path, body: body, baseURL: baseURL, timeout: 45)
+    }
+}
+
+extension ClaudeTextReader.Reading {
+    var result: FlyerScanResult {
+        FlyerScanResult(
+            title: title, date: startTime, endDate: endTime,
+            location: ClaudeFlyerReader.place(locationName, address),
+            details: description, cost: cost,
+            category: ActivityCategory(rawValue: category),
+            missing: missing, isEventFlyer: isEvent, reader: .claude, source: .text, image: nil
         )
     }
 }

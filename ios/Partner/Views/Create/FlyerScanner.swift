@@ -25,7 +25,11 @@ struct FlyerScanResult: Identifiable {
     var reader: Reader = .onDevice
     /// Why Claude wasn't used, when the phone read the flyer itself.
     var fallbackReason: String? = nil
-    var image: UIImage
+    /// A flyer photo, or a plan the host typed ("Describe your plan" in Host a plan).
+    enum Source: Equatable { case flyer, text }
+    var source: Source = .flyer
+    /// The flyer photo; nil for typed text.
+    var image: UIImage?
 }
 
 enum FlyerScanner {
@@ -52,16 +56,38 @@ enum FlyerScanner {
         }
     }
 
-    /// Why Claude didn't read the flyer, in words a host understands.
-    static func explain(_ error: Error) -> String {
+    /// Reads a typed plan description: Claude when the server can, otherwise on the phone.
+    /// Never fails for lack of a server: the phone can always read the text itself.
+    static func read(text: String, serverURL: URL?) async throws -> FlyerScanResult {
+        var onDevice = local(text: text)
+        guard let serverURL else {
+            onDevice.fallbackReason = "Connect to your team's server in Profile → Server to read descriptions with Claude."
+            return onDevice
+        }
+        do {
+            return try await ClaudeTextReader(baseURL: serverURL).read(text).result
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            onDevice.fallbackReason = explain(error, subject: "description")
+            return onDevice
+        }
+    }
+
+    /// Why Claude didn't read the flyer (or description), in words a host understands.
+    static func explain(_ error: Error, subject: String = "flyer") -> String {
         if let serverError = error as? EventServer.ServerError {
+            if serverError.status == 404 {
+                // The server is older than this feature, or it's turned off there (EXPERIMENTS).
+                return "Your team's server doesn't have this turned on yet, so this \(subject) was read on your iPhone."
+            }
             let message = serverError.message.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (message.hasSuffix(".") ? message : message + ".") + " This flyer was read on your iPhone instead."
+            return (message.hasSuffix(".") ? message : message + ".") + " This \(subject) was read on your iPhone instead."
         }
         if error is URLError {
-            return "Couldn't reach your team's server, so this flyer was read on your iPhone."
+            return "Couldn't reach your team's server, so this \(subject) was read on your iPhone."
         }
-        return "Something went wrong with Claude, so this flyer was read on your iPhone."
+        return "Something went wrong with Claude, so this \(subject) was read on your iPhone."
     }
 
     /// Decodes the image (upright, at most 2400 px) and runs Apple's text recognition.
@@ -113,6 +139,37 @@ enum FlyerScanner {
         )
     }
 
+    /// The on-device reading of a typed description: the sentence rules in `PlanSentence`, plus a
+    /// flyer's labeled lines ("Where: ARC") for anyone who types it that way.
+    static func local(text: String) -> FlyerScanResult {
+        let lines = text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let labeled = parse(lines: lines)
+        let plan = PlanSentence.read(text)
+        let title = labeled.title.isEmpty ? plan.title : labeled.title
+        let location = plan.location.isEmpty ? labeled.location : plan.location
+        let cost = plan.cost.isEmpty ? labeled.cost : plan.cost
+        var missing: [String] = []
+        if title.isEmpty || (labeled.title.isEmpty && plan.titleIsGuess) { missing.append("title") }
+        if plan.date == nil { missing += ["date", "time"] } else if !plan.hasTime { missing.append("time") }
+        if location.isEmpty { missing.append("location") }
+        if cost.isEmpty { missing.append("cost") }
+        return FlyerScanResult(
+            title: title, date: plan.date, endDate: plan.endDate, location: location,
+            details: text.trimmingCharacters(in: .whitespacesAndNewlines), cost: cost, category: plan.category,
+            missing: missing, reader: .onDevice, source: .text, image: nil
+        )
+    }
+
+    /// The start of a sentence as a title: at most `limit` characters, cut between words.
+    static func shortTitle(_ line: String, limit: Int = 60) -> String {
+        let line = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard line.count > limit else { return line }
+        let cut = line.prefix(limit)
+        return String(cut[..<(cut.lastIndex(of: " ") ?? cut.endIndex)])
+    }
+
     /// Kept separate from recognition so extraction can be checked with sample flyer text.
     static func parse(lines: [String]) -> (title: String, date: Date?, location: String, cost: String) {
         func labeled(_ labels: [String]) -> String? {
@@ -148,6 +205,178 @@ enum FlyerScanner {
             }
         }
         return (labeled(["event", "title"]) ?? "", date, location, cost)
+    }
+}
+
+/// Reads a plan typed as one sentence, the way people text it: "Pickup soccer 3-5PM Saturday at
+/// Hutchinson Field Davis CA" → "Pickup Soccer", Saturday 3–5 PM, "Hutchinson Field, Davis, CA".
+/// The on-device fallback for "Describe your plan" when Claude isn't available. Apple's detector finds
+/// the date, the time range and street addresses; the place is what follows "at", "@" or "in the";
+/// the title is what comes before all of that, minus filler like "let's" or "anyone want to".
+enum PlanSentence {
+    struct Reading: Equatable {
+        var title = ""
+        /// No short name stood out, so the title is only a guess for the host to check.
+        var titleIsGuess = false
+        var date: Date?
+        var endDate: Date?
+        /// False for a day with no time ("soccer saturday"): the detector picks noon, which is a guess.
+        var hasTime = false
+        var location = ""
+        var cost = ""
+        var category: ActivityCategory?
+    }
+
+    /// Stands in for each date, address or price taken out, so the rest splits into pieces around it.
+    private static let gap = "\u{1F}"
+
+    static func read(_ text: String, now: Date = .now) -> Reading {
+        var reading = Reading()
+        let line = text.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ". ")
+        let ns = line as NSString
+        var taken: [NSRange] = []
+        var address = ""
+
+        // Dates, time ranges ("3-5pm" comes with a duration) and street addresses.
+        let types: NSTextCheckingResult.CheckingType = [.date, .address]
+        let found = (try? NSDataDetector(types: types.rawValue))?
+            .matches(in: line, range: NSRange(location: 0, length: ns.length)) ?? []
+        for match in found {
+            var range = match.range
+            if match.resultType == .date, reading.date == nil, let date = match.date {
+                // "Movie night friday 8pm": the detector counts "night" as part of the date, but it's the name's.
+                let words = ns.substring(with: range).split(separator: " ", maxSplits: 1)
+                if range.location > 0, words.count == 2, partsOfDay.contains(words[0].lowercased()) {
+                    let skip = words[0].utf16.count + 1
+                    range = NSRange(location: range.location + skip, length: range.length - skip)
+                }
+                let said = ns.substring(with: range)
+                reading.hasTime = said.range(of: #"\d|noon|midnight|morning|afternoon|evening|night"#,
+                                             options: [.regularExpression, .caseInsensitive]) != nil
+                var start = date
+                // "Boba at 4pm" typed at 6pm means tomorrow.
+                if start < now, said.range(of: dayWords, options: [.regularExpression, .caseInsensitive]) == nil {
+                    start = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
+                }
+                reading.date = start
+                if match.duration > 0 { reading.endDate = start.addingTimeInterval(match.duration) }
+            } else if match.resultType == .address, address.isEmpty {
+                address = ns.substring(with: range)
+            }
+            taken.append(range)
+        }
+
+        // The price: "free", "$5", "it's $3".
+        let prices = try? NSRegularExpression(
+            pattern: #"(?i)(?:\b(?:it['’]?s|for|entry is|costs?)\s+)?(?:\bfree\b|\$\s*\d+(?:\.\d{2})?)"#)
+        for match in prices?.matches(in: line, range: NSRange(location: 0, length: ns.length)) ?? [] {
+            let said = ns.substring(with: match.range)
+            if reading.cost.isEmpty {
+                if let dollars = said.range(of: #"\$\s*\d+(?:\.\d{2})?"#, options: .regularExpression) {
+                    reading.cost = said[dollars].replacingOccurrences(of: " ", with: "")
+                } else {
+                    reading.cost = "Free"
+                }
+            }
+            taken.append(match.range)
+        }
+
+        // What's left, with a gap where each piece was taken out.
+        var rest = ""
+        var position = 0
+        for range in taken.sorted(by: { $0.location < $1.location }) where range.location >= position {
+            rest += ns.substring(with: NSRange(location: position, length: range.location - position)) + " \(gap) "
+            position = range.location + range.length
+        }
+        rest += ns.substring(from: position)
+
+        // The place: after "at", "@" or "in the …", up to the next gap, clause or joining word.
+        var titlePart = rest
+        let restNS = rest as NSString
+        let markers = try? NSRegularExpression(pattern: #"(?:(?<=\s)|^)(?i:at)\s+|@\s*|(?<=\s)in\s+(?=the\s|[A-Z])"#)
+        for marker in markers?.matches(in: rest, range: NSRange(location: 0, length: restNS.length)) ?? [] {
+            let after = restNS.substring(from: marker.range.location + marker.range.length)
+            let end = after.range(of: placeEnd, options: .regularExpression)?.lowerBound ?? after.endIndex
+            let place = cleanPlace(String(after[..<end]))
+            guard !place.isEmpty else { continue }
+            reading.location = place
+            let placeLength = after[..<end].utf16.count
+            titlePart = restNS.replacingCharacters(
+                in: NSRange(location: marker.range.location, length: marker.range.length + placeLength), with: " \(gap) ")
+            break
+        }
+        if reading.location.isEmpty {
+            reading.location = address
+        } else if !address.isEmpty {
+            reading.location = "\(reading.location), \(address)"
+        }
+
+        // The title: the first piece that still says something once the filler is gone.
+        let pieces = titlePart.components(separatedBy: gap)
+            .flatMap { $0.components(separatedBy: CharacterSet(charactersIn: ",;!?()")) }
+            .flatMap { $0.components(separatedBy: ". ") }
+        if let title = pieces.lazy.map(cleanTitle).first(where: { !$0.isEmpty }) {
+            let words = title.split(separator: " ").count
+            reading.titleIsGuess = words > 6
+            reading.title = titleCase(words > 6 ? FlyerScanner.shortTitle(title, limit: 40) : title)
+        } else {
+            reading.titleIsGuess = true
+        }
+        reading.category = category(in: reading.title) ?? category(in: line)
+        return reading
+    }
+
+    private static let partsOfDay: Set = ["night", "morning", "afternoon", "evening"]
+    /// Words that name the day, so a time already past today isn't moved to tomorrow.
+    private static let dayWords = #"\b(?:today|tonight|tomorrow|mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\d{1,2}/\d{1,2}"#
+    /// Where a place name stops: a gap, the end of a clause, or a joining word. Lowercase only, so a
+    /// capitalized word inside a name doesn't end it.
+    private static let placeEnd = "\u{1F}" + #"|[.!?;:)](?:\s|$)|\(|,\s+(?=[a-z])|\s[-–—]\s|\s(?:for|with|to|from|on|and|then|bring|if|so|but|starting|until|till|after|before|around|this|next)\s"#
+    private static let leadingFiller = #"(?i)^(?:let['’]?s|let us|(?:any(?:one|body|1)|who['’]?s|who is|who) (?:wants? to|wanna|down(?: to| for)?|in for|free (?:to|for))|wanna|want to|i['’]?m|we['’]?re|i am|we are|i['’]?ll be|we['’]?ll be|hosting|having|throwing|organizing|join (?:us|me)(?: for| at)?|come (?:join us(?: for)?|to|for)|come|going to|gonna|go|get|grab|a|an|some|our|my)\b[\s,]*"#
+    private static let trailingFiller = #"(?i)(?:\s+(?:at|on|from|this|next|in|the|for|and|to|around|starting|by|with|is|will be))+\s*$|[\s,.;:!?\-–—@]+$"#
+
+    private static func cleanPlace(_ text: String) -> String {
+        var place = text.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: ",.;:-–—")))
+        if place.hasPrefix("the ") { place = String(place.dropFirst(4)) }
+        guard place.rangeOfCharacter(from: .letters) != nil else { return "" }
+        // "Hutchinson Field Davis CA" → "Hutchinson Field, Davis, CA".
+        if !place.contains(","), let city = place.range(of: #"\s+[A-Z][a-z]+\s+[A-Z]{2}$"#, options: .regularExpression) {
+            let parts = place[city].split(separator: " ")
+            place = place[..<city.lowerBound] + ", \(parts[0]), \(parts[1])"
+        }
+        return FlyerScanner.shortTitle(place, limit: 60)
+    }
+
+    private static func cleanTitle(_ piece: String) -> String {
+        var title = piece.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: ",.;:-–—@")))
+        for pattern in [leadingFiller, trailingFiller] {
+            while let range = title.range(of: pattern, options: .regularExpression), !range.isEmpty {
+                title.removeSubrange(range)
+                title = title.trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return title.rangeOfCharacter(from: .letters) == nil ? "" : title
+    }
+
+    /// "pickup soccer" → "Pickup Soccer". Words already capitalized (ECS, ARC, CoHo) stay as typed.
+    private static func titleCase(_ title: String) -> String {
+        let small: Set = ["a", "an", "the", "and", "or", "for", "of", "at", "in", "on", "to", "with", "vs"]
+        return title.split(separator: " ").enumerated().map { index, word in
+            if word.contains(where: \.isUppercase) || (index > 0 && small.contains(String(word))) { return String(word) }
+            return word.prefix(1).uppercased() + word.dropFirst()
+        }.joined(separator: " ")
+    }
+
+    /// The category of the first word that names one ("boba run" is coffee, "morning run" is running),
+    /// with the planner's word lists.
+    private static func category(in text: String) -> ActivityCategory? {
+        for word in text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
+            if let match = KeywordParser.categoryWords.first(where: { $0.1.contains(String(word)) }) { return match.0 }
+        }
+        return nil
     }
 }
 
@@ -197,11 +426,13 @@ struct FlyerReviewView: View {
         NavigationStack {
             Form {
                 Section {
-                    Image(uiImage: result.image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxHeight: 220)
-                        .frame(maxWidth: .infinity)
+                    if let image = result.image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxHeight: 220)
+                            .frame(maxWidth: .infinity)
+                    }
                     Label(result.reader == .claude ? "Read by Claude" : "Read on your iPhone",
                           systemImage: result.reader == .claude ? "sparkles" : "iphone")
                         .font(.subheadline.weight(.semibold))
@@ -212,12 +443,14 @@ struct FlyerReviewView: View {
                             .symbolRenderingMode(.multicolor)
                     }
                     if !result.isEventFlyer {
-                        Label("This doesn't look like an event flyer. You can still fill in the details yourself.",
+                        Label(result.source == .text
+                              ? "This doesn't sound like a plan. You can still fill in the details yourself."
+                              : "This doesn't look like an event flyer. You can still fill in the details yourself.",
                               systemImage: "questionmark.circle.fill")
                             .font(.footnote)
                             .foregroundStyle(.orange)
                     }
-                    Text("Check the details. Anything marked in orange wasn't on the flyer or wasn't clear, so fill it in before posting.")
+                    Text("Check the details. Anything marked in orange wasn't \(result.source == .text ? "in the description" : "on the flyer") or wasn't clear, so fill it in before posting.")
                         .font(.subheadline)
                 }
                 Section {
@@ -299,11 +532,13 @@ struct FlyerReviewView: View {
                 } header: {
                     reviewHeader("Cost", missing: isMissing("cost"))
                 }
-                Section {
-                    Toggle("Use flyer as cover photo", isOn: $useCover)
+                if result.image != nil {
+                    Section {
+                        Toggle("Use flyer as cover photo", isOn: $useCover)
+                    }
                 }
             }
-            .navigationTitle("Review scanned flyer")
+            .navigationTitle(result.source == .text ? "Review plan" : "Review scanned flyer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
