@@ -3,6 +3,7 @@ import MapKit
 import PhotosUI
 import ImageIO
 import AVFoundation
+import Speech
 
 extension Place {
     /// Popular spots that match, then Apple Maps results near Davis.
@@ -81,6 +82,10 @@ struct CreateActivityView: View {
     /// "Describe your plan": what the host typed, and the text being read right now.
     @State private var planDescription = ""
     @State private var describedText: String?
+    @State private var voiceSession: UUID?
+    @State private var voiceCapture: PlanVoiceCapture?
+    @State private var voiceTranscript = ""
+    @State private var voiceError: String?
     @State private var scanning = false
     @State private var showCamera = false
     @State private var scannedLocation = ""
@@ -117,22 +122,23 @@ struct CreateActivityView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
-                    preview
                     flyerSection
-                    coverPhotoSection
-                    categorySection
                     titleSection
+                    categorySection
                     whenSection
-                    recurrenceSection
                     whereSection
-                    groupSection
                     detailsSection
+                    groupSection
+                    coverPhotoSection
+                    preview
+                    recurrenceSection
                     publishingSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 30)
             }
             .scrollDismissesKeyboard(.interactively)
+            .onDisappear { stopVoiceCapture() }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Host a plan")
             .navigationBarTitleDisplayMode(.inline)
@@ -362,33 +368,37 @@ struct CreateActivityView: View {
 
     private var flyerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Scan an event flyer")
-            Text("Upload or photograph a flyer to fill in your event details.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            PhotosPicker(selection: $flyerPhoto, matching: .images) {
-                Label("Upload flyer", systemImage: "doc.viewfinder")
-            }
-            Button("Take flyer photo", systemImage: "camera") {
-                Task {
-                    guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
-                        photoError = "A camera is unavailable on this device. Use Upload flyer to choose an image."
-                        return
+            label("Autofill plan details")
+            HStack(spacing: 10) {
+                PhotosPicker(selection: $flyerPhoto, matching: .images) {
+                    Label("Upload flyer", systemImage: "doc.viewfinder")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                Button {
+                    Task {
+                        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                            photoError = "A camera is unavailable on this device. Use Upload flyer to choose an image."
+                            return
+                        }
+                        let allowed = await AVCaptureDevice.requestAccess(for: .video)
+                        if allowed {
+                            showCamera = true
+                        } else {
+                            photoError = "Camera access is off. Enable it in Settings to take a flyer photo, or use Upload flyer."
+                        }
                     }
-                    let allowed = await AVCaptureDevice.requestAccess(for: .video)
-                    if allowed {
-                        showCamera = true
-                    } else {
-                        photoError = "Camera access is off. Enable it in Settings to take a flyer photo, or use Upload flyer."
-                    }
+                } label: {
+                    Label("Take flyer photo", systemImage: "camera")
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
             }
+            .font(.subheadline.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .buttonStyle(.bordered)
+            .tint(Brand.accent)
+            .disabled(voiceSession != nil)
 
-            Text("No flyer? Describe your plan in a sentence instead.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-            TextField("e.g. pickup soccer sat 3-5pm at the ARC fields, free", text: $planDescription, axis: .vertical)
+            TextField("Describe your plan, e.g. free soccer Saturday at 3 at the ARC", text: $planDescription, axis: .vertical)
                 .lineLimit(2...5)
                 .focused($focus, equals: .planDescription)
                 // Return means "Go": the floating Post plan bar covers the button below while the
@@ -403,8 +413,24 @@ struct CreateActivityView: View {
                 .padding(16)
                 .cardStyle(radius: 18)
                 .accessibilityIdentifier("planDescription")
-            Button("Fill in from description", systemImage: "text.badge.checkmark", action: fillFromDescription)
-                .disabled(planDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(voiceSession != nil)
+            Button("Autofill from text", systemImage: "text.badge.checkmark", action: fillFromDescription)
+                .disabled(voiceSession != nil || planDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+            Button(voiceCapture == nil ? "Speak your plan" : "Stop & autofill",
+                   systemImage: voiceCapture == nil ? "mic" : "stop.circle") {
+                if voiceCapture != nil {
+                    finishVoiceCapture()
+                } else {
+                    startVoiceCapture()
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(voiceSession != nil && voiceCapture == nil)
+
+            if let voiceError {
+                Text(voiceError).font(.caption).foregroundStyle(.secondary)
+            }
 
             if scanning {
                 ProgressView(describedText != nil
@@ -415,25 +441,91 @@ struct CreateActivityView: View {
         .disabled(scanning || isLoadingPhoto)
     }
 
-    /// Reads what the host typed and opens the same review screen as a scanned flyer.
+    private func startVoiceCapture() {
+        let session = UUID()
+        voiceSession = session
+        voiceError = nil
+        voiceTranscript = ""
+        focus = nil
+
+        Task { @MainActor in
+            let authorization: SFSpeechRecognizerAuthorizationStatus = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
+            }
+            guard voiceSession == session else { return }
+            guard authorization == .authorized,
+                  await AVAudioApplication.requestRecordPermission() else {
+                stopVoiceCapture()
+                voiceError = "Allow speech recognition and microphone access in Settings."
+                return
+            }
+            guard voiceSession == session else { return }
+
+            do {
+                let capture = try await PlanVoiceCapture.start { transcript, finished, failure in
+                    guard voiceSession == session else { return }
+                    if let transcript, !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        voiceTranscript = transcript
+                        planDescription = transcript
+                    }
+                    if let failure, voiceTranscript.isEmpty {
+                        stopVoiceCapture()
+                        voiceError = "Speech recognition couldn’t start: \(failure)"
+                    } else if finished, voiceTranscript.isEmpty {
+                        stopVoiceCapture()
+                        voiceError = "Speech recognition ended before returning any words. Try the keyboard microphone or type your plan."
+                        focus = .planDescription
+                    } else if finished {
+                        finishVoiceCapture()
+                    }
+                }
+                guard voiceSession == session else {
+                    capture.stop()
+                    return
+                }
+                voiceCapture = capture
+            } catch {
+                guard voiceSession == session else { return }
+                stopVoiceCapture()
+                voiceError = "Couldn’t start voice input: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func finishVoiceCapture() {
+        stopVoiceCapture()
+        guard !voiceTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            voiceError = "No speech was recognized. Try again or type your plan."
+            return
+        }
+        planDescription = voiceTranscript
+        fillFromDescription()
+    }
+
+    private func stopVoiceCapture() {
+        voiceSession = nil
+        voiceCapture?.stop()
+        voiceCapture = nil
+    }
+
+    /// Opens the same review screen for typed and spoken descriptions.
     private func fillFromDescription() {
         let text = planDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !scanning, describedText == nil else { return }
+        guard !text.isEmpty, !scanning, describedText == nil, voiceSession == nil else { return }
         focus = nil
         describedText = String(text.prefix(ClaudeTextReader.maxCharacters))
     }
 
     private var recurrenceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Recurring event")
-            Toggle("Repeat this event", isOn: $repeats)
+            Toggle("Repeat plan", isOn: $repeats)
             if repeats {
                 Picker("Repeats", selection: $frequency) {
                     ForEach(EventRecurrence.Frequency.allCases, id: \.self) { option in
                         Text(option.rawValue).tag(option)
                     }
                 }
-                Stepper("Occurrences including the first · \(occurrenceCount)",
+                Stepper("Total events · \(occurrenceCount)",
                         value: $occurrenceCount, in: 2...12)
                 let dates = currentDraft().occurrenceDates
                 if let last = dates.last {
@@ -441,7 +533,7 @@ struct CreateActivityView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                Text("Each date gets its own event with the same details and cover photo. All dates publish together. Times follow \(recurrenceTimeZoneID).")
+                Text("All dates publish together as separate events. Time zone: \(recurrenceTimeZoneID).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -454,10 +546,7 @@ struct CreateActivityView: View {
             Toggle("Schedule for later", isOn: $schedulePost)
             if schedulePost {
                 DatePicker("Publish on", selection: $publishAt, in: Date.now...)
-                Text("Choose a publishing time before the event starts.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Posts publish on this device while the app is open, or when you reopen it. If the event has already started, the post returns to drafts.")
+                Text("Pick a time before the plan starts. The app must be open to publish. Missed events return to drafts.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -507,15 +596,12 @@ struct CreateActivityView: View {
                     selectedPhoto = nil
                 }
             }
-            Text("Choose a photo, then drag and zoom to crop it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
     private var categorySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("What kind of plan?")
+            label("Category")
             ScrollView(.horizontal) {
                 HStack(spacing: 10) {
                     ForEach(ActivityCategory.allCases) { cat in
@@ -551,7 +637,7 @@ struct CreateActivityView: View {
 
     private var titleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Give it a name")
+            label("Plan title")
             TextField("e.g. \(suggestions.first ?? "Sunday morning run")", text: $title)
                 .font(.title3.weight(.medium))
                 .focused($focus, equals: .title)
@@ -575,7 +661,7 @@ struct CreateActivityView: View {
 
     private var whenSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("When?")
+            label("Date & time")
             HStack(spacing: 8) {
                 quickTime("Tonight", hour: 19, dayOffset: 0)
                 quickTime("Tomorrow AM", hour: 8, dayOffset: 1)
@@ -611,7 +697,7 @@ struct CreateActivityView: View {
 
     private var whereSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Where?")
+            label("Location")
             if findingPlace {
                 Label("Finding “\(scannedLocation)” on the map…", systemImage: "magnifyingglass")
                     .font(.subheadline)
@@ -657,7 +743,7 @@ struct CreateActivityView: View {
 
     private var groupSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Who can come?")
+            label("Attendance & cost")
             VStack(spacing: 0) {
                 HStack {
                     Label("Group size", systemImage: "person.2.fill")
@@ -680,8 +766,10 @@ struct CreateActivityView: View {
                 Toggle(isOn: privateLocation ? .constant(true) : $requiresApproval) {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Approve requests", systemImage: "hand.raised.fill")
-                        Text(privateLocation ? "On because the location is private" : "Review people before they join")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if privateLocation {
+                            Text("Required for private locations")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .disabled(privateLocation)
@@ -703,7 +791,7 @@ struct CreateActivityView: View {
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             label("Details")
-            TextField("What's the vibe? What should people bring?", text: $details, axis: .vertical)
+            TextField("What should people know or bring?", text: $details, axis: .vertical)
                 .lineLimit(4...8)
                 .focused($focus, equals: .details)
                 .padding(16)
@@ -1083,5 +1171,75 @@ enum CoverShape: CaseIterable {
         // EXIF orientations 5–8 are rotated 90°.
         let rotated = ((properties[kCGImagePropertyOrientation] as? Int) ?? 1) >= 5
         return rotated ? width > height : height > width
+    }
+}
+
+
+private final class PlanVoiceCapture: @unchecked Sendable {
+    // The queue serializes audio engine and session changes off the UI thread.
+    private static let audioQueue = DispatchQueue(label: "Swipe-n-Go.plan-voice")
+    private let engine = AVAudioEngine()
+    private let request = SFSpeechAudioBufferRecognitionRequest()
+    private let recognizer: SFSpeechRecognizer
+    private var task: SFSpeechRecognitionTask?
+
+    private enum CaptureError: Error { case unavailable }
+
+    static func start(update: @escaping @MainActor @Sendable (String?, Bool, String?) -> Void) async throws -> PlanVoiceCapture {
+        try await withCheckedThrowingContinuation { continuation in
+            audioQueue.async {
+                continuation.resume(with: Result { try PlanVoiceCapture(update: update) })
+            }
+        }
+    }
+
+    private init(update: @escaping @MainActor @Sendable (String?, Bool, String?) -> Void) throws {
+        guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
+            throw CaptureError.unavailable
+        }
+        self.recognizer = recognizer
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.record, mode: .measurement)
+        try audioSession.setActive(true)
+
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            try? audioSession.setActive(false)
+            throw CaptureError.unavailable
+        }
+        let request = request
+        request.shouldReportPartialResults = true
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+        do {
+            try engine.start()
+        } catch {
+            tearDown()
+            throw error
+        }
+        task = recognizer.recognitionTask(with: request) { result, error in
+            let transcript = result?.bestTranscription.formattedString
+            let finished = result?.isFinal == true || error != nil
+            let failure = error.map { error in
+                let underlying = error as NSError
+                return "\(underlying.localizedDescription) (\(underlying.domain) \(underlying.code))"
+            }
+            Task { @MainActor in update(transcript, finished, failure) }
+        }
+    }
+
+    func stop() {
+        Self.audioQueue.async { self.tearDown() }
+    }
+
+    private func tearDown() {
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        request.endAudio()
+        task?.cancel()
+        task = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

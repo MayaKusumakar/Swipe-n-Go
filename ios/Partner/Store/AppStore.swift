@@ -89,7 +89,24 @@ final class AppStore {
         #endif
     }
 
+    var canOpenApp: Bool {
+        #if DEBUG
+        if isDemoMode { return true }
+        #endif
+        return auth.isSignedIn
+    }
+
     #if DEBUG
+    private var isDemoMode = false
+
+    func enterDemoMode() {
+        isDemoMode = true
+        guard !hasOnboarded else { return }
+        completeOnboarding(name: "Demo Student", age: 21, pronouns: "", interests: [.run, .concert, .food, .coffee, .hike])
+        me.emoji = "😎"
+        save()
+    }
+
     /// `-demo` skips onboarding with a sample profile; `-tab <name>` opens a tab. Handy for screenshots.
     private func applyDebugLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
@@ -123,11 +140,7 @@ final class AppStore {
             }
             me.photoData = image.jpegData(compressionQuality: 0.8)
         }
-        if args.contains("-demo"), !hasOnboarded, !args.contains("-onboarding") {
-            completeOnboarding(name: "Anant Katiyar", age: 21, pronouns: "", interests: [.run, .concert, .food, .coffee, .hike])
-            me.emoji = "😎"
-            save()
-        }
+        if args.contains("-demo"), !args.contains("-onboarding") { enterDemoMode() }
         if args.contains("-joined"), joinedIDs.isEmpty {
             for a in discoverDeck.filter({ !$0.requiresApproval }).prefix(2) { confirmJoin(a.id) }
             if let a = discoverDeck.first(where: { $0.requiresApproval }) { pendingIDs.insert(a.id) }

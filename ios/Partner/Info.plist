@@ -15,6 +15,10 @@
 	     same ID in GOOGLE_CLIENT_IDS. -->
 	<key>GoogleClientID</key>
 	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record a spoken description of the plan you want to host.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Transcribe your spoken description to fill in plan details.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Swipe-n-Go connects to your team's development server on this Wi-Fi network to share events.</string>
 </dict>

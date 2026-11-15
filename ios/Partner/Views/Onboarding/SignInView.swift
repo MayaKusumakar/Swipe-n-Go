@@ -27,6 +27,13 @@ struct SignInView: View {
                     if let message = store.auth.message {
                         notice(message)
                     }
+                    #if DEBUG
+                    Button("Continue in Demo Mode") {
+                        store.enterDemoMode()
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.white)
+                    #endif
                     if devAvailable { devSignIn }
                 }
                 .padding(.horizontal, 28)
