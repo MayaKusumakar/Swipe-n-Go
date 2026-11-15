@@ -126,7 +126,8 @@ enum OnDevicePlanner {
 // MARK: - Reading the request
 
 enum KeywordParser {
-    private static let categoryWords: [(ActivityCategory, [String])] = [
+    /// Also guesses the category of a typed plan ("Describe your plan", `PlanSentence`).
+    static let categoryWords: [(ActivityCategory, [String])] = [
         (.run, ["run", "running", "jog", "jogging", "5k", "10k"]),
         (.gym, ["gym", "lift", "lifting", "workout", "weights"]),
         (.hike, ["hike", "hiking", "trail", "trails", "nature"]),

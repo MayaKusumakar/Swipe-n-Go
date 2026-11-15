@@ -78,6 +78,9 @@ struct CreateActivityView: View {
     @State private var flyerData: Data?
     @State private var capturedFlyerData: Data?
     @State private var scanResult: FlyerScanResult?
+    /// "Describe your plan": what the host typed, and the text being read right now.
+    @State private var planDescription = ""
+    @State private var describedText: String?
     @State private var scanning = false
     @State private var showCamera = false
     @State private var scannedLocation = ""
@@ -93,7 +96,7 @@ struct CreateActivityView: View {
     @State private var published = false
     @FocusState private var focus: Field?
 
-    enum Field { case title, previewTitle, details, cost }
+    enum Field { case title, previewTitle, details, cost, planDescription }
 
     /// The Duration picker's options, in minutes.
     static let durations = [30, 45, 60, 90, 120, 180, 240, 480]
@@ -204,6 +207,7 @@ struct CreateActivityView: View {
             .sheet(item: $scanResult, onDismiss: {
                 flyerPhoto = nil
                 flyerData = nil
+                describedText = nil
                 if let image = pendingFlyerCover {
                     cropSource = CropSource(image: image)
                     pendingFlyerCover = nil
@@ -265,6 +269,19 @@ struct CreateActivityView: View {
                     flyerPhoto = nil
                     self.flyerData = nil
                     photoError = "No readable flyer text was found. Try a clearer photo or enter the details manually."
+                }
+            }
+            .task(id: describedText) {
+                // "Describe your plan": the same review screen as a scanned flyer.
+                guard let describedText else { return }
+                scanning = true
+                defer { scanning = false }
+                do {
+                    let result = try await FlyerScanner.read(text: describedText, serverURL: store.serverURL)
+                    try Task.checkCancellation()
+                    scanResult = result
+                } catch {
+                    self.describedText = nil
                 }
             }
             .task(id: selectedPhoto) {
@@ -366,11 +383,44 @@ struct CreateActivityView: View {
                     }
                 }
             }
+
+            Text("No flyer? Describe your plan in a sentence instead.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .padding(.top, 4)
+            TextField("e.g. pickup soccer sat 3-5pm at the ARC fields, free", text: $planDescription, axis: .vertical)
+                .lineLimit(2...5)
+                .focused($focus, equals: .planDescription)
+                // Return means "Go": the floating Post plan bar covers the button below while the
+                // keyboard is up. Depending on the keyboard, iOS sends Return as a submit or types a newline.
+                .submitLabel(.go)
+                .onSubmit(fillFromDescription)
+                .onChange(of: planDescription) { old, new in
+                    guard new.hasSuffix("\n"), new.count == old.count + 1 else { return }
+                    planDescription = String(new.dropLast())
+                    fillFromDescription()
+                }
+                .padding(16)
+                .cardStyle(radius: 18)
+                .accessibilityIdentifier("planDescription")
+            Button("Fill in from description", systemImage: "text.badge.checkmark", action: fillFromDescription)
+                .disabled(planDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
             if scanning {
-                ProgressView(store.serverURL == nil ? "Reading flyer…" : "Reading flyer with Claude…")
+                ProgressView(describedText != nil
+                             ? (store.serverURL == nil ? "Reading your description…" : "Reading your description with Claude…")
+                             : (store.serverURL == nil ? "Reading flyer…" : "Reading flyer with Claude…"))
             }
         }
         .disabled(scanning || isLoadingPhoto)
+    }
+
+    /// Reads what the host typed and opens the same review screen as a scanned flyer.
+    private func fillFromDescription() {
+        let text = planDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !scanning, describedText == nil else { return }
+        focus = nil
+        describedText = String(text.prefix(ClaudeTextReader.maxCharacters))
     }
 
     private var recurrenceSection: some View {

@@ -78,3 +78,156 @@ struct FlyerReaderTests {
         #expect(FlyerScanner.explain(URLError(.cannotConnectToHost)).contains("Couldn't reach"))
     }
 }
+
+/// "Describe your plan" in Host a plan: typed text goes through the same review screen as a flyer.
+@Suite("Describe your plan")
+struct PlanDescriptionTests {
+    private let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+
+    @Test func claudesReadingFillsTheForm() throws {
+        // The shape POST /api/experimental/events/parse answers with.
+        let json = #"{"is_event":true,"title":"Pickup Soccer","start_time":"2026-11-15T15:00:00-08:00","#
+            + #""end_time":"2026-11-15T17:00:00-08:00","location_name":"ARC fields","address":"","#
+            + #""description":"Casual pickup game.","cost":"Free","category":"sports","missing":[],"#
+            + #""model":"claude-opus-5-5"}"#
+        let result = try decoder.decode(ClaudeTextReader.Reading.self, from: Data(json.utf8)).result
+        #expect(result.source == .text)
+        #expect(result.reader == .claude)
+        #expect(result.image == nil)
+        #expect(result.title == "Pickup Soccer")
+        #expect(result.endDate?.timeIntervalSince(try #require(result.date)) == 7200)
+        #expect(result.location == "ARC fields")
+        #expect(result.category == .sports)
+        #expect(result.missing.isEmpty)
+        #expect(result.isEventFlyer)
+    }
+
+    @Test func textThatIsNotAPlanIsFlagged() throws {
+        let json = #"{"is_event":false,"title":"","start_time":null,"end_time":null,"location_name":"","address":"","#
+            + #""description":"","cost":"","category":"","missing":["title","date","time","location","cost"],"model":"m"}"#
+        let result = try decoder.decode(ClaudeTextReader.Reading.self, from: Data(json.utf8)).result
+        #expect(!result.isEventFlyer)
+        #expect(result.category == nil)
+    }
+
+    @Test func onDeviceReadingSplitsTheSentence() throws {
+        // The sentence from the first try on 2026-11-14, which used to come back with the whole text as the title.
+        let result = FlyerScanner.local(text: "Pickup soccer 3-5PM Saturday at Hutchinson Field Davis CA")
+        #expect(result.source == .text)
+        #expect(result.reader == .onDevice)
+        #expect(result.image == nil)
+        #expect(result.title == "Pickup Soccer")
+        #expect(result.location == "Hutchinson Field, Davis, CA")
+        let start = try #require(result.date)
+        #expect(Calendar.current.component(.weekday, from: start) == 7)   // Saturday
+        #expect(Calendar.current.component(.hour, from: start) == 15)
+        // The detector's dates carry fractions of a second, so compare to the second.
+        #expect(abs(try #require(result.endDate).timeIntervalSince(start) - 2 * 3600) < 1)
+        #expect(result.category == .sports)
+        #expect(result.missing == ["cost"])
+    }
+
+    @Test func onDeviceReadingFillsEverythingFromOneLine() {
+        let text = "pickup soccer sat 3-5pm at the ARC fields, free"
+        let result = FlyerScanner.local(text: text)
+        #expect(result.title == "Pickup Soccer")
+        #expect(result.location == "ARC fields")
+        #expect(result.cost == "Free")
+        #expect(result.details == text)
+        #expect(result.missing.isEmpty)
+    }
+
+    struct Sentence: Sendable, CustomTestStringConvertible {
+        let text, title, location, cost: String
+        var testDescription: String { text }
+    }
+
+    @Test(arguments: [
+        Sentence(text: "Study session for ECS 150 at Shields Library tomorrow 7pm",
+                 title: "Study Session for ECS 150", location: "Shields Library", cost: ""),
+        Sentence(text: "Movie night friday 8pm at my apartment, $3", title: "Movie Night", location: "my apartment", cost: "$3"),
+        Sentence(text: "Hike at Mt Diablo this Sunday morning, carpool from the MU", title: "Hike", location: "Mt Diablo", cost: ""),
+        Sentence(text: "Saturday 10am farmers market @ Central Park", title: "Farmers Market", location: "Central Park", cost: ""),
+        Sentence(text: "Board games at the CoHo from 6 to 9 pm on Thursday", title: "Board Games", location: "CoHo", cost: ""),
+        Sentence(text: "Volleyball at 1 Shields Ave, Davis, CA 95616 on Sunday at noon",
+                 title: "Volleyball", location: "1 Shields Ave, Davis, CA 95616", cost: ""),
+        Sentence(text: "Let’s get boba at Teaspoon after class", title: "Boba", location: "Teaspoon", cost: ""),
+        Sentence(text: "Anyone want to play tennis tomorrow at 5 at the courts by the ARC",
+                 title: "Play Tennis", location: "courts by the ARC", cost: ""),
+        Sentence(text: "Yoga in the Arboretum Sunday 9am, bring a mat", title: "Yoga", location: "Arboretum", cost: ""),
+        Sentence(text: "I'm hosting a potluck dinner at my place Friday at 7, bring a dish",
+                 title: "Potluck Dinner", location: "my place", cost: ""),
+        Sentence(text: "Karaoke night @The Graduate thursday 9pm $5 cover", title: "Karaoke Night", location: "The Graduate", cost: "$5"),
+    ])
+    func onDeviceReadingFindsTitlePlaceAndPrice(_ sentence: Sentence) {
+        let plan = PlanSentence.read(sentence.text)
+        #expect(plan.title == sentence.title)
+        #expect(plan.location == sentence.location)
+        #expect(plan.cost == sentence.cost)
+        #expect(!plan.titleIsGuess)
+    }
+
+    @Test func aTimeAlreadyPastTodayMeansTomorrow() throws {
+        let plan = PlanSentence.read("Boba run at 4pm")
+        #expect(try #require(plan.date) > .now)
+        #expect(plan.title == "Boba Run")
+        #expect(plan.location.isEmpty)
+        #expect(plan.category == .coffee)    // the first word that names a category wins
+    }
+
+    @Test func aDayWithoutATimeAsksForTheTime() {
+        let result = FlyerScanner.local(text: "soccer saturday at the ARC")
+        #expect(result.date != nil)
+        #expect(result.missing.contains("time"))
+        #expect(!result.missing.contains("date"))
+        #expect(result.location == "ARC")
+    }
+
+    @Test func withNoNameTheTitleIsLeftForTheHost() {
+        let result = FlyerScanner.local(text: "Saturday 3pm at the ARC")
+        #expect(result.title.isEmpty)
+        #expect(result.missing.contains("title"))
+        #expect(result.location == "ARC")
+    }
+
+    @Test func labeledLinesStillWork() {
+        let result = FlyerScanner.local(text: "Event: Trivia Night\nWhere: CoHo\nWhen: Thursday 8pm")
+        #expect(result.title == "Trivia Night")
+        #expect(result.location == "CoHo")
+        #expect(!result.missing.contains("title"))
+    }
+
+    @Test func longTextMakesAShortTitleCutBetweenWords() {
+        let title = FlyerScanner.shortTitle("Sunset hike up the Stebbins Cold Canyon trail with snacks after and a group photo at the top")
+        #expect(title.count <= 60)
+        #expect(title == "Sunset hike up the Stebbins Cold Canyon trail with snacks")
+    }
+
+    @Test func withoutAServerThePhoneReadsItAndSaysWhy() async throws {
+        let result = try await FlyerScanner.read(text: "trivia tonight 8pm, free", serverURL: nil)
+        #expect(result.reader == .onDevice)
+        #expect(result.fallbackReason?.contains("Profile → Server") == true)
+    }
+
+    @Test func unreachableServerFallsBackToThePhone() async throws {
+        // Nothing listens on port 9 here, so the connection is refused at once.
+        let result = try await FlyerScanner.read(text: "trivia tonight 8pm, free", serverURL: URL(string: "http://127.0.0.1:9")!)
+        #expect(result.reader == .onDevice)
+        #expect(result.fallbackReason?.contains("Couldn't reach") == true)
+        #expect(result.fallbackReason?.contains("description") == true)
+    }
+
+    @Test func fallbackExplainsWhyInTermsOfTheDescription() {
+        let off = FlyerScanner.explain(EventServer.ServerError(message: "Not Found", status: 404), subject: "description")
+        #expect(off == "Your team's server doesn't have this turned on yet, so this description was read on your iPhone.")
+        let noKey = FlyerScanner.explain(
+            EventServer.ServerError(message: "The AI features aren't set up on this server yet (no ANTHROPIC_API_KEY).", status: 503),
+            subject: "description")
+        #expect(noKey.hasSuffix("This description was read on your iPhone instead."))
+    }
+}
