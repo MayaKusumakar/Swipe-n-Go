@@ -759,6 +759,12 @@ final class AppStore {
         hasOnboarded = s.hasOnboarded
         me = s.me
         people = s.people
+        // Several old categories became one club category (food, coffee and drinks are all
+        // Food & Social), so interests saved before the change can hold the same one twice.
+        let hadDuplicates = me.interests != me.interests.uniqued()
+            || people.contains { $0.interests != $0.interests.uniqued() }
+        me.interests = me.interests.uniqued()
+        for i in people.indices { people[i].interests = people[i].interests.uniqued() }
         drafts = s.drafts ?? []
         activities = s.activities.map(withCoverFromDisk)
         joinedIDs = s.joinedIDs
@@ -787,6 +793,7 @@ final class AppStore {
             activities.sort { $0.date < $1.date }
             save()
         }
+        if hadDuplicates { save() }
         // Older saves kept covers inside the state file; move them to their own files once.
         if s.activities.contains(where: { $0.coverPhotoData != nil }) { save() }
         return true

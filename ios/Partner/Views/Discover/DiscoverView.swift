@@ -91,7 +91,8 @@ struct DiscoverView: View {
                 }
                 .buttonStyle(.plain)
 
-                let ordered = store.me.interests + ActivityCategory.allCases.filter { !store.me.interests.contains($0) }
+                // Your interests first, then the rest; each category once.
+                let ordered = (store.me.interests + ActivityCategory.allCases).uniqued()
                 ForEach(ordered) { cat in
                     CategoryChip(category: cat, isSelected: filter == cat) {
                         filter = filter == cat ? nil : cat

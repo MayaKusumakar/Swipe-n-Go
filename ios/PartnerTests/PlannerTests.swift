@@ -198,6 +198,13 @@ struct ClubCategoryTests {
                            .sports, .social])
     }
 
+    @Test func oldInterestsCollapseToOneOfEach() throws {
+        // food, coffee and drinks all became Food & Social; hike and explore both became Outdoors.
+        let old = #"["food","coffee","drinks","hike","explore","run"]"#
+        let loaded = try JSONDecoder().decode([ActivityCategory].self, from: Data(old.utf8)).uniqued()
+        #expect(loaded == [.social, .outdoors, .sports])
+    }
+
     @Test func serverCategoriesMap() {
         #expect(ActivityCategory(serverValue: "outdoors") == .outdoors)
         #expect(ActivityCategory(serverValue: "music") == .music)
