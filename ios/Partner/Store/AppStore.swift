@@ -102,7 +102,7 @@ final class AppStore {
     func enterDemoMode() {
         isDemoMode = true
         guard !hasOnboarded else { return }
-        completeOnboarding(name: "Demo Student", age: 21, pronouns: "", interests: [.run, .concert, .food, .coffee, .hike])
+        completeOnboarding(name: "Demo Student", age: 21, pronouns: "", interests: [.sports, .music, .cultural, .tech, .outdoors])
         me.emoji = "😎"
         save()
     }
@@ -126,7 +126,7 @@ final class AppStore {
         if args.contains("-hostTest"), hasOnboarded {
             // Posts a plan as if made in the Host sheet, to test the upload path.
             let date = Calendar.current.date(byAdding: .day, value: 2, to: .now)!
-            host(Activity(id: UUID(), title: "Posted from the iPhone app", category: .coffee, hostID: me.id, date: date,
+            host(Activity(id: UUID(), title: "Posted from the iPhone app", category: .social, hostID: me.id, date: date,
                           durationMinutes: 60, placeName: "Mishka's Café", address: "610 2nd St, Davis, CA",
                           latitude: 38.5440, longitude: -121.7407, capacity: 4, attendeeIDs: [],
                           details: "Testing the shared server.", tags: ["Coffee"], level: .beginner,
@@ -778,12 +778,27 @@ final class AppStore {
             activities.append(contentsOf: hosted)
             activities.sort { $0.date < $1.date }
         }
+        // The samples changed (now club events): replace the old ones once. Your own plans and
+        // drafts stay; server events come back on the next sync.
+        if UserDefaults.standard.integer(forKey: Self.sampleDataVersionKey) < Self.sampleDataVersion {
+            let hosted = activities.filter { isHost($0) }
+            seed(keepingMe: true)
+            activities.append(contentsOf: hosted)
+            activities.sort { $0.date < $1.date }
+            save()
+        }
         // Older saves kept covers inside the state file; move them to their own files once.
         if s.activities.contains(where: { $0.coverPhotoData != nil }) { save() }
         return true
     }
 
+    /// Bumped when the built-in samples change (2 = UC Davis club events), so phones that
+    /// already have the app swap in the new samples once.
+    static let sampleDataVersion = 2
+    private static let sampleDataVersionKey = "sampleDataVersion"
+
     private func seed(keepingMe: Bool = false) {
+        UserDefaults.standard.set(Self.sampleDataVersion, forKey: Self.sampleDataVersionKey)
         if !keepingMe { me = AppStore.defaultMe() }
         let seed = SampleData.make(for: me)
         people = seed.people

@@ -15,8 +15,9 @@ from services import claude_call
 from services.claude_call import MODEL, clip
 
 # The app's categories (ios/Partner/Models/Models.swift, ActivityCategory).
-CATEGORIES = ("run", "gym", "hike", "cycling", "sports", "yoga", "food", "coffee", "drinks",
-              "concert", "movies", "art", "study", "games", "explore")
+# Club types, modeled on how UC Davis groups its registered student organizations.
+CATEGORIES = ("sports", "outdoors", "wellness", "cultural", "arts", "music", "academic", "career",
+              "tech", "service", "greek", "faith", "gaming", "social")
 FIELDS = ("title", "date", "time", "location", "cost")
 
 

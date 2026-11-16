@@ -9,23 +9,28 @@ from datetime import timedelta
 from models import Event
 
 # (title, description, days ahead, start hour UTC, hours long, location, lat, lng, category)
+# Club events: club names are generic examples, not real organizations.
 SAMPLE_EVENTS = [
-    ("Davis Farmers Market", "Local produce, food trucks, and live music.",
-     1, 16, 4, "Central Park, Davis", 38.5449, -121.7405, "food"),
-    ("Trivia Night", "Teams of up to 6. Prizes for the top 3.",
-     1, 3, 2, "Memorial Union", 38.5424, -121.7494, "social"),
-    ("Pickup Soccer", "All skill levels welcome. Bring water.",
-     2, 0, 2, "ARC Fields", 38.5430, -121.7590, "sports"),
-    ("Club Fair on the Quad", "Meet 100+ student orgs.",
-     3, 18, 3, "The Quad", 38.5422, -121.7495, "clubs"),
-    ("Open Mic Night", "Sign up at the door to perform.",
-     4, 3, 3, "The Coffee House", 38.5425, -121.7490, "music"),
-    ("Arboretum Sunset Walk", "Easy 2-mile walk, meet at the gazebo.",
-     5, 1, 1, "UC Davis Arboretum", 38.5332, -121.7566, "outdoors"),
-    ("Hackathon Info Session", "Learn about this quarter's hackathon.",
-     6, 2, 1, "Kemper Hall", 38.5375, -121.7546, "tech"),
-    ("Board Game Night", "Games provided, snacks welcome.",
-     7, 2, 3, "Shields Library", 38.5395, -121.7495, "social"),
+    ("Fall Club Showcase on the Quad", "Meet dozens of student clubs in one afternoon. Free snacks.",
+     1, 19, 3, "The Quad", 38.5422, -121.7495, "social"),
+    ("Running Club: Arboretum 5K", "Weekly club run at a conversational pace. New members welcome.",
+     1, 14, 1, "UC Davis Arboretum", 38.5372, -121.7531, "sports"),
+    ("Developer Club: Intro to iOS Workshop", "Build your first SwiftUI app. Bring a laptop if you have one.",
+     2, 2, 2, "Kemper Hall", 38.5375, -121.7546, "tech"),
+    ("Diwali Night Potluck", "Hosted by the South Asian student association. Bring a dish or just yourself.",
+     3, 2, 3, "Student Community Center", 38.5398, -121.7540, "cultural"),
+    ("Resume Review Night", "Club officers and alumni review resumes 1:1 before internship season.",
+     3, 1, 2, "Student Community Center", 38.5398, -121.7545, "career"),
+    ("Music Collective Open Mic", "Sign up at the door to play, sing or read.",
+     4, 4, 3, "The Coffee House", 38.5425, -121.7490, "music"),
+    ("Arboretum Restoration Volunteer Day", "Plant natives along Putah Creek. Gloves and tools provided.",
+     5, 17, 3, "UC Davis Arboretum", 38.5332, -121.7566, "service"),
+    ("Outdoors Club: Cold Canyon Hike", "5.5 mi club hike. Carpools leave the ARC at 7:30.",
+     6, 15, 4, "Stebbins Cold Canyon", 38.5076, -122.0966, "outdoors"),
+    ("Esports Club: Smash Tournament", "Bracket starts at 6:30. Casual pools for first-timers.",
+     6, 2, 4, "Memorial Union", 38.5427, -121.7496, "gaming"),
+    ("Fall Recruitment Open House", "Meet chapters and learn how Greek recruitment works.",
+     7, 1, 2, "Memorial Union", 38.5422, -121.7492, "greek"),
 ]
 
 

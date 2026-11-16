@@ -8,9 +8,9 @@ struct PlannerPromptBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let examples = [
-        "free tomorrow after 5, something active",
-        "this weekend, want to try hiking",
-        "tonight, something chill and cheap",
+        "free tomorrow after 5, a club to try",
+        "this weekend, want to volunteer",
+        "tonight, something chill and free",
         "Thursday afternoon, I don't know anyone",
     ]
 

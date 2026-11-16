@@ -3,8 +3,6 @@ import MapKit
 
 struct ExploreView: View {
     @AppStorage("exploreSatelliteMap") private var satellite = false
-    /// Where the map is looking now (for the 3D button).
-    @State private var mapCamera: MapCamera?
     @Environment(AppStore.self) private var store
     @State private var mode: Mode = .map
     @State private var query = ""
@@ -39,7 +37,7 @@ struct ExploreView: View {
             }
             .navigationTitle("Explore")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Runs, concerts, tacos…")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Clubs, workshops, culture nights…")
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Picker("Mode", selection: $mode.animation(.snappy)) {
@@ -97,19 +95,6 @@ struct ExploreView: View {
                 }
             }
             .glassEffect(.regular.interactive(), in: Capsule())
-
-            Button(action: toggle3D) {
-                Text(is3D ? "2D" : "3D")
-                    .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
-                    .contentTransition(.numericText())
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: Circle())
-            .accessibilityLabel(is3D ? "Show flat map" : "Tilt map to 3D")
-            .sensoryFeedback(.selection, trigger: is3D)
         }
     }
 
@@ -124,17 +109,6 @@ struct ExploreView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-    }
-
-    private var is3D: Bool { (mapCamera?.pitch ?? 0) > 10 }
-
-    /// Tilts the current view (same place, zoom and heading) to 3D, or back to flat.
-    private func toggle3D() {
-        guard let current = mapCamera else { return }
-        withAnimation(.smooth(duration: 0.6)) {
-            camera = .camera(MapCamera(centerCoordinate: current.centerCoordinate, distance: current.distance,
-                                       heading: current.heading, pitch: is3D ? 0 : 60))
-        }
     }
 
     private var mapView: some View {
@@ -161,7 +135,6 @@ struct ExploreView: View {
         // so the camera, pins and selection stay where they are.
         .mapStyle(satellite ? .hybrid(pointsOfInterest: .excludingAll)
                             : .standard(pointsOfInterest: .excludingAll))
-        .onMapCameraChange(frequency: .onEnd) { mapCamera = $0.camera }
         .mapControls {
             MapCompass()
             MapScaleView()

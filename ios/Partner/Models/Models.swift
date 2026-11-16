@@ -3,72 +3,94 @@ import CoreLocation
 
 // MARK: - Category
 
+/// Club categories, modeled on how UC Davis groups its 750+ registered student
+/// organizations (club sports, outdoors, cultural, service, Greek life, ...).
 enum ActivityCategory: String, Codable, CaseIterable, Identifiable, Hashable {
-    case run, gym, hike, cycling, sports, yoga
-    case food, coffee, drinks
-    case concert, movies, art
-    case study, games, explore
+    case sports, outdoors, wellness
+    case cultural, arts, music
+    case academic, career, tech
+    case service, greek, faith
+    case gaming, social
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .run: "Running"
-        case .gym: "Gym"
-        case .hike: "Hiking"
-        case .cycling: "Cycling"
-        case .sports: "Sports"
-        case .yoga: "Yoga"
-        case .food: "Food"
-        case .coffee: "Coffee"
-        case .drinks: "Drinks"
-        case .concert: "Concerts"
-        case .movies: "Movies"
-        case .art: "Art & Museums"
-        case .study: "Study"
-        case .games: "Games"
-        case .explore: "Day Out"
+        case .sports: "Club Sports"
+        case .outdoors: "Outdoors"
+        case .wellness: "Health & Wellness"
+        case .cultural: "Cultural"
+        case .arts: "Arts & Performance"
+        case .music: "Music"
+        case .academic: "Academic"
+        case .career: "Career & Professional"
+        case .tech: "Tech & Engineering"
+        case .service: "Service & Volunteering"
+        case .greek: "Greek Life"
+        case .faith: "Faith & Spiritual"
+        case .gaming: "Gaming"
+        case .social: "Food & Social"
         }
     }
 
     var symbol: String {
         switch self {
-        case .run: "figure.run"
-        case .gym: "dumbbell.fill"
-        case .hike: "figure.hiking"
-        case .cycling: "bicycle"
-        case .sports: "basketball.fill"
-        case .yoga: "figure.mind.and.body"
-        case .food: "fork.knife"
-        case .coffee: "cup.and.saucer.fill"
-        case .drinks: "wineglass.fill"
-        case .concert: "music.mic"
-        case .movies: "popcorn.fill"
-        case .art: "paintpalette.fill"
-        case .study: "book.fill"
-        case .games: "gamecontroller.fill"
-        case .explore: "map.fill"
+        case .sports: "figure.soccer"
+        case .outdoors: "figure.hiking"
+        case .wellness: "figure.mind.and.body"
+        case .cultural: "globe.americas.fill"
+        case .arts: "theatermasks.fill"
+        case .music: "music.mic"
+        case .academic: "book.fill"
+        case .career: "briefcase.fill"
+        case .tech: "laptopcomputer"
+        case .service: "heart.fill"
+        case .greek: "building.columns.fill"
+        case .faith: "hands.and.sparkles.fill"
+        case .gaming: "gamecontroller.fill"
+        case .social: "fork.knife"
         }
     }
 
     var color: Color {
         switch self {
-        case .run: Color(red: 1.00, green: 0.42, blue: 0.21)
-        case .gym: Color(red: 0.95, green: 0.27, blue: 0.33)
-        case .hike: Color(red: 0.20, green: 0.68, blue: 0.40)
-        case .cycling: Color(red: 0.10, green: 0.70, blue: 0.70)
         case .sports: Color(red: 0.98, green: 0.58, blue: 0.10)
-        case .yoga: Color(red: 0.55, green: 0.45, blue: 0.95)
-        case .food: Color(red: 0.96, green: 0.36, blue: 0.47)
-        case .coffee: Color(red: 0.62, green: 0.42, blue: 0.30)
-        case .drinks: Color(red: 0.75, green: 0.20, blue: 0.50)
-        case .concert: Color(red: 0.58, green: 0.27, blue: 0.95)
-        case .movies: Color(red: 0.90, green: 0.22, blue: 0.22)
-        case .art: Color(red: 0.95, green: 0.45, blue: 0.75)
-        case .study: Color(red: 0.20, green: 0.48, blue: 0.95)
-        case .games: Color(red: 0.30, green: 0.40, blue: 0.90)
-        case .explore: Color(red: 0.05, green: 0.62, blue: 0.85)
+        case .outdoors: Color(red: 0.20, green: 0.68, blue: 0.40)
+        case .wellness: Color(red: 0.55, green: 0.45, blue: 0.95)
+        case .cultural: Color(red: 0.95, green: 0.40, blue: 0.25)
+        case .arts: Color(red: 0.95, green: 0.45, blue: 0.75)
+        case .music: Color(red: 0.58, green: 0.27, blue: 0.95)
+        case .academic: Color(red: 0.20, green: 0.48, blue: 0.95)
+        case .career: Color(red: 0.30, green: 0.36, blue: 0.48)
+        case .tech: Color(red: 0.10, green: 0.70, blue: 0.70)
+        case .service: Color(red: 0.92, green: 0.28, blue: 0.38)
+        case .greek: Color(red: 0.05, green: 0.45, blue: 0.75)
+        case .faith: Color(red: 0.80, green: 0.62, blue: 0.15)
+        case .gaming: Color(red: 0.30, green: 0.40, blue: 0.90)
+        case .social: Color(red: 0.96, green: 0.36, blue: 0.47)
         }
+    }
+
+    /// Accepts today's names and the pre-club ones ("run", "coffee", "concert", ...), so
+    /// plans and profiles saved by older versions, and older server events, still load.
+    init?(anyName name: String) {
+        if let current = ActivityCategory(rawValue: name) { self = current; return }
+        switch name {
+        case "run": self = .sports
+        case "gym", "yoga": self = .wellness
+        case "hike", "cycling", "explore": self = .outdoors
+        case "food", "coffee", "drinks", "clubs": self = .social
+        case "concert": self = .music
+        case "movies", "art": self = .arts
+        case "study": self = .academic
+        case "games": self = .gaming
+        default: return nil
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let name = try decoder.singleValueContainer().decode(String.self)
+        self = ActivityCategory(anyName: name) ?? .social
     }
 
     var gradient: LinearGradient {
@@ -265,7 +287,7 @@ extension Date {
 
 struct ActivityDraft: Codable, Identifiable {
     var id = UUID()
-    var category: ActivityCategory = .run
+    var category: ActivityCategory = .social
     var title = ""
     var date = Calendar.current.date(byAdding: .hour, value: 3, to: .now)!
     var duration = 90

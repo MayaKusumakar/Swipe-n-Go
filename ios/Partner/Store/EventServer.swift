@@ -289,17 +289,7 @@ extension ActivityCategory {
     /// Server categories are plain words. The app's own names map directly;
     /// the ones used by the backend's sample data are translated.
     init(serverValue: String) {
-        if let match = ActivityCategory(rawValue: serverValue) {
-            self = match
-            return
-        }
-        self = switch serverValue {
-        case "social": .games
-        case "music": .concert
-        case "outdoors": .hike
-        case "tech": .study
-        default: .explore
-        }
+        self = ActivityCategory(anyName: serverValue) ?? .social
     }
 }
 

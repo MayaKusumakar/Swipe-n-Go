@@ -54,5 +54,5 @@ struct PlannerContext {
 
 extension ActivityCategory {
     /// What "something active" means.
-    static let active: [ActivityCategory] = [.run, .gym, .hike, .cycling, .sports, .yoga]
+    static let active: [ActivityCategory] = [.sports, .outdoors, .wellness]
 }

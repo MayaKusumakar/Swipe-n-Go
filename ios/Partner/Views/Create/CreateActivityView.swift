@@ -63,7 +63,7 @@ struct CreateActivityView: View {
         self.draft = draft
     }
 
-    @State private var category: ActivityCategory = .run
+    @State private var category: ActivityCategory = .social
     @State private var title = ""
     @State private var date = Calendar.current.date(byAdding: .hour, value: 3, to: .now)!.roundedToHalfHour
     @State private var duration = 90
@@ -826,21 +826,20 @@ struct CreateActivityView: View {
 
     private var suggestions: [String] {
         switch category {
-        case .run: ["Easy morning 5K", "Sunset run", "Track intervals"]
-        case .gym: ["Push day partner", "Leg day spotter", "Morning lift"]
-        case .hike: ["Weekend hike", "Sunrise summit", "Trail day trip"]
-        case .cycling: ["Coffee ride", "Bike loop tour", "Long ride Sunday"]
-        case .sports: ["Pickup basketball", "Tennis doubles", "Spikeball in the park"]
-        case .yoga: ["Park yoga flow", "Sunrise stretch", "Beginner yoga"]
-        case .food: ["Try a new restaurant", "Ramen night", "Brunch crew"]
-        case .coffee: ["Coffee & chat", "Café hopping", "Study + latte"]
-        case .drinks: ["Happy hour", "Trivia night", "Rooftop drinks"]
-        case .concert: ["Concert buddy needed", "Live jazz night", "Open mic"]
-        case .movies: ["Movie night", "Opening night!", "Indie film screening"]
-        case .art: ["Museum day", "Gallery walk", "Sketch in the park"]
-        case .study: ["Library grind", "Midterm prep", "Silent study session"]
-        case .games: ["Board game night", "Smash tournament", "Poker night"]
-        case .explore: ["Day trip", "Farmers market stroll", "Explore a new town"]
+        case .sports: ["Open practice", "Intro scrimmage", "Tryout info night"]
+        case .outdoors: ["Weekend hike", "Group bike ride", "Camping trip planning"]
+        case .wellness: ["Sunset yoga", "Mindfulness session", "Gym buddy meetup"]
+        case .cultural: ["Culture night", "Language exchange", "Heritage potluck"]
+        case .arts: ["Film screening", "Improv workshop", "Gallery night"]
+        case .music: ["Open mic", "Jam session", "Choir rehearsal"]
+        case .academic: ["Midterm study group", "Tutoring hours", "Research panel"]
+        case .career: ["Resume review", "Networking mixer", "Mock interviews"]
+        case .tech: ["Hackathon team mixer", "Coding workshop", "Project demo night"]
+        case .service: ["Volunteer shift", "Campus cleanup", "Fundraiser"]
+        case .greek: ["Recruitment open house", "Philanthropy event", "Meet the chapter"]
+        case .faith: ["Weekly fellowship", "Interfaith dinner", "Meditation circle"]
+        case .gaming: ["Smash tournament", "Board game night", "Esports watch party"]
+        case .social: ["General meeting", "Welcome mixer", "Club potluck"]
         }
     }
 

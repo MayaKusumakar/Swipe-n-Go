@@ -177,7 +177,7 @@ struct PlanDescriptionTests {
         #expect(try #require(plan.date) > .now)
         #expect(plan.title == "Boba Run")
         #expect(plan.location.isEmpty)
-        #expect(plan.category == .coffee)    // the first word that names a category wins
+        #expect(plan.category == .social)    // the first word that names a category wins
     }
 
     @Test func aDayWithoutATimeAsksForTheTime() {

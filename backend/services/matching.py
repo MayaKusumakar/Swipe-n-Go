@@ -36,6 +36,15 @@ RELATED = {
               "engineering"},
     "games": {"games", "game", "board", "trivia", "gaming", "chess", "cards"},
     "social": {"social", "meet", "meetup", "party", "friends", "hangout", "club", "clubs", "fair", "mixer"},
+    "cultural": {"cultural", "culture", "heritage", "international", "diwali", "lunar", "festival",
+                 "language", "potluck", "association"},
+    "career": {"career", "resume", "networking", "interview", "internship", "internships", "professional",
+               "business", "recruiters", "consulting"},
+    "service": {"service", "volunteer", "volunteering", "community", "pantry", "cleanup", "restoration",
+                "fundraiser", "charity"},
+    "greek": {"greek", "rush", "recruitment", "fraternity", "sorority", "chapter", "philanthropy"},
+    "faith": {"faith", "interfaith", "spiritual", "fellowship", "prayer", "church", "bible"},
+    "wellness": {"wellness", "yoga", "meditation", "mindfulness", "health", "gym", "workout"},
 }
 
 # A shared group counts for more than a shared word: the point is to match

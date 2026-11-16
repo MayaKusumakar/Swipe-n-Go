@@ -89,7 +89,7 @@ Code: `backend/api/auth.py` (routes and the check before every request), `backen
 | `end_time` | string \| null | after `start_time` |
 | `location_name` | string \| null | e.g. `"Memorial Union"`. `null` in `GET /api/events` when `location_private` is true |
 | `latitude`, `longitude` | number \| null | sent together or not at all. `null` in the list for private locations |
-| `category` | string | lowercase word. The iOS app uses `run, gym, hike, cycling, sports, yoga, food, coffee, drinks, concert, movies, art, study, games, explore`. Seed data also uses `social, clubs, music, outdoors, tech`. |
+| `category` | string | lowercase word. The app and seed data use these club categories (modeled on UC Davis club types): `sports, outdoors, wellness, cultural, arts, music, academic, career, tech, service, greek, faith, gaming, social`. The app still reads the older names (`run`, `coffee`, `concert`, ...) and maps them to the closest club category. |
 | `image_url` | string \| null | always null for now (no uploads yet) |
 | `host_id` | string \| null | account id of the host (see **Sign-in**). `null` for sample data |
 | `host_name` | string \| null | the host's name from their account. Any `host_name` sent when creating is ignored |
@@ -190,7 +190,7 @@ Request body (JSON). Required: `title`, `start_time`, `location_name`, `category
   "location_name": "UC Davis Arboretum",
   "latitude": 38.5372,
   "longitude": -121.7531,
-  "category": "run",
+  "category": "sports",
   "address": "Garrod Dr, Davis, CA",
   "capacity": 6,
   "cost": "Free",
@@ -223,7 +223,7 @@ Request body (JSON):
 {
   "query": "free tomorrow after 5, want something active, I don't know anyone",
   "now": "2026-11-11T12:00:00-08:00",
-  "interests": ["run", "food"],
+  "interests": ["sports", "social"],
   "events": [
     {
       "id": "6f1c2a3e-1b2c-4d5e-8f90-123456789abc",
@@ -307,7 +307,7 @@ Response `200`:
 }
 ```
 - `missing` lists what wasn't on the flyer or wasn't clear: any of `title`, `date`, `time`, `location`, `cost`. The app marks those for the host to fill in. When there's no start time, `date` and `time` are always listed.
-- `category` is one of the app's categories (`run, gym, hike, cycling, sports, yoga, food, coffee, drinks, concert, movies, art, study, games, explore`), or `""`.
+- `category` is one of the app's club categories (`sports, outdoors, wellness, cultural, arts, music, academic, career, tech, service, greek, faith, gaming, social`), or `""`.
 - `start_time` / `end_time` may be `null`. An end time that isn't after the start is dropped.
 - If the image isn't an event flyer, `is_event_flyer` is `false` and the other fields are empty.
 

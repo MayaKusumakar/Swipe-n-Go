@@ -25,7 +25,7 @@ private func activity(_ title: String, _ category: ActivityCategory, _ date: Dat
              level: level, requiresApproval: approval, costNote: cost)
 }
 
-private let context = PlannerContext(interests: [.run, .food], myID: me)
+private let context = PlannerContext(interests: [.sports, .social], myID: me)
 
 @Suite("Reading the request")
 struct KeywordParserTests {
@@ -48,7 +48,7 @@ struct KeywordParserTests {
 
     @Test func specificCategoriesAndFlags() {
         let r = KeywordParser.parse("this weekend I want to try hiking for the first time, I don't know anyone", now: now)
-        #expect(r.categories == [.hike])
+        #expect(r.categories == [.outdoors])
         #expect(r.beginnerFriendly)
         #expect(r.wantsCompany)
     }
@@ -81,8 +81,8 @@ struct KeywordParserTests {
 struct OnDevicePlannerTests {
     @Test func prefersWhatTheyAskedForInsideTheWindow() {
         let basketball = activity("Pickup basketball", .sports, at(daysFromNow: 1, hour: 18), attendees: 2)
-        let tacos = activity("Taco crawl", .food, at(daysFromNow: 1, hour: 18, minute: 30))
-        let morningRun = activity("Morning run", .run, at(daysFromNow: 1, hour: 7))
+        let tacos = activity("Taco crawl", .social, at(daysFromNow: 1, hour: 18, minute: 30))
+        let morningRun = activity("Morning run", .sports, at(daysFromNow: 1, hour: 7))
         let result = OnDevicePlanner.plan("free tomorrow after 5, want something active", activities: [tacos, morningRun, basketball],
                                           context: context, now: now)
         #expect(result.picks.map(\.activity.title) == ["Pickup basketball"])
@@ -94,24 +94,24 @@ struct OnDevicePlannerTests {
     }
 
     @Test func widensTheSearchAndSaysSo() {
-        let later = activity("Board games", .games, at(daysFromNow: 3, hour: 19))
+        let later = activity("Board games", .gaming, at(daysFromNow: 3, hour: 19))
         let result = OnDevicePlanner.plan("tonight", activities: [later], context: context, now: now)
         #expect(result.picks.map(\.activity.title) == ["Board games"])
         #expect(result.note != nil)
     }
 
     @Test func skipsPastFullAndOwnEvents() {
-        let past = activity("Yesterday", .run, at(daysFromNow: -1, hour: 18))
-        let full = activity("Full", .run, at(daysFromNow: 1, hour: 18), attendees: 1, capacity: 2)
-        var mine = activity("Mine", .run, at(daysFromNow: 1, hour: 18))
+        let past = activity("Yesterday", .sports, at(daysFromNow: -1, hour: 18))
+        let full = activity("Full", .sports, at(daysFromNow: 1, hour: 18), attendees: 1, capacity: 2)
+        var mine = activity("Mine", .sports, at(daysFromNow: 1, hour: 18))
         mine.hostID = me
         let result = OnDevicePlanner.plan("tomorrow evening run", activities: [past, full, mine], context: context, now: now)
         #expect(result.picks.isEmpty)
     }
 
     @Test func companyFavoursEventsWithPeopleGoing() {
-        let empty = activity("Quiet run", .run, at(daysFromNow: 1, hour: 18))
-        let busy = activity("Group run", .run, at(daysFromNow: 1, hour: 18), attendees: 4)
+        let empty = activity("Quiet run", .sports, at(daysFromNow: 1, hour: 18))
+        let busy = activity("Group run", .sports, at(daysFromNow: 1, hour: 18), attendees: 4)
         let result = OnDevicePlanner.plan("tomorrow after 5, running, I don't know anyone", activities: [empty, busy],
                                           context: context, now: now)
         #expect(result.picks.first?.activity.title == "Group run")
@@ -119,7 +119,7 @@ struct OnDevicePlannerTests {
     }
 
     @Test func privateLocationReasonHasNoDistance() {
-        let secret = activity("House party", .drinks, at(daysFromNow: 1, hour: 21))
+        let secret = activity("House party", .social, at(daysFromNow: 1, hour: 21))
         let hidden = PlannerContext(interests: [], myID: me, canSeeLocation: { _ in false })
         let result = OnDevicePlanner.plan("tomorrow night drinks", activities: [secret], context: hidden, now: now)
         #expect(result.picks.count == 1)
@@ -127,20 +127,20 @@ struct OnDevicePlannerTests {
     }
 
     @Test func cheapOnlyWhenAsked() {
-        let pricey = activity("Concert", .concert, at(daysFromNow: 1, hour: 20), cost: "$40")
+        let pricey = activity("Concert", .music, at(daysFromNow: 1, hour: 20), cost: "$40")
         #expect(OnDevicePlanner.isCheap(pricey) == false)
-        #expect(OnDevicePlanner.isCheap(activity("Run", .run, now, cost: "Free w/ ARC")))
-        #expect(OnDevicePlanner.isCheap(activity("Tacos", .food, now, cost: "~$8")))
+        #expect(OnDevicePlanner.isCheap(activity("Run", .sports, now, cost: "Free w/ ARC")))
+        #expect(OnDevicePlanner.isCheap(activity("Tacos", .social, now, cost: "~$8")))
     }
 }
 
 @Suite("Claude planner mapping")
 struct ClaudePlannerTests {
     @Test func requestBodyDescribesCandidates() {
-        let run = activity("Sunrise 5K", .run, at(daysFromNow: 1, hour: 7), level: .beginner, attendees: 2)
+        let run = activity("Sunrise 5K", .sports, at(daysFromNow: 1, hour: 7), level: .beginner, attendees: 2)
         let body = ClaudePlanner.makeBody("tomorrow morning run", candidates: [run], context: context, now: now)
         #expect(body.query == "tomorrow morning run")
-        #expect(body.interests == ["run", "food"])
+        #expect(body.interests == ["sports", "social"])
         #expect(body.events.first?.id == run.id.uuidString.lowercased())
         #expect(body.events.first?.level == "beginner")
         #expect(body.events.first?.attendeeCount == 3)          // host + 2
@@ -148,8 +148,8 @@ struct ClaudePlannerTests {
     }
 
     @Test func mapsPicksAndIgnoresUnknownOrDuplicateIDs() {
-        let run = activity("Sunrise 5K", .run, at(daysFromNow: 1, hour: 7))
-        let tacos = activity("Taco crawl", .food, at(daysFromNow: 1, hour: 18))
+        let run = activity("Sunrise 5K", .sports, at(daysFromNow: 1, hour: 7))
+        let tacos = activity("Taco crawl", .social, at(daysFromNow: 1, hour: 18))
         let response = ClaudePlanner.ResponseBody(
             understood: "Tomorrow · anything fun",
             picks: [
@@ -168,7 +168,7 @@ struct ClaudePlannerTests {
     }
 
     @Test func privateLocationsAreNotSent() {
-        let secret = activity("House party", .drinks, at(daysFromNow: 1, hour: 21))
+        let secret = activity("House party", .social, at(daysFromNow: 1, hour: 21))
         let hidden = PlannerContext(interests: [], myID: me, canSeeLocation: { $0.id != secret.id })
         let body = ClaudePlanner.makeBody("tomorrow night", candidates: [secret], context: hidden, now: now)
         #expect(body.events.first?.locationName == ClaudePlanner.hiddenPlace)
@@ -176,10 +176,39 @@ struct ClaudePlannerTests {
     }
 
     @Test func candidatesAreCappedAndSorted() {
-        let events = (0..<80).map { activity("E\($0)", .run, at(daysFromNow: 1 + $0 % 6, hour: 8 + $0 % 10)) }
+        let events = (0..<80).map { activity("E\($0)", .sports, at(daysFromNow: 1 + $0 % 6, hour: 8 + $0 % 10)) }
         let candidates = context.candidates(from: events, now: now)
         #expect(candidates.count == 80)
         #expect(candidates == candidates.sorted { $0.date < $1.date })
         #expect(Array(candidates.prefix(ClaudePlanner.maxCandidates)).count == 60)
+    }
+}
+
+@Suite("Club categories")
+struct ClubCategoryTests {
+    @Test func fourteenClubCategories() {
+        #expect(ActivityCategory.allCases.count == 14)
+        #expect(ActivityCategory.sports.title == "Club Sports")
+    }
+
+    @Test func oldSavedCategoriesStillLoad() throws {
+        let old = #"["run","gym","hike","coffee","concert","movies","study","games","explore","sports","nonsense"]"#
+        let loaded = try JSONDecoder().decode([ActivityCategory].self, from: Data(old.utf8))
+        #expect(loaded == [.sports, .wellness, .outdoors, .social, .music, .arts, .academic, .gaming, .outdoors,
+                           .sports, .social])
+    }
+
+    @Test func serverCategoriesMap() {
+        #expect(ActivityCategory(serverValue: "outdoors") == .outdoors)
+        #expect(ActivityCategory(serverValue: "music") == .music)
+        #expect(ActivityCategory(serverValue: "clubs") == .social)
+        #expect(ActivityCategory(serverValue: "food") == .social)
+        #expect(ActivityCategory(serverValue: "something-new") == .social)
+    }
+
+    @Test func plannerReadsClubWords() {
+        #expect(KeywordParser.parse("any hackathon or coding stuff this week", now: now).categories == [.tech])
+        #expect(KeywordParser.parse("want to volunteer saturday", now: now).categories == [.service])
+        #expect(KeywordParser.parse("resume help and networking", now: now).categories == [.career])
     }
 }

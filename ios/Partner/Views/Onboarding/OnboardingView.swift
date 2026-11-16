@@ -403,7 +403,7 @@ private struct PermissionCard: View {
 
 /// Category symbols drifting around a glowing center — the hero on the welcome screen.
 private struct OrbitingIcons: View {
-    private let cats: [ActivityCategory] = [.run, .concert, .food, .hike, .coffee, .movies, .gym, .art]
+    private let cats: [ActivityCategory] = [.sports, .music, .cultural, .outdoors, .tech, .arts, .service, .social]
 
     var body: some View {
         TimelineView(.animation) { ctx in

@@ -47,6 +47,8 @@ Server side (`backend/`, mapped from the team's "Mapping these ideas to Google C
 - **Not done, on purpose:** Cloud Tasks (needs billing; cron covers it for now), users' live locations (sign-in now exists; not started), Redis, load balancing.
 - **The app doesn't use the new endpoints yet** (`/nearby`, `/recommended`, `summary`, `event_full`). It still filters by distance on the phone.
 
+- **Club focus (2026-11-16, after the professor meeting):** categories are now 14 club types modeled on UC Davis's own groupings (club sports, outdoors, health & wellness, cultural, arts & performance, music, academic, career & professional, tech & engineering, service & volunteering, Greek life, faith & spiritual, gaming, food & social). `ActivityCategory(anyName:)` maps the old names (run, coffee, concert, ...) so saved data and older server events still load. Sample data on the phone (20 events) and the server (10) are club events at campus places; club names are generic examples, not real organizations. Phones with the old samples swap them once (`sampleDataVersion` = 2), keeping the user's own plans and drafts. The map's 3D button was removed (it didn't work reliably).
+
 Differences from our design:
 - `client_architecture.md` is still blank, so there's nothing to compare against yet. The team should fill it in. The current state above can be the starting point.
 - The app uses the category names listed in `API.md`, but the server's seed data uses different ones (`social`, `clubs`, ...). The team should pick one list.

@@ -18,9 +18,9 @@ struct PlannerView: View {
     ]
 
     private let examples = [
-        "Free Thursday after 5, want something active but I don't know anyone",
-        "Tomorrow morning, something chill and cheap",
-        "This weekend, I want to try hiking for the first time",
+        "Free Thursday after 5, want to try a new club but I don't know anyone",
+        "Any tech or career events this week?",
+        "This weekend, I want to try an outdoors club for the first time",
     ]
 
     var body: some View {

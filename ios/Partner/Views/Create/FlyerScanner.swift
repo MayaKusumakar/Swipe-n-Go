@@ -370,7 +370,7 @@ enum PlanSentence {
         }.joined(separator: " ")
     }
 
-    /// The category of the first word that names one ("boba run" is coffee, "morning run" is running),
+    /// The category of the first word that names one ("boba run" is food & social, "morning run" is club sports),
     /// with the planner's word lists.
     private static func category(in text: String) -> ActivityCategory? {
         for word in text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }) {
