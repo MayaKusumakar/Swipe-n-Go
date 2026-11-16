@@ -72,7 +72,9 @@ struct CreateActivityView: View {
     @State private var level: ActivityLevel = .anyone
     @State private var requiresApproval = false
     @State private var privateLocation = false
-    @State private var cost = "Free"
+    /// Free or paid. When paid, `cost` holds what the host typed after the "$" (e.g. "12" or "5 members").
+    @State private var costIsFree = true
+    @State private var cost = ""
     @State private var details = ""
     @State private var showPlacePicker = false
     @State private var flyerPhoto: PhotosPickerItem?
@@ -101,7 +103,7 @@ struct CreateActivityView: View {
     @State private var published = false
     @FocusState private var focus: Field?
 
-    enum Field { case title, previewTitle, details, cost, planDescription }
+    enum Field { case title, details, cost, planDescription }
 
     /// The Duration picker's options, in minutes.
     static let durations = [30, 45, 60, 90, 120, 180, 240, 480]
@@ -114,8 +116,25 @@ struct CreateActivityView: View {
     }
 
     private var canPublish: Bool {
-        !scanning && !isLoadingPhoto && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && place != nil && date > .now
-            && (!schedulePost || (publishAt > .now && publishAt < date))
+        !scanning && !isLoadingPhoto && missing.isEmpty
+    }
+
+    /// What still stops the plan from posting, in the order the form asks for it.
+    private var missing: [String] {
+        var items: [String] = []
+        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { items.append("a title") }
+        if date <= .now { items.append("a time in the future") }
+        if place == nil { items.append("a location") }
+        if !costIsFree && cost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { items.append("a price") }
+        if schedulePost && !(publishAt > .now && publishAt < date) { items.append("a publish time before the plan") }
+        return items
+    }
+
+    private var costText: String { PlanCost.text(isFree: costIsFree, amount: cost) }
+
+    /// Loads a saved or scanned cost into the Free / Paid controls.
+    private func setCost(_ text: String) {
+        (costIsFree, cost) = PlanCost.parse(text)
     }
 
     var body: some View {
@@ -123,16 +142,14 @@ struct CreateActivityView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     flyerSection
-                    titleSection
                     categorySection
+                    titleSection
                     whenSection
                     whereSection
                     detailsSection
                     groupSection
-                    coverPhotoSection
                     preview
-                    recurrenceSection
-                    publishingSection
+                    moreOptionsSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 30)
@@ -146,19 +163,33 @@ struct CreateActivityView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark") { showCloseOptions = true }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(schedulePost ? "Schedule" : "Post", systemImage: "checkmark") { publish() }
-                        .disabled(!canPublish)
-                }
             }
             .safeAreaInset(edge: .bottom) {
-                Button(action: publish) {
-                    Label(schedulePost ? "Schedule post" : "Post plan", systemImage: schedulePost ? "clock" : "paperplane.fill")
+                VStack(spacing: 8) {
+                    if !missing.isEmpty && focus == nil {
+                        Text("Add \(missing.formatted(.list(type: .and))) to post.")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .glassEffect(.regular, in: Capsule())
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+                    Button(action: publish) {
+                        Label(schedulePost ? "Schedule post" : "Post plan", systemImage: schedulePost ? "clock" : "paperplane.fill")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(category.gradient)))
+                    .disabled(!canPublish)
                 }
-                .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(category.gradient)))
-                .disabled(!canPublish)
                 .padding(.horizontal, 20)
-                .padding(.top, 8)
+                .padding(.top, 20)
+                .background {
+                    LinearGradient(stops: [.init(color: Color(.systemGroupedBackground).opacity(0), location: 0),
+                                           .init(color: Color(.systemGroupedBackground), location: 0.35)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                }
+                .animation(.snappy, value: missing)
             }
             .onAppear {
                 guard !restoredDraft, let draft else { return }
@@ -173,7 +204,7 @@ struct CreateActivityView: View {
                 level = draft.level
                 requiresApproval = draft.requiresApproval
                 privateLocation = draft.privateLocation == true
-                cost = draft.cost
+                setCost(draft.cost)
                 details = draft.details
                 coverPhotoData = draft.coverPhotoData
                 scannedLocation = draft.suggestedLocation ?? ""
@@ -234,7 +265,7 @@ struct CreateActivityView: View {
                         Task { await findScannedPlace() }
                     }
                     details = fields.details
-                    cost = fields.cost
+                    setCost(fields.cost)
                     if let scanned = fields.category { category = scanned }
                     if let end = fields.endDate {
                         // Closest option in the Duration picker.
@@ -328,40 +359,65 @@ struct CreateActivityView: View {
     // MARK: Preview
 
     private var preview: some View {
-        ZStack(alignment: .bottomLeading) {
-            ActivityCover(category: category, photoData: coverPhotoData)
-            LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    TextField(text: $title, prompt: Text("Your plan title").foregroundStyle(.white.opacity(0.65)), axis: .vertical) {
-                        Text("Plan title")
-                    }
-                    .font(.title2.weight(.bold))
-                    .lineLimit(1...2)
-                    .focused($focus, equals: .previewTitle)
-                    .submitLabel(.done)
-                    .onChange(of: title) { _, new in
-                        // Return ends editing instead of adding a new line.
-                        if new.contains("\n") { title = new.replacingOccurrences(of: "\n", with: ""); focus = nil }
-                    }
-                    Image(systemName: focus == .previewTitle ? "checkmark.circle.fill" : "pencil")
-                        .font(.headline)
-                        .opacity(0.85)
-                        .onTapGesture { focus = focus == .previewTitle ? nil : .previewTitle }
-                        .accessibilityLabel(focus == .previewTitle ? "Done editing title" : "Edit title")
+        VStack(alignment: .leading, spacing: 12) {
+            label("Cover & preview")
+            ZStack(alignment: .bottomLeading) {
+                ActivityCover(category: category, photoData: coverPhotoData)
+                LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 6) {
+                    // Shown, not edited: the title is typed once, in "Plan title" above.
+                    Text(title.isEmpty ? "Your plan title" : title)
+                        .font(.title2.weight(.bold))
+                        .lineLimit(2)
+                        .opacity(title.isEmpty ? 0.6 : 1)
+                    Text("\(date.friendlyDateTime)\(place.map { " · \($0.name)" } ?? "") · \(costText)")
+                        .font(.subheadline.weight(.medium))
+                        .opacity(0.9)
                 }
-                Text("\(date.friendlyDateTime)\(place.map { " · \($0.name)" } ?? "")")
-                    .font(.subheadline.weight(.medium))
-                    .opacity(0.9)
+                .foregroundStyle(.white)
+                .padding(18)
             }
-            .foregroundStyle(.white)
-            .padding(18)
+            .frame(height: CoverShape.isPoster(coverPhotoData) ? 460 : 180)
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(alignment: .topTrailing) { coverButton.padding(12) }
+            .overlay {
+                if isLoadingPhoto {
+                    ProgressView().tint(.white)
+                }
+            }
+            .animation(.smooth, value: coverPhotoData)
+            .animation(.smooth, value: category)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Preview of your plan")
         }
-        .frame(height: CoverShape.isPoster(coverPhotoData) ? 460 : 180)
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .animation(.smooth, value: coverPhotoData)
-        .animation(.smooth, value: category)
-        .padding(.top, 8)
+    }
+
+    /// Add, replace or remove the cover, right on the preview.
+    @ViewBuilder private var coverButton: some View {
+        Group {
+            if coverPhotoData == nil {
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Label("Add cover photo", systemImage: "photo.badge.plus")
+                }
+            } else {
+                Menu {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Label("Replace photo", systemImage: "photo.on.rectangle")
+                    }
+                    Button("Remove photo", systemImage: "trash", role: .destructive) {
+                        coverPhotoData = nil
+                        selectedPhoto = nil
+                    }
+                } label: {
+                    Label("Edit cover", systemImage: "photo")
+                }
+            }
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .disabled(isLoadingPhoto || scanning)
     }
 
     // MARK: Sections
@@ -369,6 +425,9 @@ struct CreateActivityView: View {
     private var flyerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             label("Autofill plan details")
+            Text("Scan a flyer, type a sentence or say it, and we'll fill in the form.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 PhotosPicker(selection: $flyerPhoto, matching: .images) {
                     Label("Upload flyer", systemImage: "doc.viewfinder")
@@ -398,7 +457,9 @@ struct CreateActivityView: View {
             .tint(Brand.accent)
             .disabled(voiceSession != nil)
 
-            TextField("Describe your plan, e.g. free soccer Saturday at 3 at the ARC", text: $planDescription, axis: .vertical)
+            HStack(alignment: .bottom, spacing: 10) {
+            TextField(voiceCapture == nil ? "Or describe it, e.g. free soccer Saturday at 3 at the ARC" : "Listening…",
+                      text: $planDescription, axis: .vertical)
                 .lineLimit(2...5)
                 .focused($focus, equals: .planDescription)
                 // Return means "Go": the floating Post plan bar covers the button below while the
@@ -410,23 +471,13 @@ struct CreateActivityView: View {
                     planDescription = String(new.dropLast())
                     fillFromDescription()
                 }
-                .padding(16)
-                .cardStyle(radius: 18)
                 .accessibilityIdentifier("planDescription")
                 .disabled(voiceSession != nil)
-            Button("Autofill from text", systemImage: "text.badge.checkmark", action: fillFromDescription)
-                .disabled(voiceSession != nil || planDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-            Button(voiceCapture == nil ? "Speak your plan" : "Stop & autofill",
-                   systemImage: voiceCapture == nil ? "mic" : "stop.circle") {
-                if voiceCapture != nil {
-                    finishVoiceCapture()
-                } else {
-                    startVoiceCapture()
-                }
+                // One button, like Messages: a mic when empty, send when there's text, stop while listening.
+                describeButton
             }
-            .buttonStyle(.bordered)
-            .disabled(voiceSession != nil && voiceCapture == nil)
+            .padding(16)
+            .cardStyle(radius: 18)
 
             if let voiceError {
                 Text(voiceError).font(.caption).foregroundStyle(.secondary)
@@ -439,6 +490,29 @@ struct CreateActivityView: View {
             }
         }
         .disabled(scanning || isLoadingPhoto)
+    }
+
+    @ViewBuilder private var describeButton: some View {
+        let hasText = !planDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if voiceCapture != nil {
+            Button("Stop and autofill", systemImage: "stop.circle.fill", action: finishVoiceCapture)
+                .labelStyle(.iconOnly)
+                .font(.title)
+                .foregroundStyle(.red)
+                .symbolEffect(.pulse, isActive: true)
+        } else if hasText {
+            Button("Autofill from text", systemImage: "arrow.up.circle.fill", action: fillFromDescription)
+                .labelStyle(.iconOnly)
+                .font(.title)
+                .foregroundStyle(Brand.accent)
+                .disabled(voiceSession != nil)
+        } else {
+            Button("Speak your plan", systemImage: "mic.circle.fill", action: startVoiceCapture)
+                .labelStyle(.iconOnly)
+                .font(.title)
+                .foregroundStyle(Brand.accent)
+                .disabled(voiceSession != nil)
+        }
     }
 
     private func startVoiceCapture() {
@@ -516,43 +590,54 @@ struct CreateActivityView: View {
         describedText = String(text.prefix(ClaudeTextReader.maxCharacters))
     }
 
-    private var recurrenceSection: some View {
+    private var moreOptionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("Repeat plan", isOn: $repeats)
-            if repeats {
-                Picker("Repeats", selection: $frequency) {
-                    ForEach(EventRecurrence.Frequency.allCases, id: \.self) { option in
-                        Text(option.rawValue).tag(option)
+            label("More options")
+            VStack(alignment: .leading, spacing: 0) {
+                Toggle(isOn: $repeats.animation(.snappy)) {
+                    Label("Repeat", systemImage: "repeat")
+                }
+                .padding(14)
+                if repeats {
+                    Divider().padding(.leading, 14)
+                    Picker("Every", selection: $frequency) {
+                        ForEach(EventRecurrence.Frequency.allCases, id: \.self) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    Divider().padding(.leading, 14)
+                    Stepper("\(occurrenceCount) events", value: $occurrenceCount, in: 2...12)
+                        .padding(14)
+                    if let last = currentDraft().occurrenceDates.last {
+                        Text("Last one \(last.formatted(date: .abbreviated, time: .shortened)). All dates post together as separate events.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14).padding(.bottom, 12)
                     }
                 }
-                Stepper("Total events · \(occurrenceCount)",
-                        value: $occurrenceCount, in: 2...12)
-                let dates = currentDraft().occurrenceDates
-                if let last = dates.last {
-                    Text("\(occurrenceCount) events, ending \(last.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                Divider().padding(.leading, 14)
+                Toggle(isOn: $schedulePost.animation(.snappy)) {
+                    Label("Schedule for later", systemImage: "clock")
                 }
-                Text("All dates publish together as separate events. Time zone: \(recurrenceTimeZoneID).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .padding(14)
+                if schedulePost {
+                    Divider().padding(.leading, 14)
+                    DatePicker("Post on", selection: $publishAt, in: Date.now...)
+                        .padding(14)
+                    Text("Pick a time before the plan starts. The app must be open to post it; missed ones go back to drafts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14).padding(.bottom, 12)
+                }
             }
-        }
-    }
+            .cardStyle(radius: 18)
+            .tint(category.color)
 
-    private var publishingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            label("Publishing")
-            Toggle("Schedule for later", isOn: $schedulePost)
-            if schedulePost {
-                DatePicker("Publish on", selection: $publishAt, in: Date.now...)
-                Text("Pick a time before the plan starts. The app must be open to publish. Missed events return to drafts.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
             Button("Save draft and close", systemImage: "square.and.arrow.down") {
                 saveDraftAndClose()
             }
+            .font(.subheadline.weight(.semibold))
             .disabled(isLoadingPhoto || scanning)
         }
     }
@@ -562,7 +647,7 @@ struct CreateActivityView: View {
             id: draftID, category: category, title: title, date: date,
             duration: duration, place: place, capacity: capacity, level: level,
             requiresApproval: requiresApproval || privateLocation,
-            privateLocation: privateLocation ? true : nil, cost: cost, details: details,
+            privateLocation: privateLocation ? true : nil, cost: costText, details: details,
             coverPhotoData: coverPhotoData, scheduledAt: scheduledAt,
             recurrence: repeats ? EventRecurrence(frequency: frequency, count: occurrenceCount,
                                                   timeZoneID: recurrenceTimeZoneID) : nil,
@@ -577,26 +662,6 @@ struct CreateActivityView: View {
             return
         }
         dismiss()
-    }
-
-    private var coverPhotoSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            label("Cover photo")
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                Label(coverPhotoData == nil ? "Choose a photo" : "Replace photo",
-                      systemImage: "photo.on.rectangle")
-            }
-            .disabled(isLoadingPhoto || scanning)
-            if isLoadingPhoto {
-                ProgressView("Loading photo")
-            }
-            if coverPhotoData != nil {
-                Button("Remove photo", role: .destructive) {
-                    coverPhotoData = nil
-                    selectedPhoto = nil
-                }
-            }
-        }
     }
 
     private var categorySection: some View {
@@ -620,9 +685,12 @@ struct CreateActivityView: View {
                                 Text(cat.title)
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(category == cat ? .primary : .secondary)
-                                    .lineLimit(1)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(minHeight: 34, alignment: .top)
                             }
-                            .frame(width: 70)
+                            .frame(width: 76)
                         }
                         .buttonStyle(PressableStyle())
                     }
@@ -752,7 +820,9 @@ struct CreateActivityView: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .contentTransition(.numericText(value: Double(capacity)))
-                    Stepper("Group size", value: $capacity.animation(.snappy), in: 2...30).labelsHidden()
+                    // Clubs can be big: 1 at a time up to 20, then 5s, then 25s.
+                    Stepper("Group size", value: $capacity.animation(.snappy), in: 2...500,
+                            step: capacity < 20 ? 1 : capacity < 100 ? 5 : 25).labelsHidden()
                 }
                 .padding(14)
                 Divider().padding(.leading, 14)
@@ -777,11 +847,36 @@ struct CreateActivityView: View {
                 Divider().padding(.leading, 14)
                 HStack {
                     Label("Cost", systemImage: "creditcard.fill")
-                    TextField("Free", text: $cost)
-                        .multilineTextAlignment(.trailing)
-                        .focused($focus, equals: .cost)
+                    Spacer()
+                    Picker("Cost", selection: $costIsFree.animation(.snappy)) {
+                        Text("Free").tag(true)
+                        Text("Paid").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 140)
+                    .onChange(of: costIsFree) { _, free in
+                        // Paid: straight to the price, keyboard up. Free: nothing to type.
+                        focus = free ? nil : .cost
+                    }
                 }
                 .padding(14)
+                if !costIsFree {
+                    HStack(spacing: 4) {
+                        Text("$")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        TextField("0", text: $cost)
+                            .font(.title3.weight(.semibold))
+                            .keyboardType(.decimalPad)
+                            .focused($focus, equals: .cost)
+                            .accessibilityLabel("Price in dollars")
+                        Text("per person")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14).padding(.bottom, 14)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             .cardStyle(radius: 18)
             .tint(category.color)
@@ -1240,5 +1335,22 @@ private final class PlanVoiceCapture: @unchecked Sendable {
         task?.cancel()
         task = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+}
+
+/// The Host form's Free / Paid cost, as the text saved on the plan ("Free", "$12", "~$20").
+enum PlanCost {
+    /// "Free", or the amount with a "$" in front when it starts with a number.
+    static func text(isFree: Bool, amount: String) -> String {
+        let amount = amount.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isFree || amount.isEmpty { return "Free" }
+        return amount.first?.isNumber == true ? "$" + amount : amount
+    }
+
+    /// Splits a saved or scanned cost ("Free", "$12", "Free w/ ARC", "~$20") into free or the amount typed.
+    static func parse(_ text: String) -> (isFree: Bool, amount: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.lowercased().hasPrefix("free") { return (true, "") }
+        return (false, trimmed.hasPrefix("$") ? String(trimmed.dropFirst()) : trimmed)
     }
 }

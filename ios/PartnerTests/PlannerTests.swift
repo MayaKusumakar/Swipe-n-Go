@@ -219,3 +219,30 @@ struct ClubCategoryTests {
         #expect(KeywordParser.parse("resume help and networking", now: now).categories == [.career])
     }
 }
+
+@Suite("Host cost")
+struct PlanCostTests {
+    @Test func freeAndPaidText() {
+        #expect(PlanCost.text(isFree: true, amount: "12") == "Free")
+        #expect(PlanCost.text(isFree: false, amount: "12") == "$12")
+        #expect(PlanCost.text(isFree: false, amount: " 7.50 ") == "$7.50")
+        #expect(PlanCost.text(isFree: false, amount: "") == "Free")          // paid but no price yet
+        #expect(PlanCost.text(isFree: false, amount: "~$20") == "~$20")      // already has its own $
+    }
+
+    @Test func savedAndScannedCostsReopenCorrectly() {
+        #expect(PlanCost.parse("Free") == (true, ""))
+        #expect(PlanCost.parse("Free w/ ARC") == (true, ""))
+        #expect(PlanCost.parse("") == (true, ""))
+        #expect(PlanCost.parse("$12") == (false, "12"))
+        #expect(PlanCost.parse("$38 ticket") == (false, "38 ticket"))
+        #expect(PlanCost.parse("~$20") == (false, "~$20"))
+    }
+
+    @Test func roundTrip() {
+        for saved in ["Free", "$12", "$7.50", "~$20", "Gas split"] {
+            let (free, amount) = PlanCost.parse(saved)
+            #expect(PlanCost.text(isFree: free, amount: amount) == saved)
+        }
+    }
+}
