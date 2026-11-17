@@ -60,7 +60,7 @@ The account id is Google's `sub`. Events store it as `host_id`, and an attendee'
 
 **Dev sign-in** (local testing only): with `DEV_SIGN_IN=on`, the server also accepts `dev:<email>:<name>` tokens. The email must still be @ucdavis.edu, and the account id is `dev-<email>`. It is always off on App Engine (`GAE_ENV` set), whatever the setting.
 
-Setup (one person, free, no billing): Google Cloud Console → APIs & Services → OAuth consent screen, then Credentials → Create OAuth client ID → iOS, with bundle ID `com.swipengo.app`. Put the client ID in `ios/Partner/Info.plist` (`GoogleClientID`) and in the server's `GOOGLE_CLIENT_IDS`.
+Setup (one person, free, no billing): Google Cloud Console → APIs & Services → OAuth consent screen, then Credentials → Create OAuth client ID → iOS, with bundle ID `com.anantkatiyar.Partner`. Put the client ID in `ios/Partner/Info.plist` (`GoogleClientID`) and in the server's `GOOGLE_CLIENT_IDS`.
 
 ### GET /api/auth/config
 

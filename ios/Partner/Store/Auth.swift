@@ -283,7 +283,7 @@ enum GoogleOAuth {
 // MARK: - Keychain (this device only)
 
 enum Keychain {
-    private static let service = "com.swipengo.app.auth"
+    private static let service = "com.anantkatiyar.Partner.auth"
 
     static func save(_ data: Data, for key: String) {
         delete(key)

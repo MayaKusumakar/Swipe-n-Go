@@ -4,7 +4,7 @@ LLM keeps this updated as the design changes. Our version is in client_architect
 
 Current state (iOS app in `ios/`, `Milestone1-v1` branch):
 
-- **Bundle ID (2026-11-16):** `com.swipengo.app` (tests `com.swipengo.app.tests`), changed from `com.anantkatiyar.Partner` so no person's name is in it. The Google iOS OAuth client uses this ID. Builds with the old ID install as a separate app, and the Keychain sign-in (`Auth.swift`, service `com.swipengo.app.auth`) starts fresh.
+- **Bundle ID:** `com.anantkatiyar.Partner` (tests `com.anantkatiyar.PartnerTests`), on Anant's Apple team, where the TestFlight app lives. It was briefly `com.swipengo.app` on 2026-11-16 and changed back to keep the TestFlight record. The Google iOS OAuth client must use this bundle ID.
 - **Platform:** SwiftUI, iOS 26+, Swift. Open `ios/Partner.xcodeproj`, or regenerate it from `ios/project.yml` with `xcodegen`. The app is called Swipe-n-Go on the home screen. The project and code are still named "Partner".
 - **Screens (tabs):** Explore (map and list) · Discover (swipe deck) · ＋ Host (opens the Host a plan sheet) · Chats · Plans. Profile opens from the avatar at the top right of each tab. Before anything else, a sign-in screen (`Views/Onboarding/SignInView.swift`): UC Davis Google accounts only. Then onboarding covers name, pronouns, age, interests, and location and notification permissions. Profile → Account shows the signed-in email and Sign out.
 - **State:** one `@Observable` store, `ios/Partner/Store/AppStore.swift`, shared through the SwiftUI environment. It saves to a JSON file on the device (`partner-state.json`).
