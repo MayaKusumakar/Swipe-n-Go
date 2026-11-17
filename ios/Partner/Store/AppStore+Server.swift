@@ -12,14 +12,15 @@ enum ServerStatus: Equatable {
 /// Keeps the shared events in sync with the backend. Everything else
 /// (joining, chats, requests) still lives on this phone for now.
 extension AppStore {
-    static let serverURLKey = "serverURL"
+    // ".v2": earlier builds saved a Mac's Wi-Fi address here; start everyone on the team server.
+    static let serverURLKey = "serverURL.v2"
     static let showSampleEventsKey = "showSampleEvents"
 
     static var defaultServerURL: String {
         #if targetEnvironment(simulator)
         "http://localhost:8080"     // the simulator shares the Mac's network
         #else
-        ""                          // on a phone, enter the Mac's Wi-Fi address in Profile → Server
+        "https://swipe-n-go-app.wl.r.appspot.com"   // the team server (App Engine); change in Profile → Server
         #endif
     }
 

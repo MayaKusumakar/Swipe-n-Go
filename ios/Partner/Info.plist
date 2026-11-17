@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>GoogleClientID</key>
-	<string></string>
+	<string>429318024050-quhgg4irk5561gsv0kkosg6d9jft13bt.apps.googleusercontent.com</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
