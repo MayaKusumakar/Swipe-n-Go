@@ -20,7 +20,7 @@ Goal: $0, hard-stopped. Never click "Activate full account" / "Upgrade" in Billi
 Budget data lags real usage by hours, so the cap is "stops soon after $1", not to the cent.
 The kill switch doesn't cover the Claude API: Anthropic bills separately (see below).
 
-The project is in the ucdavis.edu Google Cloud organization. A new project there takes a few
+The project is in the university's Google Cloud organization. A new project there takes a few
 minutes before Pub/Sub topics and function triggers can be created; retry if that fails.
 
 ## If the kill switch fires
@@ -37,8 +37,15 @@ infra/deploy.sh
 
 It refuses to deploy if `GOOGLE_CLIENT_IDS` in `backend/app.yaml` is still the placeholder, if the
 free-tier caps were removed, if an API key was put in `app.yaml`, or if billing is off. Then it
-runs the tests, deploys `app.yaml` and `cron.yaml` (gcloud asks before uploading), and checks
+runs the tests, deploys `app.yaml` and `cron.yaml` (gcloud asks before uploading), deletes old
+versions (each one stays reachable at its own `<version>-dot-...` address otherwise), and checks
 `/health`. Logs: `gcloud app logs tail --project=swipe-n-go-app`.
+
+- The app is HTTPS only: `app.yaml`'s `secure: always` redirects `http://` to `https://`, so a
+  sign-in token is never sent unencrypted. Keep it when editing `app.yaml`.
+- The cron job (`cron.yaml`) runs on Cloud Scheduler, whose API must be on (it is; one job is
+  within the free tier). On a new project: `gcloud services enable cloudscheduler.googleapis.com`.
+- You need to be a project owner (or have App Engine deploy rights) to run it.
 
 ## AI features (on since 2026-11-16)
 
@@ -49,16 +56,22 @@ rate limited there; the backend also limits each user (`docs/API.md`). Without t
 AI routes answer `503 ai_unavailable` and the app works on-device.
 
 Turn AI off: `gcloud secrets versions disable 1 --secret=anthropic-api-key --project=swipe-n-go-app`,
-then redeploy. To set the key up from scratch, store it in Secret Manager (never in `app.yaml`):
+then redeploy. To set the key up from scratch, store it in Secret Manager (never in `app.yaml`,
+never pasted into a chat). `read -rs` hides the key and keeps it out of your shell history:
 
 ```sh
-printf %s "sk-ant-..." | gcloud secrets create anthropic-api-key --data-file=- --project=swipe-n-go-app
+read -rs KEY   # paste the key, press Enter (nothing shows)
+printf %s "$KEY" | gcloud secrets create anthropic-api-key --data-file=- --project=swipe-n-go-app
+unset KEY
 gcloud secrets add-iam-policy-binding anthropic-api-key --project=swipe-n-go-app \
   --member=serviceAccount:swipe-n-go-app@appspot.gserviceaccount.com --role=roles/secretmanager.secretAccessor
 ```
 
+To replace the key later, add a new version the same way with
+`gcloud secrets versions add anthropic-api-key --data-file=- --project=swipe-n-go-app`.
 The backend reads it at startup (`backend/services/api_keys.py`), so redeploy or restart
-after adding it.
+after adding it. If it can't read the key, the startup log says
+"No Claude API key from Secret Manager".
 
 ## Redeploy the kill switch
 
