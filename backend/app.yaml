@@ -18,9 +18,9 @@ env_variables:
   AI_SUMMARIES: "on"
   # "Describe your plan" in Host a plan (POST /api/experimental/events/parse).
   EXPERIMENTS: "event_parse"
-  # Uncomment to read the seeded dev data instead of the default (production)
-  # namespace. Team decision pending.
-  # DATASTORE_NAMESPACE: dev
+  # Read and write the "dev" namespace, where scripts/seed_dev_events.py puts the
+  # club sample events (2026-11-16). Events people post go here too.
+  DATASTORE_NAMESPACE: dev
 
 # HTTPS only: plain http:// redirects to https://, so a sign-in token is never sent unencrypted.
 handlers:
