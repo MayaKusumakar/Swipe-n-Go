@@ -23,25 +23,18 @@ struct ServerSettingsView: View {
                 }
             }
 
-            Section {
-                TextField("http://192.168.1.20:8080", text: $draftURL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .focused($urlFocused)
-                    .submitLabel(.go)
-                    .onSubmit(applyAndTest)
-                Button(action: applyAndTest) {
-                    HStack {
-                        Text("Save & test connection")
-                        if testing { Spacer(); ProgressView() }
+            if AppStore.canChangeServer {
+                addressSection
+            } else {
+                Section {
+                    Button(action: testConnection) {
+                        HStack {
+                            Text("Test connection")
+                            if testing { Spacer(); ProgressView() }
+                        }
                     }
+                    .disabled(testing)
                 }
-                .disabled(testing)
-            } header: {
-                Text("Server address")
-            } footer: {
-                Text("Leave empty to use the app without a server. In the simulator, http://localhost:8080 works. On an iPhone, use your Mac's Wi‑Fi address (System Settings → Wi‑Fi → Details → IP Address) and keep both on the same network.")
             }
 
             Section {
@@ -50,10 +43,12 @@ struct ServerSettingsView: View {
                 Text("Sample events are built into the app and only exist on this phone. Turn them off to see only what people actually posted.")
             }
 
-            Section("Run the server on your Mac") {
-                Text("cd backend\npython3 -m venv .venv && source .venv/bin/activate\npip install -r requirements.txt\nEVENT_STORE=memory flask --app main run --host 0.0.0.0 --port 8080")
-                    .font(.system(.footnote, design: .monospaced))
-                    .textSelection(.enabled)
+            if AppStore.canChangeServer {
+                Section("Run the server on your Mac") {
+                    Text("cd backend\npython3 -m venv .venv && source .venv/bin/activate\npip install -r requirements.txt\nEVENT_STORE=memory flask --app main run --host 0.0.0.0 --port 8080")
+                        .font(.system(.footnote, design: .monospaced))
+                        .textSelection(.enabled)
+                }
             }
         }
         .navigationTitle("Server")
@@ -61,9 +56,37 @@ struct ServerSettingsView: View {
         .onAppear { draftURL = store.serverURLString }
     }
 
+    /// Debug builds only: point the app at a server on your Mac.
+    private var addressSection: some View {
+        Section {
+            TextField("http://192.168.1.20:8080", text: $draftURL)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($urlFocused)
+                .submitLabel(.go)
+                .onSubmit(applyAndTest)
+            Button(action: applyAndTest) {
+                HStack {
+                    Text("Save & test connection")
+                    if testing { Spacer(); ProgressView() }
+                }
+            }
+            .disabled(testing)
+        } header: {
+            Text("Server address")
+        } footer: {
+            Text("Leave empty to use the app without a server. In the simulator, http://localhost:8080 works. On an iPhone, use your Mac's Wi‑Fi address (System Settings → Wi‑Fi → Details → IP Address) and keep both on the same network.")
+        }
+    }
+
     private func applyAndTest() {
         urlFocused = false
         store.serverURLString = draftURL.trimmingCharacters(in: .whitespaces)
+        testConnection()
+    }
+
+    private func testConnection() {
         testing = true
         Task {
             await store.syncWithServer()

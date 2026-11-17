@@ -4,3 +4,4 @@ gunicorn==26.2.0
 anthropic==2.8.0
 pydantic==2.14.3
 python-dotenv==1.2.4
+google-cloud-secret-manager==2.32.0

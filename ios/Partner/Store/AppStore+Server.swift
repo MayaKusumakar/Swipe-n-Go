@@ -15,8 +15,23 @@ extension AppStore {
     static let serverURLKey = "serverURL"
     static let showSampleEventsKey = "showSampleEvents"
 
+    /// The deployed backend (App Engine). Release builds always use it.
+    static let productionServerURL = "https://swipe-n-go-app.wl.r.appspot.com"
+
+    /// Release builds can't change the server, so a student can't be talked into
+    /// sending their sign-in token to someone else's server. Debug builds can.
+    static var canChangeServer: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
     static var defaultServerURL: String {
-        #if targetEnvironment(simulator)
+        #if !DEBUG
+        productionServerURL
+        #elseif targetEnvironment(simulator)
         "http://localhost:8080"     // the simulator shares the Mac's network
         #else
         ""                          // on a phone, enter the Mac's Wi-Fi address in Profile → Server
@@ -26,11 +41,15 @@ extension AppStore {
     var serverURL: URL? {
         // Guests have no account, so they use the on-phone versions of everything.
         guard !isGuest else { return nil }
+        #if DEBUG
         let trimmed = serverURLString.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         let withScheme = trimmed.contains("://") ? trimmed : "http://" + trimmed
         guard let url = URL(string: withScheme), url.host() != nil else { return nil }
         return url
+        #else
+        return URL(string: Self.productionServerURL)
+        #endif
     }
 
     /// Events shown in Discover and Explore: server events and your own,
