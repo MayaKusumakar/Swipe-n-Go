@@ -19,23 +19,25 @@ struct SignInView: View {
                 VStack(spacing: 28) {
                     Spacer(minLength: 60)
                     header
-                    if Auth.googleClientID != nil {
-                        googleButton
-                    } else {
-                        notice("UC Davis sign-in is coming soon. For now, continue as a guest.")
-                    }
                     if let message = store.auth.message {
                         notice(message)
                     }
-                    guestButton
+                    if Auth.googleClientID != nil {
+                        googleButton
+                    } else if devAvailable {
+                        devSignIn
+                    } else {
+                        // TEMPORARY (until the team server is online): with no way to sign in,
+                        // guest keeps the app usable. Hidden whenever UC Davis sign-in works.
+                        guestButton
+                    }
                     #if DEBUG
                     Button("Continue in Demo Mode") {
                         store.enterDemoMode()
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.white)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.9))
                     #endif
-                    if devAvailable { devSignIn }
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 40)
@@ -109,42 +111,38 @@ struct SignInView: View {
     }
 
     private var devSignIn: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Dev sign-in (local server only)")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.9))
+        // TEMPORARY: dev sign-in on the local server, styled as the main sign-in
+        // until Google sign-in and the team server are online.
+        VStack(spacing: 12) {
             TextField("you@ucdavis.edu", text: $devEmail)
                 .textContentType(.emailAddress)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .padding(12)
-                .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 12))
+                .padding(14)
+                .background(.white, in: Capsule())
                 .accessibilityIdentifier("devEmail")
-            Text("Display name (no password needed). People see this on your events.")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.85))
-            TextField("Display name, e.g. Anant K", text: $devName)
+            TextField("Your name", text: $devName)
                 .textContentType(.name)
                 .accessibilityLabel("Display name")
-                .padding(12)
-                .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 12))
+                .padding(14)
+                .background(.white, in: Capsule())
             Button {
                 store.auth.signInForDevelopment(email: devEmail, name: devName)
                 if store.auth.isSignedIn { Task { await store.confirmSignIn() } }
             } label: {
-                Text("Continue")
+                Text("Sign in with UC Davis")
                     .font(.headline)
+                    .foregroundStyle(devEmail.isEmpty ? .white.opacity(0.6) : .white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 16)
+                    .overlay(Capsule().strokeBorder(.white.opacity(devEmail.isEmpty ? 0.4 : 0.9), lineWidth: 1.5))
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.bordered)
-            .tint(.white)
+            .buttonStyle(.plain)
             .disabled(devEmail.isEmpty)
             .accessibilityIdentifier("devContinue")
         }
-        .padding(16)
-        .background(.black.opacity(0.15), in: RoundedRectangle(cornerRadius: 18))
     }
 
     private func notice(_ text: String) -> some View {

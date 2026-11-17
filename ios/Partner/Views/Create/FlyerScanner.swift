@@ -422,6 +422,16 @@ struct FlyerReviewView: View {
 
     private func isMissing(_ field: String) -> Bool { result.missing.contains(field) }
 
+    /// What still blocks "Apply details", in form order, so the host knows why it's greyed out.
+    private var stillNeeded: [String] {
+        var needed: [String] = []
+        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { needed.append("enter the event name") }
+        if date <= .now { needed.append("pick a start time in the future") }
+        if !confirmedDate { needed.append("turn on \"I checked the date and time\"") }
+        if location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { needed.append("enter the location") }
+        return needed
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -452,6 +462,11 @@ struct FlyerReviewView: View {
                     }
                     Text("Check the details. Anything marked in orange wasn't \(result.source == .text ? "in the description" : "on the flyer") or wasn't clear, so fill it in before posting.")
                         .font(.subheadline)
+                    if !stillNeeded.isEmpty {
+                        Label("To apply: \(stillNeeded.joined(separator: ", ")).", systemImage: "info.circle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
                 }
                 Section {
                     TextField("Enter event name", text: $title)
@@ -552,9 +567,7 @@ struct FlyerReviewView: View {
                                             cover: useCover ? result.image : nil))
                         dismiss()
                     }
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                              || location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                              || !confirmedDate || date <= .now)
+                    .disabled(!stillNeeded.isEmpty)
                 }
             }
         }

@@ -69,7 +69,7 @@
 		6454AD1A73FA3BE7737227D0 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		6AC7CC9628CF6412B1E45D4A /* CreateActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateActivityView.swift; sourceTree = "<group>"; };
 		6D86B57B81A57FE1E86F9D54 /* PlannerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerModel.swift; sourceTree = "<group>"; };
-		754167B23102BC3799231DC7 /* Partner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Partner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		754167B23102BC3799231DC7 /* Partner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Partner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		78F3915B230AAFF94DBEAA9D /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		79E743B2A5BE8F6B56B079C9 /* PartnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartnerApp.swift; sourceTree = "<group>"; };
 		7F815429750237E8356B4235 /* AppStore+Server.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppStore+Server.swift"; sourceTree = "<group>"; };
@@ -338,7 +338,6 @@
 						ProvisioningStyle = Automatic;
 					};
 					CD53C926C4E079173F476DF8 = {
-						DevelopmentTeam = M76UVM926F;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -514,7 +513,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Swipe-n-Go";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo of an event flyer to fill in event details.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Swipe-n-Go connects to your team's development server on this Wi-Fi network to share events.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Swipe-n-Go uses your location to show events and people near you.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record a spoken description of the plan you want to host.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your spoken description to fill in plan details.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -638,7 +640,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Swipe-n-Go";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo of an event flyer to fill in event details.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Swipe-n-Go connects to your team's development server on this Wi-Fi network to share events.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Swipe-n-Go uses your location to show events and people near you.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record a spoken description of the plan you want to host.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your spoken description to fill in plan details.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
