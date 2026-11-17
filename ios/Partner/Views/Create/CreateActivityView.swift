@@ -949,7 +949,9 @@ struct CreateActivityView: View {
         published = true
         store.show(InAppBanner(
             title: schedulePost ? "Your post is scheduled" : (repeats ? "Your event series is live!" : "Your plan is live!"),
-            subtitle: schedulePost ? "Manage it in Plans → Hosting → Scheduled." : "People can now find your plan.",
+            subtitle: schedulePost ? "Manage it in Plans → Hosting → Scheduled."
+                : store.isGuest ? "Saved on this iPhone. Sign in to share it with other students."
+                : "People can now find your plan.",
             symbol: schedulePost ? "clock" : category.symbol, color: category.color
         ))
         dismiss()

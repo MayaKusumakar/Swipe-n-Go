@@ -174,7 +174,7 @@ struct OnboardingView: View {
                     .minimumScaleFactor(0.7)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 24)
-                Text("Never do it alone.\nFind people for runs, shows, food and everything in between.")
+                Text("Never do it alone.\nFind people to go with, from club sports to culture nights.")
                     .font(.title3.weight(.medium))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white.opacity(0.92))

@@ -22,11 +22,12 @@ struct SignInView: View {
                     if Auth.googleClientID != nil {
                         googleButton
                     } else {
-                        notice("Google sign-in isn't set up in this build yet. Add the iOS client ID as GoogleClientID in Partner/Info.plist.")
+                        notice("UC Davis sign-in is coming soon. For now, continue as a guest.")
                     }
                     if let message = store.auth.message {
                         notice(message)
                     }
+                    guestButton
                     #if DEBUG
                     Button("Continue in Demo Mode") {
                         store.enterDemoMode()
@@ -52,10 +53,35 @@ struct SignInView: View {
             Text("Swipe-n-Go")
                 .font(.system(size: 44, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
-            Text("For UC Davis students.\nSign in with your @ucdavis.edu Google account.")
+            Text(Auth.googleClientID == nil
+                 ? "For UC Davis students.\nFind people to go to club events with."
+                 : "For UC Davis students.\nSign in with your @ucdavis.edu Google account.")
                 .font(.title3.weight(.medium))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.white.opacity(0.9))
+        }
+    }
+
+    /// For testers (TestFlight) until sign-in and the shared server are ready.
+    private var guestButton: some View {
+        VStack(spacing: 8) {
+            Button {
+                store.continueAsGuest()
+            } label: {
+                Text("Continue as guest")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.8), lineWidth: 1.5))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("continueAsGuest")
+            Text("Try it with sample club events. Plans you make stay on this iPhone.")
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.white.opacity(0.85))
         }
     }
 

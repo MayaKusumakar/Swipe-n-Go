@@ -81,6 +81,23 @@ private struct ProfileContent: View {
                 }
             }
 
+            if store.isGuest {
+                Section {
+                    LabeledContent {
+                        Text("Plans stay on this iPhone")
+                    } label: {
+                        Label("Guest", systemImage: "person.crop.circle.badge.questionmark")
+                    }
+                    Button { store.leaveGuestMode() } label: {
+                        Label("Sign in with UC Davis", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                } header: {
+                    Text("Account")
+                } footer: {
+                    Text("Sign in to share plans with other students. What you made as a guest stays.")
+                }
+            }
+
             if let account = store.auth.account {
                 Section {
                     LabeledContent {

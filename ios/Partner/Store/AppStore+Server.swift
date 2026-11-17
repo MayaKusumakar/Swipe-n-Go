@@ -24,6 +24,8 @@ extension AppStore {
     }
 
     var serverURL: URL? {
+        // Guests have no account, so they use the on-phone versions of everything.
+        guard !isGuest else { return nil }
         let trimmed = serverURLString.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         let withScheme = trimmed.contains("://") ? trimmed : "http://" + trimmed

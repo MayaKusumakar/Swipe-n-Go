@@ -93,7 +93,28 @@ final class AppStore {
         #if DEBUG
         if isDemoMode { return true }
         #endif
-        return auth.isSignedIn
+        return auth.isSignedIn || isGuest
+    }
+
+    // MARK: Guest mode (until the shared server and Google sign-in are ready)
+
+    static let guestModeKey = "guestMode"
+
+    /// Using the app without an account: sample club events and plans kept on this phone.
+    /// Guests never talk to the server (see `serverURL`), so nothing is shared.
+    var isGuest: Bool = UserDefaults.standard.bool(forKey: AppStore.guestModeKey) {
+        didSet { UserDefaults.standard.set(isGuest, forKey: AppStore.guestModeKey) }
+    }
+
+    func continueAsGuest() {
+        auth.message = nil
+        isGuest = true
+    }
+
+    /// Back to the sign-in screen. Everything made as a guest stays, and plans you host
+    /// are shared once you're signed in.
+    func leaveGuestMode() {
+        isGuest = false
     }
 
     #if DEBUG
@@ -823,6 +844,7 @@ final class AppStore {
     /// Wipes everything, including the profile, and returns to onboarding.
     func resetEverything() {
         auth.signOut()
+        isGuest = false
         try? FileManager.default.removeItem(at: fileURL)
         hasOnboarded = false
         drafts = []
