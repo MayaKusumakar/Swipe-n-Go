@@ -1,6 +1,6 @@
 name: Partner
 options:
-  bundleIdPrefix: com.anantkatiyar
+  bundleIdPrefix: com.swipengo
   deploymentTarget:
     iOS: "26.0"
   createIntermediateGroups: true
@@ -19,7 +19,7 @@ targets:
           - Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.anantkatiyar.Partner
+        PRODUCT_BUNDLE_IDENTIFIER: com.swipengo.app
         PRODUCT_NAME: Partner
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: YES
@@ -44,7 +44,7 @@ targets:
       - target: Partner
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.anantkatiyar.PartnerTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.swipengo.app.tests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: M76UVM926F

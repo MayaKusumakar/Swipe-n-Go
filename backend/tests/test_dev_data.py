@@ -2,17 +2,29 @@ from datetime import timedelta
 
 from conftest import FIXED_NOW, make_event, signed_in
 from main import create_app
-from repositories.dev_sample_events import build_sample_events
+from models import LEVELS
+from repositories.dev_sample_events import SAMPLE_EVENTS, build_sample_events
 from repositories.memory_event_repository import InMemoryEventRepository
 
 
 def test_sample_events_are_upcoming_with_unique_ids():
     events = build_sample_events(FIXED_NOW)
 
-    assert len(events) == 8
-    assert len({e.id for e in events}) == 8
+    assert len(events) == len(SAMPLE_EVENTS)
+    assert len({e.id for e in events}) == len(SAMPLE_EVENTS)
     assert all(e.start_time > FIXED_NOW for e in events)
     assert all(e.end_time > e.start_time for e in events)
+
+
+def test_sample_events_are_club_events_the_app_can_show():
+    # The iOS app's own categories (ActivityCategory), so none fall back to "Day Out" by accident.
+    app_categories = {"run", "gym", "hike", "cycling", "sports", "yoga", "food", "coffee", "drinks",
+                      "concert", "movies", "art", "study", "games", "explore"}
+    for event in build_sample_events(FIXED_NOW):
+        assert event.category in app_categories
+        assert event.host_name and event.host_name.endswith("Club")
+        assert event.level in LEVELS
+        assert event.geohash is not None
 
 
 def test_memory_repository_filters_past_sorts_and_limits():
@@ -34,6 +46,6 @@ def test_memory_event_store_serves_sample_events(monkeypatch):
 
     assert response.status_code == 200
     body = response.get_json()
-    assert body["count"] == 8
+    assert body["count"] == len(SAMPLE_EVENTS)
     starts = [e["start_time"] for e in body["events"]]
     assert starts == sorted(starts)

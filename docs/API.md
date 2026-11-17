@@ -1,12 +1,12 @@
 # API
 
-Matches the server code in `backend/` on the `Milestone1-v1` branch (`backend/api/`).
+Matches the server code in `backend/` on `main` plus the `m1-server-deployment` branch (`backend/api/`).
 
 Base URL:
 - Local, in the iOS simulator: `http://localhost:8080`
 - Local, on a real iPhone on the same Wi‑Fi: `http://<your Mac's IP>:8080`
 - Android emulator: `http://10.0.2.2:8080`
-- App Engine: not deployed yet
+- App Engine: `https://swipe-n-go-app.wl.r.appspot.com` (project `swipe-n-go-app`, deployed 2026-11-16 with `infra/deploy.sh`; HTTPS only, `http://` redirects). Release builds of the iOS app always use this address.
 
 Run locally with built-in sample events and no Google Cloud setup (events posted while it runs are kept in memory and lost on restart):
 
@@ -31,6 +31,20 @@ Try it locally with dev sign-in (no Google setup): start the server with `DEV_SI
 curl -H "Authorization: Bearer dev:maya@ucdavis.edu:Maya" localhost:8080/api/events
 ```
 
+**Per-user limits** (signed-in `/api/*` requests only). Going over one answers `429 rate_limited` with a `Retry-After` header (seconds) and a message the app can show as is, e.g. `"You're making requests too quickly. Try again in 42 seconds."` Refused requests don't count.
+
+| Limit | Applies to |
+|---|---|
+| 120 per minute | every `/api/*` request |
+| 20 per day | `POST /api/events` |
+| 60 per hour | `POST /api/events/<id>/attendees` |
+| 5 per minute and 20 per day | `POST /api/planner` |
+| 5 per minute and 20 per day | `POST /api/flyers/read` |
+| 30 per hour | `PUT /api/events/<id>/cover` |
+| 20 per day (plus the experimental package's own 10 per minute) | `POST /api/experimental/events/parse` |
+
+Windows are fixed: each minute, hour, or UTC day (midnight UTC = 4 pm in Davis in winter) starts fresh. Counts are kept in the server's memory (`backend/services/rate_limiter.py`), so a restart or deploy resets them; with `max_instances: 1` they cover the whole app.
+
 ---
 
 ## Sign-in
@@ -46,7 +60,7 @@ The account id is Google's `sub`. Events store it as `host_id`, and an attendee'
 
 **Dev sign-in** (local testing only): with `DEV_SIGN_IN=on`, the server also accepts `dev:<email>:<name>` tokens. The email must still be @ucdavis.edu, and the account id is `dev-<email>`. It is always off on App Engine (`GAE_ENV` set), whatever the setting.
 
-Setup (one person, free, no billing): Google Cloud Console → APIs & Services → OAuth consent screen, then Credentials → Create OAuth client ID → iOS, with bundle ID `com.anantkatiyar.Partner`. Put the client ID in `ios/Partner/Info.plist` (`GoogleClientID`) and in the server's `GOOGLE_CLIENT_IDS`.
+Setup (one person, free, no billing): Google Cloud Console → APIs & Services → OAuth consent screen, then Credentials → Create OAuth client ID → iOS, with bundle ID `com.swipengo.app`. Put the client ID in `ios/Partner/Info.plist` (`GoogleClientID`) and in the server's `GOOGLE_CLIENT_IDS`.
 
 ### GET /api/auth/config
 
@@ -216,7 +230,7 @@ Code: `backend/api/events.py` (route), `backend/api/event_input.py` (validation)
 
 ## POST /api/planner
 
-The AI planner behind the app's "I'm free…" screen. The app sends what the student typed, their interests, and the events it can see. Claude (`claude-opus-5-5`, low effort, structured output) reads them and returns picks with a reason for each. The Claude API key stays on the server (`ANTHROPIC_API_KEY`: in `backend/.env` locally, Secret Manager in production). Nothing is stored.
+The AI planner behind the app's "I'm free…" screen. The app sends what the student typed, their interests, and the events it can see. Claude (`claude-opus-5-5`, low effort, structured output) reads them and returns picks with a reason for each. The Claude API key stays on the server (`ANTHROPIC_API_KEY`: in `backend/.env` locally; on App Engine it's loaded at startup from the Secret Manager secret `anthropic-api-key` if that exists, see `infra/README.md`). Nothing is stored.
 
 Request body (JSON):
 ```json

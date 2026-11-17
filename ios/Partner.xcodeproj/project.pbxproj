@@ -521,7 +521,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.anantkatiyar.Partner;
+				PRODUCT_BUNDLE_IDENTIFIER = com.swipengo.app;
 				PRODUCT_NAME = Partner;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
@@ -540,7 +540,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.anantkatiyar.PartnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.swipengo.app.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Partner.app/Partner";
@@ -559,7 +559,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.anantkatiyar.PartnerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.swipengo.app.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Partner.app/Partner";
@@ -645,7 +645,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.anantkatiyar.Partner;
+				PRODUCT_BUNDLE_IDENTIFIER = com.swipengo.app;
 				PRODUCT_NAME = Partner;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;

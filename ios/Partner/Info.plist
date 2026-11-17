@@ -14,7 +14,7 @@
 	     (dev sign-in against a local server with DEV_SIGN_IN=on still works). The backend needs the
 	     same ID in GOOGLE_CLIENT_IDS. -->
 	<key>GoogleClientID</key>
-	<string></string>
+	<string>429318024050-quhgg4irk5561gsv0kkosg6d9jft13bt.apps.googleusercontent.com</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Swipe-n-Go connects to your team's development server on this Wi-Fi network to share events.</string>
 </dict>

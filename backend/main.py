@@ -14,6 +14,7 @@ from api.events import events_bp
 from api.flyers import flyers_bp
 from api.health import health_bp
 from api.planner import planner_bp
+from api.rate_limits import enforce_rate_limits
 from api.saved import saved_bp
 from api.tasks import tasks_bp
 from experimental import register_experiments
@@ -25,6 +26,8 @@ from services.auth_service import AuthService
 from services.event_service import EventService
 from services.flyer_service import FlyerService
 from services.planner_service import PlannerService
+from services.rate_limiter import RateLimiter
+from services.api_keys import load_anthropic_key
 from services.summary_service import SummaryService
 
 
@@ -47,7 +50,8 @@ def _default_user_repository():
 
 
 def create_app(event_service=None, planner_service=None, summary_service=None,
-               auth_service=None, user_repository=None, flyer_service=None, experiments=None):
+               auth_service=None, user_repository=None, flyer_service=None, experiments=None,
+               rate_limiter=None):
     app = Flask(__name__)
     # Flyer photos are the biggest request (~0.5 MB from the app); anything over 8 MB is refused.
     app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
@@ -56,6 +60,9 @@ def create_app(event_service=None, planner_service=None, summary_service=None,
     app.extensions["auth_service"] = auth_service or AuthService()
     app.extensions["user_repository"] = user_repository or _default_user_repository()
     app.before_request(require_signed_in_user)
+    # Per-user limits, counted in memory; runs after the sign-in check so it knows who's asking.
+    app.extensions["rate_limiter"] = rate_limiter or RateLimiter()
+    app.before_request(enforce_rate_limits)
 
     # Tests pass in their own services.
     event_service = event_service or EventService(_default_repository())
@@ -81,4 +88,6 @@ def create_app(event_service=None, planner_service=None, summary_service=None,
     return app
 
 
+# On App Engine, before any service reads ANTHROPIC_API_KEY. Does nothing locally.
+load_anthropic_key()
 app = create_app()

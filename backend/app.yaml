@@ -9,7 +9,21 @@ automatic_scaling:
   min_instances: 0
   max_instances: 1
 
-# Uncomment to have the deployed app read the seeded dev data instead of the
-# default (production) namespace. Team decision pending.
-# env_variables:
-#   DATASTORE_NAMESPACE: dev
+env_variables:
+  # Google sign-in: the iOS OAuth client ID (not a secret). Required: without it every
+  # /api request answers 401. infra/deploy.sh refuses to deploy the placeholder.
+  GOOGLE_CLIENT_IDS: "429318024050-quhgg4irk5561gsv0kkosg6d9jft13bt.apps.googleusercontent.com"
+  # AI features on. The Claude key comes from Secret Manager (services/api_keys.py),
+  # never from this file. The planner and flyer reader need only the key.
+  AI_SUMMARIES: "on"
+  # "Describe your plan" in Host a plan (POST /api/experimental/events/parse).
+  EXPERIMENTS: "event_parse"
+  # Uncomment to read the seeded dev data instead of the default (production)
+  # namespace. Team decision pending.
+  # DATASTORE_NAMESPACE: dev
+
+# HTTPS only: plain http:// redirects to https://, so a sign-in token is never sent unencrypted.
+handlers:
+- url: /.*
+  script: auto
+  secure: always
