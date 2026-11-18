@@ -81,6 +81,38 @@ private struct ProfileContent: View {
                 }
             }
 
+            if store.isGuest {
+                Section {
+                    LabeledContent {
+                        Text("Plans stay on this iPhone")
+                    } label: {
+                        Label("Guest", systemImage: "person.crop.circle.badge.questionmark")
+                    }
+                    Button { store.leaveGuestMode() } label: {
+                        Label("Sign in with UC Davis", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                } header: {
+                    Text("Account")
+                } footer: {
+                    Text("Sign in to share plans with other students. What you made as a guest stays.")
+                }
+            }
+
+            if let account = store.auth.account {
+                Section {
+                    LabeledContent {
+                        Text(account.email)
+                    } label: {
+                        Label(account.mode == .dev ? "Dev sign-in" : "UC Davis Google", systemImage: "person.crop.circle.badge.checkmark")
+                    }
+                    Button(role: .destructive) { store.auth.signOut() } label: {
+                        Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                } header: {
+                    Text("Account")
+                }
+            }
+
             Section {
                 NavigationLink { ServerSettingsView() } label: {
                     LabeledContent {

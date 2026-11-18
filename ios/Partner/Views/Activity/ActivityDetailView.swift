@@ -111,7 +111,8 @@ struct ActivityDetailView: View {
             .frame(width: geo.size.width, height: geo.size.height + stretch)
             .offset(y: -stretch)
         }
-        .frame(height: 360)
+        // A poster cover gets a tall header so the whole flyer shows.
+        .frame(height: CoverShape.isPoster(live.coverPhotoData) ? 520 : 360)
     }
 
     // MARK: Facts

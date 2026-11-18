@@ -1,5 +1,4 @@
-from conftest import FakeEventRepository
-from main import create_app
+from conftest import FakeEventRepository, make_app, signed_in
 from services.event_service import EventService
 
 
@@ -20,9 +19,7 @@ def test_wrong_method_returns_json_405(client):
 def test_unexpected_crash_returns_json_500():
     repository = FakeEventRepository()
     repository.error = RuntimeError("bug")
-    app = create_app(EventService(repository))
-
-    response = app.test_client().get("/api/events")
+    response = signed_in(make_app(EventService(repository))).get("/api/events")
 
     assert response.status_code == 500
     assert response.get_json() == {

@@ -35,3 +35,27 @@ targets:
         ENABLE_PREVIEWS: YES
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: M76UVM926F
+  PartnerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - PartnerTests
+    dependencies:
+      - target: Partner
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.anantkatiyar.PartnerTests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: M76UVM926F
+schemes:
+  Partner:
+    build:
+      targets:
+        Partner: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - PartnerTests

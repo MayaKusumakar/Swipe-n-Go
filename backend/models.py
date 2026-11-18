@@ -2,12 +2,21 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from services import geo
+
 EVENT_KIND = "Event"
+# One cover photo per event, stored apart from the event so lists stay small.
+COVER_KIND = "Cover"
 ATTENDEE_KIND = "Attendee"
+USER_KIND = "User"
 
 # Attendee.status values.
 PENDING = "pending"
 APPROVED = "approved"
+
+# Long text that is never filtered on. Unindexed properties can be longer than
+# 1,500 bytes and don't add index entries (fewer Datastore writes).
+UNINDEXED_EVENT_PROPERTIES = ("description", "summary")
 
 # Allowed values for Event.level. None means "not specified".
 LEVELS = ("anyone", "beginner", "intermediate", "advanced")
@@ -38,9 +47,25 @@ class Event:
     # Private location: hidden from GET /api/events, shown only to the host and
     # to approved attendees through GET /api/events/<id>/location.
     location_private: bool = False
-    # SHA-256 of the secret host token returned once when the event is created.
-    # Never sent to clients.
-    host_token_hash: str | None = None
+    # Account id (Google "sub") of the signed-in @ucdavis.edu user who created it.
+    host_id: str | None = None
+    # Short "what is this / what to bring" blurb, rewritten by the
+    # /tasks/summarize-stale cron job whenever summary_stale is set.
+    summary: str | None = None
+    summary_stale: bool = False
+    summary_updated_at: datetime | None = None
+
+    @property
+    def geohash(self):
+        """Stored so nearby searches can use prefix range queries (see services/geo.py)."""
+        if self.latitude is None or self.longitude is None:
+            return None
+        return geo.encode(self.latitude, self.longitude)
+
+    @property
+    def is_full(self):
+        # Capacity counts the host, like the iOS app's spotsLeft.
+        return self.capacity is not None and self.attendee_count >= self.capacity - 1
 
     @classmethod
     def from_entity(cls, entity):
@@ -64,7 +89,10 @@ class Event:
             level=entity.get("level"),
             requires_approval=bool(entity.get("requires_approval", False)),
             location_private=bool(entity.get("location_private", False)),
-            host_token_hash=entity.get("host_token_hash"),
+            host_id=entity.get("host_id"),
+            summary=entity.get("summary"),
+            summary_stale=bool(entity.get("summary_stale", False)),
+            summary_updated_at=entity.get("summary_updated_at"),
         )
 
     def to_entity_properties(self):
@@ -88,7 +116,11 @@ class Event:
             "level": self.level,
             "requires_approval": self.requires_approval,
             "location_private": self.location_private,
-            "host_token_hash": self.host_token_hash,
+            "host_id": self.host_id,
+            "geohash": self.geohash,
+            "summary": self.summary,
+            "summary_stale": self.summary_stale,
+            "summary_updated_at": self.summary_updated_at,
         }
 
     def to_dict(self):
@@ -105,6 +137,7 @@ class Event:
             "longitude": None if hidden else self.longitude,
             "category": self.category,
             "image_url": self.image_url,
+            "host_id": self.host_id,
             "host_name": self.host_name,
             "address": None if hidden else self.address,
             "capacity": self.capacity,
@@ -114,6 +147,7 @@ class Event:
             "level": self.level,
             "requires_approval": self.requires_approval,
             "location_private": self.location_private,
+            "summary": self.summary,
         }
 
     def location_dict(self):
@@ -128,12 +162,12 @@ class Event:
 
 @dataclass
 class Attendee:
-    """Someone who asked to join an event. Holds a hash of their secret token."""
+    """A signed-in user who asked to join an event. `id` is their account id,
+    so each person has at most one attendee entry per event."""
     id: str
     event_id: str
     name: str
     status: str
-    token_hash: str
     created_at: datetime
 
     @classmethod
@@ -143,7 +177,6 @@ class Attendee:
             event_id=str(entity.key.parent.id_or_name),
             name=entity.get("name", ""),
             status=entity.get("status", PENDING),
-            token_hash=entity.get("token_hash", ""),
             created_at=entity["created_at"],
         )
 
@@ -151,9 +184,57 @@ class Attendee:
         return {
             "name": self.name,
             "status": self.status,
-            "token_hash": self.token_hash,
             "created_at": self.created_at,
         }
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "status": self.status}
+
+
+@dataclass
+class User:
+    """A signed-in @ucdavis.edu account. Saved on sign-in; requests are checked
+    from the Google token alone, so normal requests never read this."""
+    id: str
+    email: str
+    name: str
+    picture_url: str | None
+    created_at: datetime
+    last_sign_in_at: datetime
+    # The name they chose in the app's profile. Shown on their events and join
+    # requests instead of the sign-in name when set.
+    display_name: str | None = None
+    # Events saved for later, newest last. Kept on the account so every device sees them.
+    saved_event_ids: list[str] = field(default_factory=list)
+
+    @property
+    def shown_name(self):
+        return self.display_name or self.name
+
+    @classmethod
+    def from_entity(cls, entity):
+        return cls(
+            id=str(entity.key.id_or_name),
+            email=entity.get("email", ""),
+            name=entity.get("name", ""),
+            picture_url=entity.get("picture_url"),
+            created_at=entity["created_at"],
+            last_sign_in_at=entity["last_sign_in_at"],
+            display_name=entity.get("display_name"),
+            saved_event_ids=list(entity.get("saved_event_ids") or []),
+        )
+
+    def to_entity_properties(self):
+        return {
+            "email": self.email,
+            "name": self.name,
+            "picture_url": self.picture_url,
+            "created_at": self.created_at,
+            "last_sign_in_at": self.last_sign_in_at,
+            "display_name": self.display_name,
+            "saved_event_ids": list(self.saved_event_ids),
+        }
+
+    def to_dict(self):
+        return {"id": self.id, "email": self.email, "name": self.shown_name, "picture_url": self.picture_url,
+                "display_name": self.display_name}

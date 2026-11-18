@@ -295,7 +295,7 @@ struct ActivityCover: View {
 
     var body: some View {
         GeometryReader { geometry in
-            if let photoData, let photo = UIImage(data: photoData) {
+            if let photoData, let photo = CoverImageCache.image(photoData) {
                 Image(uiImage: photo)
                     .resizable()
                     .scaledToFill()
@@ -305,6 +305,25 @@ struct ActivityCover: View {
                 CategoryBackdrop(category: category)
             }
         }
+    }
+}
+
+/// Decoded covers, so scrolling and the 15-second sync don't decode JPEGs again on the main thread.
+@MainActor
+enum CoverImageCache {
+    private static let cache: NSCache<NSData, UIImage> = {
+        let cache = NSCache<NSData, UIImage>()
+        cache.countLimit = 60
+        return cache
+    }()
+
+    static func image(_ data: Data) -> UIImage? {
+        let key = data as NSData
+        if let cached = cache.object(forKey: key) { return cached }
+        guard let image = UIImage(data: data) else { return nil }
+        let ready = image.preparingForDisplay() ?? image
+        cache.setObject(ready, forKey: key)
+        return ready
     }
 }
 

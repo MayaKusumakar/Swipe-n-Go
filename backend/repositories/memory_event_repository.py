@@ -12,6 +12,7 @@ class InMemoryEventRepository:
         self._events = sorted(events, key=lambda event: event.start_time)
         self._lock = threading.Lock()
         self._attendees = {}  # (event_id, attendee_id) -> Attendee
+        self._covers = {}     # event_id -> JPEG bytes
 
     def list_upcoming(self, now, limit):
         with self._lock:
@@ -28,6 +29,64 @@ class InMemoryEventRepository:
     def get(self, event_id):
         with self._lock:
             return next((event for event in self._events if event.id == event_id), None)
+
+    def rename_host(self, host_id, host_name):
+        with self._lock:
+            changed = [e for e in self._events if e.host_id == host_id and e.host_name != host_name]
+            for event in changed:
+                event.host_name = host_name
+        return len(changed)
+
+    def save_cover(self, event_id, data, image_url):
+        with self._lock:
+            event = self._find(event_id)
+            if event is None:
+                return False
+            self._covers[event_id] = data
+            event.image_url = image_url
+        return True
+
+    def get_cover(self, event_id):
+        with self._lock:
+            return self._covers.get(event_id)
+
+    def list_in_geohash_cells(self, prefixes):
+        with self._lock:
+            return [event for event in self._events
+                    if event.geohash and event.geohash.startswith(tuple(prefixes))]
+
+    def list_stale_summaries(self, limit):
+        with self._lock:
+            return [event for event in self._events if event.summary_stale][:limit]
+
+    def save_summary(self, event_id, summary, updated_at, attendee_count):
+        with self._lock:
+            event = self._find(event_id)
+            if event is None:
+                return
+            event.summary = summary
+            event.summary_updated_at = updated_at
+            event.summary_stale = event.attendee_count != attendee_count
+
+    def update_attendance(self, event_id, attendee, delta, delete=False):
+        """Same contract as EventRepository.update_attendance."""
+        with self._lock:
+            event = self._find(event_id)
+            if event is None:
+                return None
+            if delta > 0 and event.is_full:
+                return False
+            event.attendee_count = max(0, event.attendee_count + delta)
+            if delta:
+                event.summary_stale = True
+            if delete:
+                self._attendees.pop((event_id, attendee.id), None)
+            else:
+                self._attendees[(event_id, attendee.id)] = attendee
+        return True
+
+    def _find(self, event_id):
+        return next((event for event in self._events if event.id == event_id), None)
 
     def list_attendees(self, event_id):
         with self._lock:

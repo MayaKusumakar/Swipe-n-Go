@@ -1,18 +1,21 @@
 from datetime import timedelta
 
-from conftest import FIXED_NOW, make_event
+from conftest import FIXED_NOW, make_event, signed_in
 from main import create_app
-from repositories.dev_sample_events import build_sample_events
+from repositories.dev_sample_events import SAMPLE_EVENTS, build_sample_events
+from services.flyer_service import CATEGORIES
 from repositories.memory_event_repository import InMemoryEventRepository
 
 
 def test_sample_events_are_upcoming_with_unique_ids():
     events = build_sample_events(FIXED_NOW)
 
-    assert len(events) == 8
-    assert len({e.id for e in events}) == 8
+    assert len(events) == len(SAMPLE_EVENTS)
+    assert len({e.id for e in events}) == len(SAMPLE_EVENTS)
     assert all(e.start_time > FIXED_NOW for e in events)
     assert all(e.end_time > e.start_time for e in events)
+    # Samples are club events in the app's club categories.
+    assert all(e.category in CATEGORIES for e in events)
 
 
 def test_memory_repository_filters_past_sorts_and_limits():
@@ -27,11 +30,13 @@ def test_memory_repository_filters_past_sorts_and_limits():
 
 def test_memory_event_store_serves_sample_events(monkeypatch):
     monkeypatch.setenv("EVENT_STORE", "memory")
+    monkeypatch.setenv("DEV_SIGN_IN", "on")
+    monkeypatch.delenv("GAE_ENV", raising=False)
 
-    response = create_app().test_client().get("/api/events")
+    response = signed_in(create_app()).get("/api/events")
 
     assert response.status_code == 200
     body = response.get_json()
-    assert body["count"] == 8
+    assert body["count"] == len(SAMPLE_EVENTS)
     starts = [e["start_time"] for e in body["events"]]
     assert starts == sorted(starts)

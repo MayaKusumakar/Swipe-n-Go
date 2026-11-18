@@ -4,6 +4,7 @@ struct ChatsView: View {
     @Environment(AppStore.self) private var store
     @State private var path: [UUID] = []
     @State private var query = ""
+    @State private var deleting: Conversation?
 
     private var filtered: [Conversation] {
         guard !query.isEmpty else { return store.conversations }
@@ -24,14 +25,14 @@ struct ChatsView: View {
                 if !groups.isEmpty {
                     Section("Plans") {
                         ForEach(groups) { c in
-                            NavigationLink(value: c.id) { ConversationRow(conversation: c) }
+                            row(c)
                         }
                     }
                 }
                 if !directs.isEmpty {
                     Section("Direct messages") {
                         ForEach(directs) { c in
-                            NavigationLink(value: c.id) { ConversationRow(conversation: c) }
+                            row(c)
                         }
                     }
                 }
@@ -43,10 +44,48 @@ struct ChatsView: View {
             .navigationDestination(for: UUID.self) { ChatView(conversationID: $0) }
             .animation(.snappy, value: store.conversations.map(\.id))
         }
+        .confirmationDialog(deleting.map { "Delete “\(store.title(for: $0))”?" } ?? "",
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible, presenting: deleting) { c in
+            Button("Delete chat", role: .destructive) {
+                withAnimation(.snappy) { store.deleteConversation(c.id) }
+            }
+        } message: { c in
+            Text(c.activityID == nil
+                 ? "The messages will be removed from this iPhone."
+                 : "The messages will be removed from this iPhone. You'll stay in the plan.")
+        }
         .onChange(of: store.requestedChat, initial: true) { _, id in
             guard let id else { return }
             path = [id]
             store.requestedChat = nil
+        }
+    }
+}
+
+extension ChatsView {
+    /// A chat row with the usual swipe actions and long-press menu.
+    fileprivate func row(_ c: Conversation) -> some View {
+        NavigationLink(value: c.id) { ConversationRow(conversation: c) }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button("Delete", systemImage: "trash", role: .destructive) { deleting = c }
+                muteButton(c).tint(.indigo)
+            }
+            .swipeActions(edge: .leading) {
+                if c.unreadCount > 0 {
+                    Button("Read", systemImage: "envelope.open") { store.markRead(c.id) }.tint(.blue)
+                }
+            }
+            .contextMenu {
+                muteButton(c)
+                Divider()
+                Button("Delete", systemImage: "trash", role: .destructive) { deleting = c }
+            }
+    }
+
+    private func muteButton(_ c: Conversation) -> some View {
+        Button(c.muted ? "Unmute" : "Mute", systemImage: c.muted ? "bell" : "bell.slash") {
+            withAnimation(.snappy) { store.toggleMute(c.id) }
         }
     }
 }
@@ -63,6 +102,12 @@ private struct ConversationRow: View {
                     Text(store.title(for: conversation))
                         .font(.body.weight(conversation.unreadCount > 0 ? .bold : .semibold))
                         .lineLimit(1)
+                    if conversation.muted {
+                        Image(systemName: "bell.slash.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Muted")
+                    }
                     Spacer()
                     Text(conversation.lastMessage?.date.relativeShort ?? "")
                         .font(.caption)
@@ -85,7 +130,7 @@ private struct ConversationRow: View {
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(Brand.accent, in: Capsule())
+                            .background(conversation.muted ? AnyShapeStyle(Color.gray) : AnyShapeStyle(Brand.accent), in: Capsule())
                     }
                 }
             }

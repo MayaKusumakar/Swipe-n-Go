@@ -27,6 +27,10 @@ final class AppStore {
     var joinedIDs: Set<UUID> = []
     var pendingIDs: Set<UUID> = []
     var savedIDs: Set<UUID> = []
+    /// Save / unsave of server events not yet confirmed by the server (event server id → saved).
+    var pendingSaves: [String: Bool] = [:]
+    /// The profile name changed but the server hasn't accepted it yet.
+    var nameNeedsSync = false
     var skippedIDs: Set<UUID> = []
     var conversations: [Conversation] = []
     var requests: [JoinRequest] = []
@@ -39,14 +43,18 @@ final class AppStore {
     var typing: [UUID: UUID] = [:]           // conversationID → personID currently "typing"
     var selectedTab: AppTab = .discover
     var showCreate = false                    // Host sheet, opened from the center tab
+    var showPlanner = false                   // "I'm free…" AI planner, opened from Discover or an empty state
     var showProfile = false                   // Profile sheet, opened from the top-right avatar
     var openConversationID: UUID?
     var requestedChat: UUID?                  // set to deep-link into a conversation
     private(set) var swipeHistory: [(UUID, SwipeAction)] = []
 
     // MARK: Server (see AppStore+Server.swift)
+    /// Your @ucdavis.edu sign-in. Every server request carries its token.
+    let auth = Auth()
     var serverStatus: ServerStatus = .off
     @ObservationIgnored var rejectedUploads: Set<UUID> = []   // plans the server refused; not retried
+    @ObservationIgnored var debugPlannerQuery: String?         // DEBUG: `-plan "<text>"` opens I'm free… and runs it
     var serverURLString: String = UserDefaults.standard.string(forKey: AppStore.serverURLKey) ?? AppStore.defaultServerURL {
         didSet { UserDefaults.standard.set(serverURLString, forKey: AppStore.serverURLKey) }
     }
@@ -60,27 +68,86 @@ final class AppStore {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appending(path: "partner-state.json")
     }()
+    /// Cover photos live in their own files (one per plan), written only when they change, so
+    /// saving the app's state doesn't re-encode megabytes of images on every tap or sync.
+    @ObservationIgnored private let coversURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appending(path: "covers", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+    /// What's already on disk for each plan's cover (shares storage with the plan's own copy).
+    @ObservationIgnored private var coversOnDisk: [UUID: Data] = [:]
 
     init() {
         me = AppStore.defaultMe()
         if !load() { seed() }
+        let auth = auth
+        EventServer.tokenProvider = { try await auth.bearerToken() }
         #if DEBUG
         applyDebugLaunchArguments()
         #endif
     }
 
+    var canOpenApp: Bool {
+        #if DEBUG
+        if isDemoMode { return true }
+        #endif
+        return auth.isSignedIn || isGuest
+    }
+
+    // MARK: Guest mode (until the shared server and Google sign-in are ready)
+
+    static let guestModeKey = "guestMode"
+
+    /// Using the app without an account: sample club events and plans kept on this phone.
+    /// Guests never talk to the server (see `serverURL`), so nothing is shared.
+    var isGuest: Bool = UserDefaults.standard.bool(forKey: AppStore.guestModeKey) {
+        didSet { UserDefaults.standard.set(isGuest, forKey: AppStore.guestModeKey) }
+    }
+
+    func continueAsGuest() {
+        auth.message = nil
+        isGuest = true
+    }
+
+    /// Back to the sign-in screen. Everything made as a guest stays, and plans you host
+    /// are shared once you're signed in.
+    func leaveGuestMode() {
+        isGuest = false
+    }
+
     #if DEBUG
+    private var isDemoMode = false
+
+    func enterDemoMode() {
+        isDemoMode = true
+        guard !hasOnboarded else { return }
+        completeOnboarding(name: "Demo Student", age: 21, pronouns: "", interests: [.sports, .music, .cultural, .tech, .outdoors])
+        me.emoji = "😎"
+        save()
+    }
+
     /// `-demo` skips onboarding with a sample profile; `-tab <name>` opens a tab. Handy for screenshots.
     private func applyDebugLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-onboarding") { hasOnboarded = false }
         if args.contains("-host") { showCreate = true }
+        if args.contains("-samples") { showSampleEvents = true; serverURLString = "" }
         if let i = args.firstIndex(of: "-server"), i + 1 < args.count { serverURLString = args[i + 1] }
+        // `-devSignIn you@ucdavis.edu` signs in through a local server's dev sign-in (DEV_SIGN_IN=on).
+        if let i = args.firstIndex(of: "-devSignIn"), i + 1 < args.count { auth.signInForDevelopment(email: args[i + 1], name: "") }
+        if args.contains("-signOut") { auth.signOut() }
         if args.contains("-noSamples") { showSampleEvents = false }
+        if let i = args.firstIndex(of: "-plan"), i + 1 < args.count {
+            debugPlannerQuery = args[i + 1]
+            showPlanner = true
+        }
+        if args.contains("-planner") { showPlanner = true }
         if args.contains("-hostTest"), hasOnboarded {
             // Posts a plan as if made in the Host sheet, to test the upload path.
             let date = Calendar.current.date(byAdding: .day, value: 2, to: .now)!
-            host(Activity(id: UUID(), title: "Posted from the iPhone app", category: .coffee, hostID: me.id, date: date,
+            host(Activity(id: UUID(), title: "Posted from the iPhone app", category: .social, hostID: me.id, date: date,
                           durationMinutes: 60, placeName: "Mishka's Café", address: "610 2nd St, Davis, CA",
                           latitude: 38.5440, longitude: -121.7407, capacity: 4, attendeeIDs: [],
                           details: "Testing the shared server.", tags: ["Coffee"], level: .beginner,
@@ -94,11 +161,7 @@ final class AppStore {
             }
             me.photoData = image.jpegData(compressionQuality: 0.8)
         }
-        if args.contains("-demo"), !hasOnboarded, !args.contains("-onboarding") {
-            completeOnboarding(name: "Anant Katiyar", age: 21, pronouns: "", interests: [.run, .concert, .food, .coffee, .hike])
-            me.emoji = "😎"
-            save()
-        }
+        if args.contains("-demo"), !args.contains("-onboarding") { enterDemoMode() }
         if args.contains("-joined"), joinedIDs.isEmpty {
             for a in discoverDeck.filter({ !$0.requiresApproval }).prefix(2) { confirmJoin(a.id) }
             if let a = discoverDeck.first(where: { $0.requiresApproval }) { pendingIDs.insert(a.id) }
@@ -185,7 +248,7 @@ final class AppStore {
         activities.filter { savedIDs.contains($0.id) && !$0.isPast }.sorted { $0.date < $1.date }
     }
 
-    var totalUnread: Int { conversations.reduce(0) { $0 + $1.unreadCount } }
+    var totalUnread: Int { conversations.reduce(0) { $0 + ($1.muted ? 0 : $1.unreadCount) } }
 
     // MARK: - Onboarding & profile
 
@@ -200,11 +263,14 @@ final class AppStore {
         // Seed conversations reference the old `me` id; re-key them.
         seed(keepingMe: true)
         save()
+        Task { await syncMyName() }
     }
 
     func updateProfile(_ person: Person) {
+        let renamed = person.name != me.name
         me = person
         save()
+        if renamed { Task { await syncMyName() } }
     }
 
     // MARK: - Swiping & joining
@@ -213,7 +279,7 @@ final class AppStore {
         swipeHistory.append((activity.id, action))
         switch action {
         case .skip: skippedIDs.insert(activity.id)
-        case .save: savedIDs.insert(activity.id); skippedIDs.insert(activity.id)
+        case .save: savedIDs.insert(activity.id); skippedIDs.insert(activity.id); savedChanged(activity, saved: true)
         case .join: _ = join(activity)
         }
         save()
@@ -225,7 +291,9 @@ final class AppStore {
         guard let (id, action) = swipeHistory.popLast() else { return }
         switch action {
         case .skip: skippedIDs.remove(id)
-        case .save: savedIDs.remove(id); skippedIDs.remove(id)
+        case .save:
+            savedIDs.remove(id); skippedIDs.remove(id)
+            if let a = activity(id) { savedChanged(a, saved: false) }
         case .join: if let a = activity(id) { leave(a, silently: true) }
         }
         save()
@@ -235,7 +303,7 @@ final class AppStore {
     func join(_ activity: Activity) -> JoinOutcome {
         skippedIDs.remove(activity.id)
         let sharedPrivate = activity.serverID != nil && activity.isLocationPrivate
-        if activity.serverID != nil, !isHost(activity), activity.myAttendeeToken == nil {
+        if activity.serverID != nil, !isHost(activity), activity.myAttendeeID == nil {
             Task { await registerJoin(activity) }
         }
         if activity.requiresApproval || sharedPrivate {
@@ -261,13 +329,12 @@ final class AppStore {
         save()
     }
 
-    /// Sends your join request for a shared event to the server and keeps its secret.
+    /// Sends your join request for a shared event to the server, as your signed-in account.
     private func registerJoin(_ activity: Activity) async {
         guard let serverID = activity.serverID, let url = serverURL,
-              let attendee = try? await EventServer.requestToJoin(eventID: serverID, name: me.name, baseURL: url),
+              let attendee = try? await EventServer.requestToJoin(eventID: serverID, baseURL: url),
               let i = activities.firstIndex(where: { $0.id == activity.id }) else { return }
         activities[i].myAttendeeID = attendee.id
-        activities[i].myAttendeeToken = attendee.attendeeToken
         save()
     }
 
@@ -284,12 +351,10 @@ final class AppStore {
         pendingIDs.remove(activity.id)
         if let i = activities.firstIndex(where: { $0.id == activity.id }) {
             activities[i].attendeeIDs.removeAll { $0 == me.id }
-            if let serverID = activities[i].serverID, let attendeeID = activities[i].myAttendeeID,
-               let token = activities[i].myAttendeeToken {
-                Task { _ = await serverAction { try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .attendee(token), baseURL: $0) } }
+            if let serverID = activities[i].serverID, let attendeeID = activities[i].myAttendeeID {
+                Task { _ = await serverAction { try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, baseURL: $0) } }
             }
             activities[i].myAttendeeID = nil
-            activities[i].myAttendeeToken = nil
             if activities[i].isLocationPrivate, activities[i].serverID != nil { activities[i].locationHidden = true }
         }
         if let c = conversations.firstIndex(where: { $0.activityID == activity.id }) {
@@ -301,7 +366,9 @@ final class AppStore {
     }
 
     func toggleSaved(_ activity: Activity) {
-        if savedIDs.contains(activity.id) { savedIDs.remove(activity.id) } else { savedIDs.insert(activity.id) }
+        let saved = !savedIDs.contains(activity.id)
+        if saved { savedIDs.insert(activity.id) } else { savedIDs.remove(activity.id) }
+        savedChanged(activity, saved: saved)
         save()
     }
 
@@ -415,10 +482,9 @@ final class AppStore {
     }
 
     func approve(_ request: JoinRequest) {
-        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID),
-           let serverID = a.serverID, let token = a.hostToken {
+        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID), let serverID = a.serverID {
             Task {
-                guard await serverAction({ try await EventServer.approve(eventID: serverID, attendeeID: attendeeID, hostToken: token, baseURL: $0) }),
+                guard await serverAction({ try await EventServer.approve(eventID: serverID, attendeeID: attendeeID, baseURL: $0) }),
                       let i = activities.firstIndex(where: { $0.id == a.id }) else { return }
                 activities[i].serverAttendeeIDs = (activities[i].serverAttendeeIDs ?? [:]).merging([request.personID: attendeeID]) { $1 }
                 acceptLocally(request)
@@ -444,10 +510,9 @@ final class AppStore {
     }
 
     func decline(_ request: JoinRequest) {
-        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID),
-           let serverID = a.serverID, let token = a.hostToken {
+        if let attendeeID = request.serverAttendeeID, let a = activity(request.activityID), let serverID = a.serverID {
             Task {
-                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .host(token), baseURL: $0) })
+                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, baseURL: $0) })
                 else { return }
                 requests.removeAll { $0.id == request.id }
                 save()
@@ -462,9 +527,9 @@ final class AppStore {
     /// so they also lose access to a private location.
     func removeAttendee(_ personID: UUID, from activity: Activity) {
         guard isHost(activity), personID != me.id else { return }
-        if let serverID = activity.serverID, let attendeeID = activity.serverAttendeeIDs?[personID], let token = activity.hostToken {
+        if let serverID = activity.serverID, let attendeeID = activity.serverAttendeeIDs?[personID] {
             Task {
-                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, as: .host(token), baseURL: $0) })
+                guard await serverAction({ try await EventServer.removeAttendee(eventID: serverID, attendeeID: attendeeID, baseURL: $0) })
                 else { return }
                 removeLocally(personID, from: activity.id)
             }
@@ -528,6 +593,19 @@ final class AppStore {
 
         guard let responder = others(in: conversations[0]).randomElement() else { return }
         scheduleReply(in: conversationID, from: responder.id, text: reply(to: trimmed), after: Double.random(in: 1.6...3.2))
+    }
+
+    func toggleMute(_ conversationID: UUID) {
+        guard let i = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        conversations[i].isMuted = !conversations[i].muted
+        save()
+    }
+
+    /// Removes the chat from this phone. It doesn't leave the plan.
+    func deleteConversation(_ conversationID: UUID) {
+        conversations.removeAll { $0.id == conversationID }
+        if openConversationID == conversationID { openConversationID = nil }
+        save()
     }
 
     func markRead(_ conversationID: UUID) {
@@ -635,6 +713,7 @@ final class AppStore {
         var joinedIDs: Set<UUID>
         var pendingIDs: Set<UUID>
         var savedIDs: Set<UUID>
+        var pendingSaves: [String: Bool]? = nil
         var skippedIDs: Set<UUID>
         var conversations: [Conversation]
         var requests: [JoinRequest]
@@ -645,8 +724,8 @@ final class AppStore {
 
     @discardableResult
     func save() -> Bool {
-        let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activities, drafts: drafts,
-                            joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, skippedIDs: skippedIDs,
+        let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activitiesWithoutCovers(), drafts: drafts,
+                            joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, pendingSaves: pendingSaves, skippedIDs: skippedIDs,
                             conversations: conversations, requests: requests, notificationsEnabled: notificationsEnabled,
                             radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile)
         do {
@@ -659,6 +738,41 @@ final class AppStore {
         }
     }
 
+    /// The plans as saved in the state file: covers are written to their own files instead.
+    /// A cover that can't be written stays in the state file, so nothing is lost.
+    private func activitiesWithoutCovers() -> [Activity] {
+        var withCover = Set<UUID>()
+        let saved = activities.map { activity -> Activity in
+            guard let cover = activity.coverPhotoData else { return activity }
+            withCover.insert(activity.id)
+            if coversOnDisk[activity.id] != cover {
+                guard (try? cover.write(to: coverFile(activity.id), options: .atomic)) != nil else { return activity }
+                coversOnDisk[activity.id] = cover
+            }
+            var copy = activity
+            copy.coverPhotoData = nil
+            return copy
+        }
+        for id in coversOnDisk.keys where !withCover.contains(id) {
+            try? FileManager.default.removeItem(at: coverFile(id))
+            coversOnDisk[id] = nil
+        }
+        return saved
+    }
+
+    private func withCoverFromDisk(_ activity: Activity) -> Activity {
+        // Saves from before covers had their own files still have them inline.
+        guard activity.coverPhotoData == nil, let cover = try? Data(contentsOf: coverFile(activity.id)) else {
+            return activity
+        }
+        coversOnDisk[activity.id] = cover
+        var copy = activity
+        copy.coverPhotoData = cover
+        return copy
+    }
+
+    private func coverFile(_ id: UUID) -> URL { coversURL.appending(path: "\(id.uuidString).jpg") }
+
     @discardableResult
     private func load() -> Bool {
         guard let data = try? Data(contentsOf: fileURL),
@@ -666,11 +780,18 @@ final class AppStore {
         hasOnboarded = s.hasOnboarded
         me = s.me
         people = s.people
+        // Several old categories became one club category (food, coffee and drinks are all
+        // Food & Social), so interests saved before the change can hold the same one twice.
+        let hadDuplicates = me.interests != me.interests.uniqued()
+            || people.contains { $0.interests != $0.interests.uniqued() }
+        me.interests = me.interests.uniqued()
+        for i in people.indices { people[i].interests = people[i].interests.uniqued() }
         drafts = s.drafts ?? []
-        activities = s.activities
+        activities = s.activities.map(withCoverFromDisk)
         joinedIDs = s.joinedIDs
         pendingIDs = s.pendingIDs
         savedIDs = s.savedIDs
+        pendingSaves = s.pendingSaves ?? [:]
         skippedIDs = s.skippedIDs
         conversations = s.conversations
         requests = s.requests
@@ -684,10 +805,28 @@ final class AppStore {
             activities.append(contentsOf: hosted)
             activities.sort { $0.date < $1.date }
         }
+        // The samples changed (now club events): replace the old ones once. Your own plans and
+        // drafts stay; server events come back on the next sync.
+        if UserDefaults.standard.integer(forKey: Self.sampleDataVersionKey) < Self.sampleDataVersion {
+            let hosted = activities.filter { isHost($0) }
+            seed(keepingMe: true)
+            activities.append(contentsOf: hosted)
+            activities.sort { $0.date < $1.date }
+            save()
+        }
+        if hadDuplicates { save() }
+        // Older saves kept covers inside the state file; move them to their own files once.
+        if s.activities.contains(where: { $0.coverPhotoData != nil }) { save() }
         return true
     }
 
+    /// Bumped when the built-in samples change (2 = UC Davis club events), so phones that
+    /// already have the app swap in the new samples once.
+    static let sampleDataVersion = 2
+    private static let sampleDataVersionKey = "sampleDataVersion"
+
     private func seed(keepingMe: Bool = false) {
+        UserDefaults.standard.set(Self.sampleDataVersion, forKey: Self.sampleDataVersionKey)
         if !keepingMe { me = AppStore.defaultMe() }
         let seed = SampleData.make(for: me)
         people = seed.people
@@ -697,12 +836,15 @@ final class AppStore {
         joinedIDs = []
         pendingIDs = []
         savedIDs = []
+        pendingSaves = [:]
         skippedIDs = []
         swipeHistory = []
     }
 
     /// Wipes everything, including the profile, and returns to onboarding.
     func resetEverything() {
+        auth.signOut()
+        isGuest = false
         try? FileManager.default.removeItem(at: fileURL)
         hasOnboarded = false
         drafts = []
@@ -712,6 +854,7 @@ final class AppStore {
         selectedTab = .discover
         showProfile = false
         showCreate = false
+        showPlanner = false
     }
 
     /// Keeps the profile but restores fresh demo activities and chats.

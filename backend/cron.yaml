@@ -1,0 +1,9 @@
+# App Engine cron (deployed with `gcloud app deploy cron.yaml`). Nothing runs
+# locally; there, call the route by hand: curl localhost:8080/tasks/summarize-stale
+# One job, inside the free allowance. It wakes the single F1 instance at most
+# every 30 minutes, which app.yaml's max_instances: 1 keeps under the free
+# 28 instance-hours a day.
+cron:
+- description: "Rewrite stale event summaries (free template unless AI_SUMMARIES=on)"
+  url: /tasks/summarize-stale
+  schedule: every 30 minutes

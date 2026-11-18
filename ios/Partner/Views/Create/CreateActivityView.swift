@@ -3,6 +3,27 @@ import MapKit
 import PhotosUI
 import ImageIO
 import AVFoundation
+import Speech
+
+extension Place {
+    /// Popular spots that match, then Apple Maps results near Davis.
+    static func search(_ query: String) async -> [Place] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        let local = presets.filter { $0.name.localizedCaseInsensitiveContains(q) }
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = q
+        request.region = MKCoordinateRegion(center: Geo.home, span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6))
+        guard let response = try? await MKLocalSearch(request: request).start() else { return local }
+        let found = response.mapItems.prefix(12).map { item in
+            Place(name: item.name ?? q,
+                  address: item.address?.shortAddress ?? item.address?.fullAddress ?? "",
+                  latitude: item.location.coordinate.latitude,
+                  longitude: item.location.coordinate.longitude)
+        }
+        return local + found
+    }
+}
 
 struct Place: Codable, Identifiable, Hashable {
     var id: String { "\(name)|\(latitude)|\(longitude)" }
@@ -42,7 +63,7 @@ struct CreateActivityView: View {
         self.draft = draft
     }
 
-    @State private var category: ActivityCategory = .run
+    @State private var category: ActivityCategory = .social
     @State private var title = ""
     @State private var date = Calendar.current.date(byAdding: .hour, value: 3, to: .now)!.roundedToHalfHour
     @State private var duration = 90
@@ -51,16 +72,28 @@ struct CreateActivityView: View {
     @State private var level: ActivityLevel = .anyone
     @State private var requiresApproval = false
     @State private var privateLocation = false
-    @State private var cost = "Free"
+    /// Free or paid. When paid, `cost` holds what the host typed after the "$" (e.g. "12" or "5 members").
+    @State private var costIsFree = true
+    @State private var cost = ""
     @State private var details = ""
     @State private var showPlacePicker = false
     @State private var flyerPhoto: PhotosPickerItem?
     @State private var flyerData: Data?
     @State private var capturedFlyerData: Data?
     @State private var scanResult: FlyerScanResult?
+    /// "Describe your plan": what the host typed, and the text being read right now.
+    @State private var planDescription = ""
+    @State private var describedText: String?
+    @State private var voiceSession: UUID?
+    @State private var voiceCapture: PlanVoiceCapture?
+    @State private var voiceTranscript = ""
+    @State private var voiceError: String?
     @State private var scanning = false
     @State private var showCamera = false
     @State private var scannedLocation = ""
+    @State private var findingPlace = false
+    /// The place was matched from the flyer's text, so the host should glance at it.
+    @State private var placeFromFlyer = false
     @State private var pendingFlyerCover: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var coverPhotoData: Data?
@@ -70,33 +103,59 @@ struct CreateActivityView: View {
     @State private var published = false
     @FocusState private var focus: Field?
 
-    enum Field { case title, previewTitle, details, cost }
+    enum Field { case title, details, cost, planDescription }
+
+    /// The Duration picker's options, in minutes.
+    static let durations = [30, 45, 60, 90, 120, 180, 240, 480]
+
+    /// Something worth keeping: swiping the sheet down asks before throwing it away.
+    private var hasChanges: Bool {
+        draft != nil || !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || place != nil || coverPhotoData != nil || !scannedLocation.isEmpty
+    }
 
     private var canPublish: Bool {
-        !scanning && !isLoadingPhoto && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && place != nil && date > .now
-            && (!schedulePost || (publishAt > .now && publishAt < date))
+        !scanning && !isLoadingPhoto && missing.isEmpty
+    }
+
+    /// What still stops the plan from posting, in the order the form asks for it.
+    private var missing: [String] {
+        var items: [String] = []
+        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { items.append("a title") }
+        if date <= .now { items.append("a time in the future") }
+        if place == nil { items.append("a location") }
+        if !costIsFree && cost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { items.append("a price") }
+        if schedulePost && !(publishAt > .now && publishAt < date) { items.append("a publish time before the plan") }
+        return items
+    }
+
+    private var costText: String { PlanCost.text(isFree: costIsFree, amount: cost) }
+
+    /// Loads a saved or scanned cost into the Free / Paid controls.
+    private func setCost(_ text: String) {
+        (costIsFree, cost) = PlanCost.parse(text)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
-                    preview
                     flyerSection
-                    coverPhotoSection
                     categorySection
                     titleSection
                     whenSection
-                    recurrenceSection
                     whereSection
-                    groupSection
                     detailsSection
-                    publishingSection
+                    groupSection
+                    preview
+                    moreOptionsSection
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 30)
             }
             .scrollDismissesKeyboard(.interactively)
+            .onDisappear { stopVoiceCapture() }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Host a plan")
             .navigationBarTitleDisplayMode(.inline)
@@ -104,19 +163,33 @@ struct CreateActivityView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark") { showCloseOptions = true }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(schedulePost ? "Schedule" : "Post", systemImage: "checkmark") { publish() }
-                        .disabled(!canPublish)
-                }
             }
             .safeAreaInset(edge: .bottom) {
-                Button(action: publish) {
-                    Label(schedulePost ? "Schedule post" : "Post plan", systemImage: schedulePost ? "clock" : "paperplane.fill")
+                VStack(spacing: 8) {
+                    if !missing.isEmpty && focus == nil {
+                        Text("Add \(missing.formatted(.list(type: .and))) to post.")
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .glassEffect(.regular, in: Capsule())
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+                    Button(action: publish) {
+                        Label(schedulePost ? "Schedule post" : "Post plan", systemImage: schedulePost ? "clock" : "paperplane.fill")
+                    }
+                    .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(category.gradient)))
+                    .disabled(!canPublish)
                 }
-                .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(category.gradient)))
-                .disabled(!canPublish)
                 .padding(.horizontal, 20)
-                .padding(.top, 8)
+                .padding(.top, 20)
+                .background {
+                    LinearGradient(stops: [.init(color: Color(.systemGroupedBackground).opacity(0), location: 0),
+                                           .init(color: Color(.systemGroupedBackground), location: 0.35)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                }
+                .animation(.snappy, value: missing)
             }
             .onAppear {
                 guard !restoredDraft, let draft else { return }
@@ -131,10 +204,11 @@ struct CreateActivityView: View {
                 level = draft.level
                 requiresApproval = draft.requiresApproval
                 privateLocation = draft.privateLocation == true
-                cost = draft.cost
+                setCost(draft.cost)
                 details = draft.details
                 coverPhotoData = draft.coverPhotoData
                 scannedLocation = draft.suggestedLocation ?? ""
+                if place == nil, !scannedLocation.isEmpty { Task { await findScannedPlace() } }
                 repeats = draft.recurrence != nil
                 frequency = draft.recurrence?.frequency ?? .weekly
                 occurrenceCount = draft.recurrence?.count ?? 6
@@ -142,6 +216,8 @@ struct CreateActivityView: View {
                 schedulePost = draft.scheduledAt != nil
                 publishAt = draft.scheduledAt ?? .now.addingTimeInterval(3600)
             }
+            .interactiveDismissDisabled(hasChanges)
+            .onDismissAttempt { showCloseOptions = true }
             .confirmationDialog("Keep this post?", isPresented: $showCloseOptions, titleVisibility: .visible) {
                 Button("Save draft and close") { saveDraftAndClose() }
                     .disabled(isLoadingPhoto || scanning)
@@ -168,19 +244,35 @@ struct CreateActivityView: View {
             .sheet(item: $scanResult, onDismiss: {
                 flyerPhoto = nil
                 flyerData = nil
+                describedText = nil
                 if let image = pendingFlyerCover {
                     cropSource = CropSource(image: image)
                     pendingFlyerCover = nil
                 }
             }) { result in
-                FlyerReviewView(result: result) { name, starts, venue, description, price, image in
-                    title = name
-                    date = starts
-                    scannedLocation = venue
-                    place = nil
-                    details = description
-                    cost = price
-                    pendingFlyerCover = image
+                FlyerReviewView(result: result) { fields in
+                    title = fields.title
+                    date = fields.date
+                    // The location is entered once, in the review. Use the place picked there,
+                    // or look the text up on the map; never ask for it again.
+                    if let picked = fields.place {
+                        place = picked
+                        scannedLocation = ""
+                        placeFromFlyer = false
+                    } else {
+                        scannedLocation = fields.location
+                        place = nil
+                        Task { await findScannedPlace() }
+                    }
+                    details = fields.details
+                    setCost(fields.cost)
+                    if let scanned = fields.category { category = scanned }
+                    if let end = fields.endDate {
+                        // Closest option in the Duration picker.
+                        let minutes = Int(end.timeIntervalSince(fields.date) / 60)
+                        duration = Self.durations.min { abs($0 - minutes) < abs($1 - minutes) } ?? duration
+                    }
+                    pendingFlyerCover = fields.cover
                 }
             }
             .task(id: flyerPhoto) {
@@ -205,7 +297,7 @@ struct CreateActivityView: View {
                 scanning = true
                 defer { scanning = false }
                 do {
-                    let result = try await FlyerScanner.scan(flyerData)
+                    let result = try await FlyerScanner.scan(flyerData, serverURL: store.serverURL)
                     try Task.checkCancellation()
                     scanResult = result
                 } catch is CancellationError {
@@ -214,6 +306,19 @@ struct CreateActivityView: View {
                     flyerPhoto = nil
                     self.flyerData = nil
                     photoError = "No readable flyer text was found. Try a clearer photo or enter the details manually."
+                }
+            }
+            .task(id: describedText) {
+                // "Describe your plan": the same review screen as a scanned flyer.
+                guard let describedText else { return }
+                scanning = true
+                defer { scanning = false }
+                do {
+                    let result = try await FlyerScanner.read(text: describedText, serverURL: store.serverURL)
+                    try Task.checkCancellation()
+                    scanResult = result
+                } catch {
+                    self.describedText = nil
                 }
             }
             .task(id: selectedPhoto) {
@@ -254,114 +359,285 @@ struct CreateActivityView: View {
     // MARK: Preview
 
     private var preview: some View {
-        ZStack(alignment: .bottomLeading) {
-            ActivityCover(category: category, photoData: coverPhotoData)
-            LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    TextField(text: $title, prompt: Text("Your plan title").foregroundStyle(.white.opacity(0.65)), axis: .vertical) {
-                        Text("Plan title")
-                    }
-                    .font(.title2.weight(.bold))
-                    .lineLimit(1...2)
-                    .focused($focus, equals: .previewTitle)
-                    .submitLabel(.done)
-                    .onChange(of: title) { _, new in
-                        // Return ends editing instead of adding a new line.
-                        if new.contains("\n") { title = new.replacingOccurrences(of: "\n", with: ""); focus = nil }
-                    }
-                    Image(systemName: focus == .previewTitle ? "checkmark.circle.fill" : "pencil")
-                        .font(.headline)
-                        .opacity(0.85)
-                        .onTapGesture { focus = focus == .previewTitle ? nil : .previewTitle }
-                        .accessibilityLabel(focus == .previewTitle ? "Done editing title" : "Edit title")
+        VStack(alignment: .leading, spacing: 12) {
+            label("Cover & preview")
+            ZStack(alignment: .bottomLeading) {
+                ActivityCover(category: category, photoData: coverPhotoData)
+                LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 6) {
+                    // Shown, not edited: the title is typed once, in "Plan title" above.
+                    Text(title.isEmpty ? "Your plan title" : title)
+                        .font(.title2.weight(.bold))
+                        .lineLimit(2)
+                        .opacity(title.isEmpty ? 0.6 : 1)
+                    Text("\(date.friendlyDateTime)\(place.map { " · \($0.name)" } ?? "") · \(costText)")
+                        .font(.subheadline.weight(.medium))
+                        .opacity(0.9)
                 }
-                Text("\(date.friendlyDateTime)\(place.map { " · \($0.name)" } ?? "")")
-                    .font(.subheadline.weight(.medium))
-                    .opacity(0.9)
+                .foregroundStyle(.white)
+                .padding(18)
             }
-            .foregroundStyle(.white)
-            .padding(18)
+            .frame(height: CoverShape.isPoster(coverPhotoData) ? 460 : 180)
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(alignment: .topTrailing) { coverButton.padding(12) }
+            .overlay {
+                if isLoadingPhoto {
+                    ProgressView().tint(.white)
+                }
+            }
+            .animation(.smooth, value: coverPhotoData)
+            .animation(.smooth, value: category)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Preview of your plan")
         }
-        .frame(height: 180)
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .animation(.smooth, value: category)
-        .padding(.top, 8)
+    }
+
+    /// Add, replace or remove the cover, right on the preview.
+    @ViewBuilder private var coverButton: some View {
+        Group {
+            if coverPhotoData == nil {
+                PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                    Label("Add cover photo", systemImage: "photo.badge.plus")
+                }
+            } else {
+                Menu {
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        Label("Replace photo", systemImage: "photo.on.rectangle")
+                    }
+                    Button("Remove photo", systemImage: "trash", role: .destructive) {
+                        coverPhotoData = nil
+                        selectedPhoto = nil
+                    }
+                } label: {
+                    Label("Edit cover", systemImage: "photo")
+                }
+            }
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .disabled(isLoadingPhoto || scanning)
     }
 
     // MARK: Sections
 
     private var flyerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Scan an event flyer")
-            Text("Upload or photograph a flyer to fill in your event details.")
+            label("Autofill plan details")
+            Text("Scan a flyer, type a sentence or say it, and we'll fill in the form.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            PhotosPicker(selection: $flyerPhoto, matching: .images) {
-                Label("Upload flyer", systemImage: "doc.viewfinder")
-            }
-            Button("Take flyer photo", systemImage: "camera") {
-                Task {
-                    guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
-                        photoError = "A camera is unavailable on this device. Use Upload flyer to choose an image."
-                        return
+            HStack(spacing: 10) {
+                PhotosPicker(selection: $flyerPhoto, matching: .images) {
+                    Label("Upload flyer", systemImage: "doc.viewfinder")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                Button {
+                    Task {
+                        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                            photoError = "A camera is unavailable on this device. Use Upload flyer to choose an image."
+                            return
+                        }
+                        let allowed = await AVCaptureDevice.requestAccess(for: .video)
+                        if allowed {
+                            showCamera = true
+                        } else {
+                            photoError = "Camera access is off. Enable it in Settings to take a flyer photo, or use Upload flyer."
+                        }
                     }
-                    let allowed = await AVCaptureDevice.requestAccess(for: .video)
-                    if allowed {
-                        showCamera = true
-                    } else {
-                        photoError = "Camera access is off. Enable it in Settings to take a flyer photo, or use Upload flyer."
-                    }
+                } label: {
+                    Label("Take flyer photo", systemImage: "camera")
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
             }
+            .font(.subheadline.weight(.semibold))
+            .multilineTextAlignment(.center)
+            .buttonStyle(.bordered)
+            .tint(Brand.accent)
+            .disabled(voiceSession != nil)
+
+            HStack(alignment: .bottom, spacing: 10) {
+            TextField(voiceCapture == nil ? "Or describe it, e.g. free soccer Saturday at 3 at the ARC" : "Listening…",
+                      text: $planDescription, axis: .vertical)
+                .lineLimit(2...5)
+                .focused($focus, equals: .planDescription)
+                // Return means "Go": the floating Post plan bar covers the button below while the
+                // keyboard is up. Depending on the keyboard, iOS sends Return as a submit or types a newline.
+                .submitLabel(.go)
+                .onSubmit(fillFromDescription)
+                .onChange(of: planDescription) { old, new in
+                    guard new.hasSuffix("\n"), new.count == old.count + 1 else { return }
+                    planDescription = String(new.dropLast())
+                    fillFromDescription()
+                }
+                .accessibilityIdentifier("planDescription")
+                .disabled(voiceSession != nil)
+                // One button, like Messages: a mic when empty, send when there's text, stop while listening.
+                describeButton
+            }
+            .padding(16)
+            .cardStyle(radius: 18)
+
+            if let voiceError {
+                Text(voiceError).font(.caption).foregroundStyle(.secondary)
+            }
+
             if scanning {
-                ProgressView("Reading flyer…")
+                ProgressView(describedText != nil
+                             ? (store.serverURL == nil ? "Reading your description…" : "Reading your description with Claude…")
+                             : (store.serverURL == nil ? "Reading flyer…" : "Reading flyer with Claude…"))
             }
         }
         .disabled(scanning || isLoadingPhoto)
     }
 
-    private var recurrenceSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            label("Recurring event")
-            Toggle("Repeat this event", isOn: $repeats)
-            if repeats {
-                Picker("Repeats", selection: $frequency) {
-                    ForEach(EventRecurrence.Frequency.allCases, id: \.self) { option in
-                        Text(option.rawValue).tag(option)
+    @ViewBuilder private var describeButton: some View {
+        let hasText = !planDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if voiceCapture != nil {
+            Button("Stop and autofill", systemImage: "stop.circle.fill", action: finishVoiceCapture)
+                .labelStyle(.iconOnly)
+                .font(.title)
+                .foregroundStyle(.red)
+                .symbolEffect(.pulse, isActive: true)
+        } else if hasText {
+            Button("Autofill from text", systemImage: "arrow.up.circle.fill", action: fillFromDescription)
+                .labelStyle(.iconOnly)
+                .font(.title)
+                .foregroundStyle(Brand.accent)
+                .disabled(voiceSession != nil)
+        } else {
+            Button("Speak your plan", systemImage: "mic.circle.fill", action: startVoiceCapture)
+                .labelStyle(.iconOnly)
+                .font(.title)
+                .foregroundStyle(Brand.accent)
+                .disabled(voiceSession != nil)
+        }
+    }
+
+    private func startVoiceCapture() {
+        let session = UUID()
+        voiceSession = session
+        voiceError = nil
+        voiceTranscript = ""
+        focus = nil
+
+        Task { @MainActor in
+            let authorization: SFSpeechRecognizerAuthorizationStatus = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
+            }
+            guard voiceSession == session else { return }
+            guard authorization == .authorized,
+                  await AVAudioApplication.requestRecordPermission() else {
+                stopVoiceCapture()
+                voiceError = "Allow speech recognition and microphone access in Settings."
+                return
+            }
+            guard voiceSession == session else { return }
+
+            do {
+                let capture = try await PlanVoiceCapture.start { transcript, finished, failure in
+                    guard voiceSession == session else { return }
+                    if let transcript, !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        voiceTranscript = transcript
+                        planDescription = transcript
+                    }
+                    if let failure, voiceTranscript.isEmpty {
+                        stopVoiceCapture()
+                        voiceError = "Speech recognition couldn’t start: \(failure)"
+                    } else if finished, voiceTranscript.isEmpty {
+                        stopVoiceCapture()
+                        voiceError = "Speech recognition ended before returning any words. Try the keyboard microphone or type your plan."
+                        focus = .planDescription
+                    } else if finished {
+                        finishVoiceCapture()
                     }
                 }
-                Stepper("Occurrences including the first · \(occurrenceCount)",
-                        value: $occurrenceCount, in: 2...12)
-                let dates = currentDraft().occurrenceDates
-                if let last = dates.last {
-                    Text("\(occurrenceCount) events, ending \(last.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                guard voiceSession == session else {
+                    capture.stop()
+                    return
                 }
-                Text("Each date gets its own event with the same details and cover photo. All dates publish together. Times follow \(recurrenceTimeZoneID).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                voiceCapture = capture
+            } catch {
+                guard voiceSession == session else { return }
+                stopVoiceCapture()
+                voiceError = "Couldn’t start voice input: \(error.localizedDescription)"
             }
         }
     }
 
-    private var publishingSection: some View {
+    private func finishVoiceCapture() {
+        stopVoiceCapture()
+        guard !voiceTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            voiceError = "No speech was recognized. Try again or type your plan."
+            return
+        }
+        planDescription = voiceTranscript
+        fillFromDescription()
+    }
+
+    private func stopVoiceCapture() {
+        voiceSession = nil
+        voiceCapture?.stop()
+        voiceCapture = nil
+    }
+
+    /// Opens the same review screen for typed and spoken descriptions.
+    private func fillFromDescription() {
+        let text = planDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !scanning, describedText == nil, voiceSession == nil else { return }
+        focus = nil
+        describedText = String(text.prefix(ClaudeTextReader.maxCharacters))
+    }
+
+    private var moreOptionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Publishing")
-            Toggle("Schedule for later", isOn: $schedulePost)
-            if schedulePost {
-                DatePicker("Publish on", selection: $publishAt, in: Date.now...)
-                Text("Choose a publishing time before the event starts.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("Posts publish on this device while the app is open, or when you reopen it. If the event has already started, the post returns to drafts.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            label("More options")
+            VStack(alignment: .leading, spacing: 0) {
+                Toggle(isOn: $repeats.animation(.snappy)) {
+                    Label("Repeat", systemImage: "repeat")
+                }
+                .padding(14)
+                if repeats {
+                    Divider().padding(.leading, 14)
+                    Picker("Every", selection: $frequency) {
+                        ForEach(EventRecurrence.Frequency.allCases, id: \.self) { option in
+                            Text(option.rawValue).tag(option)
+                        }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    Divider().padding(.leading, 14)
+                    Stepper("\(occurrenceCount) events", value: $occurrenceCount, in: 2...12)
+                        .padding(14)
+                    if let last = currentDraft().occurrenceDates.last {
+                        Text("Last one \(last.formatted(date: .abbreviated, time: .shortened)). All dates post together as separate events.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 14).padding(.bottom, 12)
+                    }
+                }
+                Divider().padding(.leading, 14)
+                Toggle(isOn: $schedulePost.animation(.snappy)) {
+                    Label("Schedule for later", systemImage: "clock")
+                }
+                .padding(14)
+                if schedulePost {
+                    Divider().padding(.leading, 14)
+                    DatePicker("Post on", selection: $publishAt, in: Date.now...)
+                        .padding(14)
+                    Text("Pick a time before the plan starts. The app must be open to post it; missed ones go back to drafts.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14).padding(.bottom, 12)
+                }
             }
+            .cardStyle(radius: 18)
+            .tint(category.color)
+
             Button("Save draft and close", systemImage: "square.and.arrow.down") {
                 saveDraftAndClose()
             }
+            .font(.subheadline.weight(.semibold))
             .disabled(isLoadingPhoto || scanning)
         }
     }
@@ -371,7 +647,7 @@ struct CreateActivityView: View {
             id: draftID, category: category, title: title, date: date,
             duration: duration, place: place, capacity: capacity, level: level,
             requiresApproval: requiresApproval || privateLocation,
-            privateLocation: privateLocation ? true : nil, cost: cost, details: details,
+            privateLocation: privateLocation ? true : nil, cost: costText, details: details,
             coverPhotoData: coverPhotoData, scheduledAt: scheduledAt,
             recurrence: repeats ? EventRecurrence(frequency: frequency, count: occurrenceCount,
                                                   timeZoneID: recurrenceTimeZoneID) : nil,
@@ -388,32 +664,9 @@ struct CreateActivityView: View {
         dismiss()
     }
 
-    private var coverPhotoSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            label("Cover photo")
-            PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                Label(coverPhotoData == nil ? "Choose a photo" : "Replace photo",
-                      systemImage: "photo.on.rectangle")
-            }
-            .disabled(isLoadingPhoto || scanning)
-            if isLoadingPhoto {
-                ProgressView("Loading photo")
-            }
-            if coverPhotoData != nil {
-                Button("Remove photo", role: .destructive) {
-                    coverPhotoData = nil
-                    selectedPhoto = nil
-                }
-            }
-            Text("Choose a photo, then drag and zoom to crop it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     private var categorySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("What kind of plan?")
+            label("Category")
             ScrollView(.horizontal) {
                 HStack(spacing: 10) {
                     ForEach(ActivityCategory.allCases) { cat in
@@ -432,9 +685,12 @@ struct CreateActivityView: View {
                                 Text(cat.title)
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(category == cat ? .primary : .secondary)
-                                    .lineLimit(1)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(2)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(minHeight: 34, alignment: .top)
                             }
-                            .frame(width: 70)
+                            .frame(width: 76)
                         }
                         .buttonStyle(PressableStyle())
                     }
@@ -449,7 +705,7 @@ struct CreateActivityView: View {
 
     private var titleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Give it a name")
+            label("Plan title")
             TextField("e.g. \(suggestions.first ?? "Sunday morning run")", text: $title)
                 .font(.title3.weight(.medium))
                 .focused($focus, equals: .title)
@@ -473,7 +729,7 @@ struct CreateActivityView: View {
 
     private var whenSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("When?")
+            label("Date & time")
             HStack(spacing: 8) {
                 quickTime("Tonight", hour: 19, dayOffset: 0)
                 quickTime("Tomorrow AM", hour: 8, dayOffset: 1)
@@ -484,7 +740,7 @@ struct CreateActivityView: View {
                     .padding(14)
                 Divider().padding(.leading, 14)
                 Picker("Duration", selection: $duration) {
-                    ForEach([30, 45, 60, 90, 120, 180, 240, 480], id: \.self) { m in
+                    ForEach(Self.durations, id: \.self) { m in
                         Text(m < 60 ? "\(m) min" : m % 60 == 0 ? "\(m / 60) hr" : "\(m / 60)h \(m % 60)m").tag(m)
                     }
                 }
@@ -494,15 +750,37 @@ struct CreateActivityView: View {
         }
     }
 
+    /// Matches the flyer's location to a real place. If nothing matches, the place picker
+    /// opens already searching for it.
+    private func findScannedPlace() async {
+        let query = scannedLocation.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, place == nil else { return }
+        findingPlace = true
+        defer { findingPlace = false }
+        if let match = await Place.search(query).first, place == nil {
+            withAnimation(.snappy) { place = match }
+            placeFromFlyer = true
+        }
+    }
+
     private var whereSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Where?")
-            if !scannedLocation.isEmpty && place == nil {
-                Text("Scanned location · \(scannedLocation). Choose a place to confirm.")
+            label("Location")
+            if findingPlace {
+                Label("Finding “\(scannedLocation)” on the map…", systemImage: "magnifyingglass")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else if placeFromFlyer, let place {
+                Label("Matched “\(scannedLocation)” to \(place.name). Tap it to choose a different spot.",
+                      systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else if !scannedLocation.isEmpty && place == nil {
+                Text("Couldn't find “\(scannedLocation)” on the map. Tap below to pick it; we've already searched for it.")
                     .font(.subheadline)
                     .foregroundStyle(.orange)
             }
-            Button { showPlacePicker = true } label: {
+            Button { placeFromFlyer = false; showPlacePicker = true } label: {
                 HStack(spacing: 14) {
                     Image(systemName: place == nil ? "mappin.and.ellipse" : "mappin.circle.fill")
                         .font(.title2)
@@ -533,7 +811,7 @@ struct CreateActivityView: View {
 
     private var groupSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            label("Who can come?")
+            label("Attendance & cost")
             VStack(spacing: 0) {
                 HStack {
                     Label("Group size", systemImage: "person.2.fill")
@@ -542,7 +820,9 @@ struct CreateActivityView: View {
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .contentTransition(.numericText(value: Double(capacity)))
-                    Stepper("Group size", value: $capacity.animation(.snappy), in: 2...30).labelsHidden()
+                    // Clubs can be big: 1 at a time up to 20, then 5s, then 25s.
+                    Stepper("Group size", value: $capacity.animation(.snappy), in: 2...500,
+                            step: capacity < 20 ? 1 : capacity < 100 ? 5 : 25).labelsHidden()
                 }
                 .padding(14)
                 Divider().padding(.leading, 14)
@@ -556,8 +836,10 @@ struct CreateActivityView: View {
                 Toggle(isOn: privateLocation ? .constant(true) : $requiresApproval) {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("Approve requests", systemImage: "hand.raised.fill")
-                        Text(privateLocation ? "On because the location is private" : "Review people before they join")
-                            .font(.caption).foregroundStyle(.secondary)
+                        if privateLocation {
+                            Text("Required for private locations")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .disabled(privateLocation)
@@ -565,11 +847,36 @@ struct CreateActivityView: View {
                 Divider().padding(.leading, 14)
                 HStack {
                     Label("Cost", systemImage: "creditcard.fill")
-                    TextField("Free", text: $cost)
-                        .multilineTextAlignment(.trailing)
-                        .focused($focus, equals: .cost)
+                    Spacer()
+                    Picker("Cost", selection: $costIsFree.animation(.snappy)) {
+                        Text("Free").tag(true)
+                        Text("Paid").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 140)
+                    .onChange(of: costIsFree) { _, free in
+                        // Paid: straight to the price, keyboard up. Free: nothing to type.
+                        focus = free ? nil : .cost
+                    }
                 }
                 .padding(14)
+                if !costIsFree {
+                    HStack(spacing: 4) {
+                        Text("$")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        TextField("0", text: $cost)
+                            .font(.title3.weight(.semibold))
+                            .keyboardType(.decimalPad)
+                            .focused($focus, equals: .cost)
+                            .accessibilityLabel("Price in dollars")
+                        Text("per person")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14).padding(.bottom, 14)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             .cardStyle(radius: 18)
             .tint(category.color)
@@ -579,7 +886,7 @@ struct CreateActivityView: View {
     private var detailsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             label("Details")
-            TextField("What's the vibe? What should people bring?", text: $details, axis: .vertical)
+            TextField("What should people know or bring?", text: $details, axis: .vertical)
                 .lineLimit(4...8)
                 .focused($focus, equals: .details)
                 .padding(16)
@@ -614,21 +921,20 @@ struct CreateActivityView: View {
 
     private var suggestions: [String] {
         switch category {
-        case .run: ["Easy morning 5K", "Sunset run", "Track intervals"]
-        case .gym: ["Push day partner", "Leg day spotter", "Morning lift"]
-        case .hike: ["Weekend hike", "Sunrise summit", "Trail day trip"]
-        case .cycling: ["Coffee ride", "Bike loop tour", "Long ride Sunday"]
-        case .sports: ["Pickup basketball", "Tennis doubles", "Spikeball in the park"]
-        case .yoga: ["Park yoga flow", "Sunrise stretch", "Beginner yoga"]
-        case .food: ["Try a new restaurant", "Ramen night", "Brunch crew"]
-        case .coffee: ["Coffee & chat", "Café hopping", "Study + latte"]
-        case .drinks: ["Happy hour", "Trivia night", "Rooftop drinks"]
-        case .concert: ["Concert buddy needed", "Live jazz night", "Open mic"]
-        case .movies: ["Movie night", "Opening night!", "Indie film screening"]
-        case .art: ["Museum day", "Gallery walk", "Sketch in the park"]
-        case .study: ["Library grind", "Midterm prep", "Silent study session"]
-        case .games: ["Board game night", "Smash tournament", "Poker night"]
-        case .explore: ["Day trip", "Farmers market stroll", "Explore a new town"]
+        case .sports: ["Open practice", "Intro scrimmage", "Tryout info night"]
+        case .outdoors: ["Weekend hike", "Group bike ride", "Camping trip planning"]
+        case .wellness: ["Sunset yoga", "Mindfulness session", "Gym buddy meetup"]
+        case .cultural: ["Culture night", "Language exchange", "Heritage potluck"]
+        case .arts: ["Film screening", "Improv workshop", "Gallery night"]
+        case .music: ["Open mic", "Jam session", "Choir rehearsal"]
+        case .academic: ["Midterm study group", "Tutoring hours", "Research panel"]
+        case .career: ["Resume review", "Networking mixer", "Mock interviews"]
+        case .tech: ["Hackathon team mixer", "Coding workshop", "Project demo night"]
+        case .service: ["Volunteer shift", "Campus cleanup", "Fundraiser"]
+        case .greek: ["Recruitment open house", "Philanthropy event", "Meet the chapter"]
+        case .faith: ["Weekly fellowship", "Interfaith dinner", "Meditation circle"]
+        case .gaming: ["Smash tournament", "Board game night", "Esports watch party"]
+        case .social: ["General meeting", "Welcome mixer", "Club potluck"]
         }
     }
 
@@ -643,7 +949,9 @@ struct CreateActivityView: View {
         published = true
         store.show(InAppBanner(
             title: schedulePost ? "Your post is scheduled" : (repeats ? "Your event series is live!" : "Your plan is live!"),
-            subtitle: schedulePost ? "Manage it in Plans → Hosting → Scheduled." : "People can now find your plan.",
+            subtitle: schedulePost ? "Manage it in Plans → Hosting → Scheduled."
+                : store.isGuest ? "Saved on this iPhone. Sign in to share it with other students."
+                : "People can now find your plan.",
             symbol: schedulePost ? "clock" : category.symbol, color: category.color
         ))
         dismiss()
@@ -736,27 +1044,32 @@ struct PlacePickerView: View {
         defer { isSearching = false }
         try? await Task.sleep(for: .milliseconds(300))
         guard !Task.isCancelled else { return }
-
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = q
-        request.region = MKCoordinateRegion(center: Geo.home, span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6))
-        let local = Place.presets.filter { $0.name.localizedCaseInsensitiveContains(q) }
-        do {
-            let response = try await MKLocalSearch(request: request).start()
-            guard !Task.isCancelled else { return }
-            let found = response.mapItems.prefix(12).map { item in
-                Place(name: item.name ?? q,
-                      address: item.address?.shortAddress ?? item.address?.fullAddress ?? "",
-                      latitude: item.location.coordinate.latitude,
-                      longitude: item.location.coordinate.longitude)
-            }
-            results = local + found
-        } catch {
-            results = local
-        }
+        let found = await Place.search(q)
+        guard !Task.isCancelled else { return }
+        results = found
     }
 }
 
+
+/// Rule-of-thirds lines and a white border over the crop area.
+private struct CropGrid: View {
+    var body: some View {
+        GeometryReader { geometry in
+            let w = geometry.size.width, h = geometry.size.height
+            Path { path in
+                for i in 1...2 {
+                    path.move(to: CGPoint(x: w * CGFloat(i) / 3, y: 0))
+                    path.addLine(to: CGPoint(x: w * CGFloat(i) / 3, y: h))
+                    path.move(to: CGPoint(x: 0, y: h * CGFloat(i) / 3))
+                    path.addLine(to: CGPoint(x: w, y: h * CGFloat(i) / 3))
+                }
+            }
+            .stroke(.white.opacity(0.35), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white, lineWidth: 2)
+        }
+    }
+}
 
 private struct CropSource: Identifiable {
     let id = UUID()
@@ -767,59 +1080,118 @@ private struct CoverPhotoCropView: View {
     @Environment(\.dismiss) private var dismiss
     let image: UIImage
     let onCrop: (Data) -> Void
+    @State private var shape: CoverShape
     @State private var zoom: CGFloat = 1
+    @State private var zoomStart: CGFloat = 1
     @State private var offset: CGSize = .zero
     @State private var dragStart: CGSize = .zero
+    @State private var cropSize = CGSize(width: 16, height: 9)
     @State private var cropError = false
+
+    init(image: UIImage, onCrop: @escaping (Data) -> Void) {
+        self.image = image
+        self.onCrop = onCrop
+        // Flyers and other tall photos start as a poster, so only a sliver of the sides is trimmed.
+        _shape = State(initialValue: image.size.height > image.size.width ? .poster : .wide)
+    }
 
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
-                let width = max(1, geometry.size.width - 40)
-                let size = CGSize(width: width, height: width * 9 / 16)
-                VStack(spacing: 24) {
-                    Spacer()
+                let size = frameSize(in: geometry.size)
+                ZStack {
+                    Color.black
                     Image(uiImage: image)
                         .resizable()
                         .frame(width: image.size.width * scale(for: size),
                                height: image.size.height * scale(for: size))
                         .offset(offset)
+                    // The rest of the photo stays visible, dimmed, like cropping in Photos.
+                    Rectangle()
+                        .fill(.black.opacity(0.6))
+                        .mask {
+                            Rectangle().overlay {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .frame(width: size.width, height: size.height)
+                                    .blendMode(.destinationOut)
+                            }
+                            .compositingGroup()
+                        }
+                        .allowsHitTesting(false)
+                    CropGrid()
                         .frame(width: size.width, height: size.height)
-                        .clipped()
-                        .overlay(Rectangle().stroke(.white, lineWidth: 2))
-                        .contentShape(Rectangle())
-                        .gesture(DragGesture()
-                            .onChanged { value in
-                                offset = clamped(CGSize(
-                                    width: dragStart.width + value.translation.width,
-                                    height: dragStart.height + value.translation.height
-                                ), in: size)
-                            }
-                            .onEnded { _ in dragStart = offset })
-                        .accessibilityLabel("Cover photo crop preview")
-                    Text("Drag to position your photo")
-                        .foregroundStyle(.secondary)
-                    HStack {
-                        Image(systemName: "minus.magnifyingglass")
-                        Slider(value: $zoom, in: 1...4)
-                            .accessibilityLabel("Photo zoom")
-                            .onChange(of: zoom) {
-                                offset = clamped(offset, in: size)
-                                dragStart = offset
-                            }
-                        Image(systemName: "plus.magnifyingglass")
-                    }
-                    Spacer()
-                    Button("Use photo") { crop(size: size) }
-                        .buttonStyle(.borderedProminent)
+                        .allowsHitTesting(false)
                 }
-                .padding(20)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            offset = clamped(CGSize(width: dragStart.width + value.translation.width,
+                                                    height: dragStart.height + value.translation.height), in: size)
+                        }
+                        .onEnded { _ in dragStart = offset }
+                        .simultaneously(with: MagnifyGesture()
+                            .onChanged { value in
+                                zoom = min(4, max(1, zoomStart * value.magnification))
+                                offset = clamped(offset, in: size)
+                            }
+                            .onEnded { _ in
+                                zoomStart = zoom
+                                dragStart = offset
+                            })
+                )
+                .overlay(alignment: .bottom) {
+                    VStack(spacing: 14) {
+                        Picker("Shape", selection: $shape.animation(.snappy)) {
+                            ForEach(CoverShape.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(maxWidth: 280)
+                        Text("Drag and pinch to frame your cover")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.85))
+                        HStack {
+                            Image(systemName: "minus.magnifyingglass")
+                            Slider(value: $zoom, in: 1...4)
+                                .accessibilityLabel("Photo zoom")
+                                .onChange(of: zoom) {
+                                    zoomStart = zoom
+                                    offset = clamped(offset, in: size)
+                                    dragStart = offset
+                                }
+                            Image(systemName: "plus.magnifyingglass")
+                        }
+                        .foregroundStyle(.white)
+                        .tint(.white)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Cover photo crop, \(shape.title)")
+                .onAppear { cropSize = size }
+                .onChange(of: geometry.size) { cropSize = frameSize(in: geometry.size) }
+                .onChange(of: shape) {
+                    cropSize = frameSize(in: geometry.size)
+                    zoom = 1
+                    zoomStart = 1
+                    offset = .zero
+                    dragStart = .zero
+                }
             }
-            .navigationTitle("Crop cover photo")
+            .ignoresSafeArea(edges: .bottom)
+            .background(Color.black)
+            .navigationTitle("Cover photo")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Use photo") { crop(size: cropSize) }
+                        .fontWeight(.semibold)
                 }
             }
             .alert("Could not save photo", isPresented: $cropError) {
@@ -827,6 +1199,18 @@ private struct CoverPhotoCropView: View {
             } message: {
                 Text("Please try choosing another photo.")
             }
+        }
+    }
+
+    /// The crop frame: full width for wide covers; for posters, as tall as fits above the controls.
+    private func frameSize(in space: CGSize) -> CGSize {
+        let width = max(1, space.width - 24)
+        switch shape {
+        case .wide:
+            return CGSize(width: width, height: width * 9 / 16)
+        case .poster:
+            let height = max(1, min(space.height - 2 * 150, width * 4 / 3))
+            return CGSize(width: height * 3 / 4, height: height)
         }
     }
 
@@ -843,7 +1227,7 @@ private struct CoverPhotoCropView: View {
     }
 
     private func crop(size: CGSize) {
-        let output = CGSize(width: 1600, height: 900)
+        let output = shape.output
         let factor = output.width / size.width
         let scale = scale(for: size) * factor
         let position = clamped(offset, in: size)
@@ -864,5 +1248,111 @@ private struct CoverPhotoCropView: View {
         }
         onCrop(data)
         dismiss()
+    }
+}
+
+/// The two cover shapes: wide for photos, a 3:4 poster for flyers.
+enum CoverShape: CaseIterable {
+    case wide, poster
+
+    var title: String { self == .wide ? "Wide 16:9" : "Poster 3:4" }
+    var output: CGSize { self == .wide ? CGSize(width: 1600, height: 900) : CGSize(width: 1200, height: 1600) }
+
+    /// Whether a saved cover is a poster (taller than wide). Reads only the image header.
+    static func isPoster(_ data: Data?) -> Bool {
+        guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int else { return false }
+        // EXIF orientations 5–8 are rotated 90°.
+        let rotated = ((properties[kCGImagePropertyOrientation] as? Int) ?? 1) >= 5
+        return rotated ? width > height : height > width
+    }
+}
+
+
+private final class PlanVoiceCapture: @unchecked Sendable {
+    // The queue serializes audio engine and session changes off the UI thread.
+    private static let audioQueue = DispatchQueue(label: "Swipe-n-Go.plan-voice")
+    private let engine = AVAudioEngine()
+    private let request = SFSpeechAudioBufferRecognitionRequest()
+    private let recognizer: SFSpeechRecognizer
+    private var task: SFSpeechRecognitionTask?
+
+    private enum CaptureError: Error { case unavailable }
+
+    static func start(update: @escaping @MainActor @Sendable (String?, Bool, String?) -> Void) async throws -> PlanVoiceCapture {
+        try await withCheckedThrowingContinuation { continuation in
+            audioQueue.async {
+                continuation.resume(with: Result { try PlanVoiceCapture(update: update) })
+            }
+        }
+    }
+
+    private init(update: @escaping @MainActor @Sendable (String?, Bool, String?) -> Void) throws {
+        guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
+            throw CaptureError.unavailable
+        }
+        self.recognizer = recognizer
+        let audioSession = AVAudioSession.sharedInstance()
+        try audioSession.setCategory(.record, mode: .measurement)
+        try audioSession.setActive(true)
+
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            try? audioSession.setActive(false)
+            throw CaptureError.unavailable
+        }
+        let request = request
+        request.shouldReportPartialResults = true
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+        do {
+            try engine.start()
+        } catch {
+            tearDown()
+            throw error
+        }
+        task = recognizer.recognitionTask(with: request) { result, error in
+            let transcript = result?.bestTranscription.formattedString
+            let finished = result?.isFinal == true || error != nil
+            let failure = error.map { error in
+                let underlying = error as NSError
+                return "\(underlying.localizedDescription) (\(underlying.domain) \(underlying.code))"
+            }
+            Task { @MainActor in update(transcript, finished, failure) }
+        }
+    }
+
+    func stop() {
+        Self.audioQueue.async { self.tearDown() }
+    }
+
+    private func tearDown() {
+        engine.stop()
+        engine.inputNode.removeTap(onBus: 0)
+        request.endAudio()
+        task?.cancel()
+        task = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+}
+
+/// The Host form's Free / Paid cost, as the text saved on the plan ("Free", "$12", "~$20").
+enum PlanCost {
+    /// "Free", or the amount with a "$" in front when it starts with a number.
+    static func text(isFree: Bool, amount: String) -> String {
+        let amount = amount.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isFree || amount.isEmpty { return "Free" }
+        return amount.first?.isNumber == true ? "$" + amount : amount
+    }
+
+    /// Splits a saved or scanned cost ("Free", "$12", "Free w/ ARC", "~$20") into free or the amount typed.
+    static func parse(_ text: String) -> (isFree: Bool, amount: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.lowercased().hasPrefix("free") { return (true, "") }
+        return (false, trimmed.hasPrefix("$") ? String(trimmed.dropFirst()) : trimmed)
     }
 }
