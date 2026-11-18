@@ -7,6 +7,8 @@ Human only files. Do not create, edit, rewrite, or delete these. You can read th
 - docs/client_architecture.md
 - docs/server_architecture.md
 - anything in docs/features/
+- discovery.md
+- new_user_interviews.md 
 
 If you think one of these needs to change, tell us what and why and we will edit it ourselves. Don't fix spelling or grammar in them either.
 
