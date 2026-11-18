@@ -20,10 +20,10 @@ struct ActivityDetailView: View {
             VStack(spacing: 0) {
                 hero
                 VStack(alignment: .leading, spacing: 22) {
+                    about
                     quickFacts
                     if store.isHost(live) { hostTools }
                     hostCard
-                    about
                     goingSection
                     locationSection
                     safetyNote
@@ -355,16 +355,15 @@ struct ActivityDetailView: View {
             if store.isHost(live) {
                 chatButton(title: "Open group chat")
             } else if store.isGoing(live) {
-                Menu {
-                    Button("Leave plan", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { confirmLeave = true }
-                } label: {
-                    Label("Going", systemImage: "checkmark.circle.fill")
+                Button(role: .destructive) { confirmLeave = true } label: {
+                    Label("Leave Plan", systemImage: "rectangle.portrait.and.arrow.right")
                         .font(.headline)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(.red)
                         .frame(height: 54)
                         .padding(.horizontal, 18)
                         .glassEffect(.regular.interactive(), in: Capsule())
                 }
+                .buttonStyle(.plain)
                 chatButton(title: "Group chat")
             } else if store.isPending(live) {
                 HStack(spacing: 10) {

@@ -210,7 +210,7 @@ struct ChatView: View {
                     NavigationLink {
                         ActivityDetailView(activity: activity)
                     } label: {
-                        Image(systemName: "info.circle")
+                        Text("Event Info")
                     }
                 }
             } else if let other = convo.flatMap({ store.others(in: $0).first }) {
