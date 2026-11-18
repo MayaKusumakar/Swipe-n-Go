@@ -34,7 +34,7 @@ extension AppStore {
         #elseif targetEnvironment(simulator)
         "http://localhost:8080"     // the simulator shares the Mac's network
         #else
-        ""                          // on a phone, enter the Mac's Wi-Fi address in Profile → Server
+        productionServerURL         // a phone run from Xcode; a Mac's Wi-Fi address can be set in Profile → Server
         #endif
     }
 
