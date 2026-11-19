@@ -159,6 +159,25 @@ When asked what one thing they would change to make the app easier, the intervie
 
 ## Improvements Made to the App 
 # What you changed and Why 
+**1. Clear "Leave Plan" button (Interviews 4 and 5)**
+- **What we heard:** Grace and Shannon both got stuck canceling an event. To leave, you had to tap the green "Going" button and then pick Leave Plan from a menu. Grace said she wouldn't have found it on her own, because "Going" reads like a status label, not something you can tap.
+- **What we changed:** We replaced the green "Going" menu with a red "Leave Plan" button right on the event page. One tap, then a confirmation.
+- **Why:** Leaving a plan is a core action and it was the most common sticking point in Round 1. The button now says exactly what it does.
+
+**2. "About" shown first on the event page (Interview 1)**
+- **What we heard:** Lucas said the event page was a lot to take in, and that he wants to know what an event is before when it is: "First, I'll check if I'm interested in it, then check when it's happening."
+- **What we changed:** The About section now comes before the Details section (date, time, location).
+- **Why:** Students decide whether they're interested first, so the page now follows that order.
+
+**3. "Event Info" label instead of the "i" icon in group chats (Interview 2)**
+- **What we heard:** Hardik took a few seconds to find event details from the group chat. He thought the "i" icon would show info about the app or a privacy policy, not the event.
+- **What we changed:** The button in the group chat now says "Event Info."
+- **Why:** A plain label removes the guessing, and people no longer mistake it for app or privacy info.
+
+**4. UC Davis-only sign-in (Interviews 1 and 3)**
+- **What we heard:** Since there was no sign-in, Lucas assumed the app was open to anyone. Joey said he'd use it only if it were UC Davis exclusive.
+- **What we changed:** The app now starts with "Sign in with UC Davis Google," and only @ucdavis.edu accounts can get in. The app is also connected to our live team server, so events people post are shared with everyone.
+- **Why:** Being UC Davis-only is a big part of why students would trust and use the app, and it now shows from the very first screen.
 
 ## Second Round Interviews 
 # Next five interviews 
