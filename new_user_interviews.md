@@ -300,6 +300,31 @@ When asked to describe the app to a friend in one sentence, the interviewee said
 **5.Your post-interview synthesis**
 - Insert answer here
 
+## Interview 11
+**Interviewer:**  Beale
+**Note Taker:** 
+**Interviewee:** Faith
+**Date:** 11/18 
+**Recording:** [Recording](https://drive.google.com/file/d/1PHxcmOTaQjCwxJQlNguMLhANay7vz-TG/view?usp=drive_link)
+
+
+**1. Their answer to the 5-second test**
+- The interviewee's initial reaction was an app that suggested events to go to.
+**2. Where they got stuck during the task**
+- The task was to find something to do using our app. The interviewee went through the initial setup and when they landed on the homepage, they didn't find swiping intiutive. Although, they did say that it followed the "Tinder" convtion but they don't use apps like that so they didn't want to mess up. They also clicked on the event to view more details, and preferred to use the buttons to accept the plan or to skip it. They also never touched the chat functionality. 
+Once they saved multiple events, they decided to go in and decline already accepted plans so they didn't end up finding anything they really wanted to do.
+**3.Their reaction to your AI feature**
+- Asked to share an event with the AI feature. They were confused by the question but with clarification, understood the task. 
+In regards to the AI feature, the user was able to use it but the "Date" field didn't populate. They also found it weird that the description included the date and time but the AI was uncertain in the Date and Time of the event.
+They found the AI's answer to be semi-reliable and found it useful but for not neccesary.
+**4.Their answers to the debrief questions**
+- Was our app useful to find events to go to? Yes, but event selection didn't really have the events they would have wanted. For example, they like arts and crafts but there was no activities that actually related to that.
+Was our app easier to find events through than previous other methods? On the same level. User is a part of different organizations and follows clubs on social media so they don’t struggle to find events to go to. They found the most difficult thing was planning different dates and times that they’re free. Our app had a feature that accounted for their free time so they liked that.
+**5.Your post-interview synthesis**
+- This version of the app seems to work for it's intended purpose but it seems to be lacking real data. This is something we should seed more carefully as the experience a user has seems to largely depend on whether or not they found something that suited their tastes. Two issues that could resolve this, add real events going on in Davis and make change our recommendation algorithm to be better tailored to niches and not be so broad.
+In terms of the AI usage, it worked but there are limitations in what it can do. Some fine tuning might be neccesary to make sure that all fields get populated properly.
+
+
 ## Overall summary 
 # What did you learn 
 # How does this change your project 
