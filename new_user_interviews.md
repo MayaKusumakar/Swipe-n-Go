@@ -286,23 +286,34 @@ When asked whether the app was missing anything compared to the methods he norma
 - This version's initial impressions and event creation flow seem to be effective based on this interview; moreover, the interviewee responded very positively to the AI-recommended locations, which made creating an event feel effortless. However, the interview showed that the rest of the navigation is still a problem for users. The main problems he faced were finding the Explore and List tabs and finding the Cancel Plans button, which took him a minute or two of clicking around. A part of the interview that grabbed my attention was his wish to see more than one club at a time, a feature the app already has but that he never found, which suggests the List and Explore tabs are not visible enough and users may assume swiping is the only way to browse. My major takeaways from this were making the List and Explore tabs more prominent, making the Cancel Plans button easier to find, and continuing to build on the AI location recommendations that users enjoy.
 
 ## Interview 10
-**Interviewer:** 
-**Note Taker:** 
+**Interviewer:** Maya
+**Note Taker:** Beale
 **Interviewee:** 
-**Date:** 
-**Recording:** [Recording]()
+**Date:** 11/18 
+**Recording:** [Recording](within Drive)
 
 
 **1. Their answer to the 5-second test**
-- Insert answer here
+- Design is a lot like a dating app, looks a lot like tinder. Looks like it’s for activities, kind of like for meeting people, orgs, or seeing events. Sees a “for you page”, seems personalized. 
 **2. Where they got stuck during the task**
-- Insert answer here
+- Clicked on the host button. Goes there and sees the autofill/scan flier. If he had a flier, he would upload it. If not, he would have a big description and fill out all the questions. 
+- When prompted to actually make it, he typed the description in the text box for describe event, but did not press the send button and instead kept filling out the information on the questionnaire.
+- Liked the fact that the location was already there
+- Went to the explore/map page, he thought this was the most useful. Besides that, he went to the discover page and scrolled through different events.
+- Went to the homepage to sign up for an event before I prompted him to.
+- When told to delete the event they made as quickly as possible, they went to chats first. Then clicked on the chat, the plan from there and then leave plan.
+- To find an event locally based off location they went straight to explore page. His favorite feature.
+- When asked how they would connect with others at an already saved event they went straight to chats and found the messages section.
+
 **3.Their reaction to your AI feature**
-- Insert answer here
+- For the hosting plans description feature: Not clear for him to put all the information in the description part. Yes it was very useful and would save a lot of time. Feels it was ambiguous because he didn’t click it before. He thinks it would be easy if he used that at first. Maybe if there was a watermarker tag with more information, that would be useful. 
+- For the free time plans feature: Looked for outdoor/sport events in the evening. It found a bunch of events for him to go to. He thinks this is very useful, even more useful than swiping on the Discover page. He thought it was very easy, useful and clear. 
 **4.Their answers to the debrief questions**
-- Insert answer here
+- When asked if they believed their initial impressions of the app were accurate, he stated that he thought it was pretty accurate.
+- When asked whether the app was missing any functionalities compared to their current methods, he stated that because of the event search AI feature, he feels the app is very complete. He also finds the maps and chat feature very useful. 
+
 **5.Your post-interview synthesis**
-- Insert answer here
+- Navigation through the app seemed relatively straightforward. The areas of friction we observed in the first round of interviews appeared to be mostly a non-factor during this meeting. Feedback after using the app after the tasks was positive overall. The only major takeaways were improving some of the clarity within different parts of the app (such as the description filling feature); moreover, proceeding to larger-scale deployment will be necessary. 
 
 ## Interview 11
 **Interviewer:**  Beale
