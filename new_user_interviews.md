@@ -201,28 +201,8 @@ When asked what one thing they would change with a magic wand, the interviewee s
 When asked to describe the app in one sentence, the interviewee said it was an app to socialize and meet people with similar interests.
 
 **5. Your post-interview synthesis**
-- This version's initial impressions and core loop seem to be effective based on these results; moreover, the user picked up the swiping interaction on their own and completed every task without help. Although their first guess was a running app similar to Strava, swiping through the categories quickly showed them that the app is for meeting people with similar interests on campus. The main problem they faced was finding events they were hosting, which took too many steps to reach. A part of the interview that grabbed my attention was the user's tendency to completely ignore the scan flyer feature and enter every detail by hand, which could be a result of the Host flow leading straight into the form rather than prompting a scan. My major takeaways from this were cutting down the number of steps to reach hosted events, better emphasizing the flyer scanning feature, and looking further into what about the emoji design the user wanted changed.**1. Their answer to the 5-second test**
-- The interviewee's immediate impression was that the app was for tracking running, such as how fast they run, and they compared it to Strava.
-After entering the app and swiping through it, the interviewee noticed groups such as a midterm study group and categories like academic, cultural, cycling, gaming, and esports. They revised their guess, saying it seemed related to groups on a school campus and was an app to meet people with similar interests.
-The interviewee correctly recognized the swiping interaction without being told, explaining that swiping left means not interested and swiping right means interested. They also noticed and liked the option to choose when they are free.
-
-**2. Where they got stuck during the task**
-- When asked to find an event and sign up for it, the interviewee searched for events that evening and looked through options such as a developer club, a study group, and a Diwali event. They settled on an event around 6pm that night and noted that the app showed where it was, Kemper Hall, which they found "pretty cool."
-When asked to find out where and when the event was, the interviewee reported that it was at 6pm that day at Kemper Hall, was two hours long, and was free.
-The interviewee did not get stuck at any point during these tasks.
-
-**3. Their reaction to your AI feature**
-- When given the scenario of a club officer posting an event, the interviewee hit the plus button and selected Host. They completely ignored the flyer scanning feature and filled in the details by hand: the event for the next night at 6pm, a category and name, a duration of one and a half hours on November 19th, the ARC as the location, the option to keep the location private, group size open to anyone, and free. They then posted the plan.
-We predict that the interviewee filled in the form manually because the Host flow led them straight into the form fields. When asked whether the posted information was right, they navigated to their plans to find the event they had posted and confirmed it.
-
-**4. Their answers to the debrief questions**
-- The interviewee rated the difficulty of using the app at 2 out of 5, where 1 is least difficult and 5 is most difficult. They explained that the only downside was finding events they were hosting, since they had to go through Plans, then a Host button, and then their plans. They described this as "a lot of buttons" to get there, but said everything else seemed "pretty neat."
-When asked what one thing they would change with a magic wand, the interviewee said the emoji aspect. They also said they liked the map integration.
-When asked to describe the app in one sentence, the interviewee said it was an app to socialize and meet people with similar interests.
-
-**5. Your post-interview synthesis**
 - This version's initial impressions and core loop seem to be effective based on these results; moreover, the user picked up the swiping interaction on their own and completed every task without help. Although their first guess was a running app similar to Strava, swiping through the categories quickly showed them that the app is for meeting people with similar interests on campus. The main problem they faced was finding events they were hosting, which took too many steps to reach. A part of the interview that grabbed my attention was the user's tendency to completely ignore the scan flyer feature and enter every detail by hand, which could be a result of the Host flow leading straight into the form rather than prompting a scan. My major takeaways from this were cutting down the number of steps to reach hosted events, better emphasizing the flyer scanning feature, and looking further into what about the emoji design the user wanted changed.
-
+  
 ## Interview 7
 **Interviewer:** Anant
 **Note Taker:** Haylie Tan
