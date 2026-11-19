@@ -233,6 +233,9 @@ When asked to describe the app to a friend in one sentence, the interviewee said
 **5. Your post-interview synthesis**
 - This version's core loop seems to be effective based on this interview; however, it also points to a couple of problems users are still running into. Although the user's first impression was that this was a running app, they quickly understood its purpose once they started using it and completed most tasks with little to no issues. The main problem they faced was leaving an event: they expected to do it through the group chat and only found the Leave Plan button after being told it existed, which suggests the button is still not visible enough. A part of the interview that grabbed my attention was the flyer scan failing to reach our servers, which became the user's biggest frustration and their top suggestion for improvement. My major takeaways from this were making the Leave Plan button easier to find and making sure the flyer scanning feature works reliably before further testing.
 
+  
+## Interview 8
+
 **Interviewer:** Angus
 **Interviewee:** Mark Copple
 **Date:** 11/18
