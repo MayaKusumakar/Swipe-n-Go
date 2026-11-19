@@ -158,7 +158,7 @@ Given the task of connecting with other people going to an already saved event, 
 **Note Taker:** 
 **Interviewee:** 
 **Date:** 
-**Recording:** [Recording]()
+**Recording:** [Recording](https://drive.google.com/file/d/1xxL60DrqwsvTHwVBQk17zfdiuF8C2pTg/view?usp=sharing)
 
 
 **1. Their answer to the 5-second test**
@@ -177,7 +177,7 @@ Given the task of connecting with other people going to an already saved event, 
 **Note Taker:** 
 **Interviewee:** 
 **Date:** 
-**Recording:** [Recording]()
+**Recording:** [Recording](https://drive.google.com/file/d/18OW99l8E6kJ9pZoNbUc1VIKi_bG2BjUn/view?usp=sharing)
 
 
 **1. Their answer to the 5-second test**
