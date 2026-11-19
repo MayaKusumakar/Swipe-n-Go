@@ -165,7 +165,7 @@ When asked what one thing they would change to make the app easier, the intervie
 
 ## Interview 6
 **Interviewer:** Anant
-**Note Taker:** 
+**Note Taker:**  Haylie Tan
 **Interviewee:** Cherry Reddy
 **Date:** 11/18
 **Recording:** [Recording](https://drive.google.com/file/d/1xxL60DrqwsvTHwVBQk17zfdiuF8C2pTg/view?usp=sharing)
@@ -215,7 +215,7 @@ When asked to describe the app in one sentence, the interviewee said it was an a
 
 ## Interview 7
 **Interviewer:** Anant
-**Note Taker:** 
+**Note Taker:** Haylie Tan
 **Interviewee:** Jackson
 **Date:** 11/18
 **Recording:** [Recording](https://drive.google.com/file/d/18OW99l8E6kJ9pZoNbUc1VIKi_bG2BjUn/view?usp=sharing)
