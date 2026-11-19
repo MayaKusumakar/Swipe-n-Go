@@ -330,5 +330,16 @@ In terms of the AI usage, it worked but there are limitations in what it can do.
 
 
 ## Overall summary 
-# What did you learn 
-# How does this change your project 
+# What did you learn?
+We didn’t expect the first event to matter as much as it did. A few people saw a running event and assumed Swipe-n-Go was a running app. Once they browsed a bit, they realized it was for all kinds of campus events.
+
+People generally figured out how to join a plan, but leaving was less obvious. We added a Leave Plan button after the first round. Even with that change, one person in the second round looked in the group chat first and needed a hint to find it.
+
+We also saw where the flyer scan could save people time and where it fell short. One person entered everything by hand, another got a server error, and someone who found the autofill useful still had to fix the date. The scan had picked up the date and time in the description but left the date field blank.
+
+# How does this change your project?
+We want the first screen to show more of what’s happening around UC Davis. We’ll show a wider mix of events and make the list easier to find so people can see what’s available without swiping through events one at a time.
+
+We’ll also test leaving a plan again. We want to start some people in the group chat and see where they look when we ask them to leave, without telling them which button to press.
+
+For flyer scanning, we’ll focus on making it work consistently and showing people which details they still need to check before posting.
