@@ -154,42 +154,84 @@ Given the task of connecting with other people going to an already saved event, 
 # Next five interviews 
 
 ## Interview 6
-**Interviewer:** 
+**Interviewer:** Anant
 **Note Taker:** 
-**Interviewee:** 
-**Date:** 
+**Interviewee:** Cherry Reddy
+**Date:** 11/18
 **Recording:** [Recording](https://drive.google.com/file/d/1xxL60DrqwsvTHwVBQk17zfdiuF8C2pTg/view?usp=sharing)
 
 
 **1. Their answer to the 5-second test**
-- Insert answer here
+- The interviewee's immediate impression was that the app was for tracking running, such as how fast they run, and they compared it to Strava.
+After entering the app and swiping through it, the interviewee noticed groups such as a midterm study group and categories like academic, cultural, cycling, gaming, and esports. They revised their guess, saying it seemed related to groups on a school campus and was an app to meet people with similar interests.
+The interviewee correctly recognized the swiping interaction without being told, explaining that swiping left means not interested and swiping right means interested. They also noticed and liked the option to choose when they are free.
+
 **2. Where they got stuck during the task**
-- Insert answer here
-**3.Their reaction to your AI feature**
-- Insert answer here
-**4.Their answers to the debrief questions**
-- Insert answer here
-**5.Your post-interview synthesis**
-- Insert answer here
+- When asked to find an event and sign up for it, the interviewee searched for events that evening and looked through options such as a developer club, a study group, and a Diwali event. They settled on an event around 6pm that night and noted that the app showed where it was, Kemper Hall, which they found "pretty cool."
+When asked to find out where and when the event was, the interviewee reported that it was at 6pm that day at Kemper Hall, was two hours long, and was free.
+The interviewee did not get stuck at any point during these tasks.
+
+**3. Their reaction to your AI feature**
+- When given the scenario of a club officer posting an event, the interviewee hit the plus button and selected Host. They completely ignored the flyer scanning feature and filled in the details by hand: the event for the next night at 6pm, a category and name, a duration of one and a half hours on November 19th, the ARC as the location, the option to keep the location private, group size open to anyone, and free. They then posted the plan.
+We predict that the interviewee filled in the form manually because the Host flow led them straight into the form fields. When asked whether the posted information was right, they navigated to their plans to find the event they had posted and confirmed it.
+
+**4. Their answers to the debrief questions**
+- The interviewee rated the difficulty of using the app at 2 out of 5, where 1 is least difficult and 5 is most difficult. They explained that the only downside was finding events they were hosting, since they had to go through Plans, then a Host button, and then their plans. They described this as "a lot of buttons" to get there, but said everything else seemed "pretty neat."
+When asked what one thing they would change with a magic wand, the interviewee said the emoji aspect. They also said they liked the map integration.
+When asked to describe the app in one sentence, the interviewee said it was an app to socialize and meet people with similar interests.
+
+**5. Your post-interview synthesis**
+- This version's initial impressions and core loop seem to be effective based on these results; moreover, the user picked up the swiping interaction on their own and completed every task without help. Although their first guess was a running app similar to Strava, swiping through the categories quickly showed them that the app is for meeting people with similar interests on campus. The main problem they faced was finding events they were hosting, which took too many steps to reach. A part of the interview that grabbed my attention was the user's tendency to completely ignore the scan flyer feature and enter every detail by hand, which could be a result of the Host flow leading straight into the form rather than prompting a scan. My major takeaways from this were cutting down the number of steps to reach hosted events, better emphasizing the flyer scanning feature, and looking further into what about the emoji design the user wanted changed.**1. Their answer to the 5-second test**
+- The interviewee's immediate impression was that the app was for tracking running, such as how fast they run, and they compared it to Strava.
+After entering the app and swiping through it, the interviewee noticed groups such as a midterm study group and categories like academic, cultural, cycling, gaming, and esports. They revised their guess, saying it seemed related to groups on a school campus and was an app to meet people with similar interests.
+The interviewee correctly recognized the swiping interaction without being told, explaining that swiping left means not interested and swiping right means interested. They also noticed and liked the option to choose when they are free.
+
+**2. Where they got stuck during the task**
+- When asked to find an event and sign up for it, the interviewee searched for events that evening and looked through options such as a developer club, a study group, and a Diwali event. They settled on an event around 6pm that night and noted that the app showed where it was, Kemper Hall, which they found "pretty cool."
+When asked to find out where and when the event was, the interviewee reported that it was at 6pm that day at Kemper Hall, was two hours long, and was free.
+The interviewee did not get stuck at any point during these tasks.
+
+**3. Their reaction to your AI feature**
+- When given the scenario of a club officer posting an event, the interviewee hit the plus button and selected Host. They completely ignored the flyer scanning feature and filled in the details by hand: the event for the next night at 6pm, a category and name, a duration of one and a half hours on November 19th, the ARC as the location, the option to keep the location private, group size open to anyone, and free. They then posted the plan.
+We predict that the interviewee filled in the form manually because the Host flow led them straight into the form fields. When asked whether the posted information was right, they navigated to their plans to find the event they had posted and confirmed it.
+
+**4. Their answers to the debrief questions**
+- The interviewee rated the difficulty of using the app at 2 out of 5, where 1 is least difficult and 5 is most difficult. They explained that the only downside was finding events they were hosting, since they had to go through Plans, then a Host button, and then their plans. They described this as "a lot of buttons" to get there, but said everything else seemed "pretty neat."
+When asked what one thing they would change with a magic wand, the interviewee said the emoji aspect. They also said they liked the map integration.
+When asked to describe the app in one sentence, the interviewee said it was an app to socialize and meet people with similar interests.
+
+**5. Your post-interview synthesis**
+- This version's initial impressions and core loop seem to be effective based on these results; moreover, the user picked up the swiping interaction on their own and completed every task without help. Although their first guess was a running app similar to Strava, swiping through the categories quickly showed them that the app is for meeting people with similar interests on campus. The main problem they faced was finding events they were hosting, which took too many steps to reach. A part of the interview that grabbed my attention was the user's tendency to completely ignore the scan flyer feature and enter every detail by hand, which could be a result of the Host flow leading straight into the form rather than prompting a scan. My major takeaways from this were cutting down the number of steps to reach hosted events, better emphasizing the flyer scanning feature, and looking further into what about the emoji design the user wanted changed.
 
 ## Interview 7
-**Interviewer:** 
+**Interviewer:** Anant
 **Note Taker:** 
-**Interviewee:** 
-**Date:** 
+**Interviewee:** Jackson
+**Date:** 11/18
 **Recording:** [Recording](https://drive.google.com/file/d/18OW99l8E6kJ9pZoNbUc1VIKi_bG2BjUn/view?usp=sharing)
 
 
 **1. Their answer to the 5-second test**
-- Insert answer here
+- The interviewee's immediate impression was that the app was mainly for people interested in running. Their attention appeared to be focused on the specific event shown on screen, so their guess seems to have been based on that event rather than the app as a whole.
+After switching into the app, the interviewee revised their guess, saying the app was for different events and that there was a feature to join or not join them. Interacting with the app clarified its broader purpose.
+
 **2. Where they got stuck during the task**
-- Insert answer here
-**3.Their reaction to your AI feature**
-- Insert answer here
-**4.Their answers to the debrief questions**
-- Insert answer here
-**5.Your post-interview synthesis**
-- Insert answer here
+- When asked to find an event and sign up for it, the interviewee picked an event and sent a request to join without any visible hesitation.
+When asked to find out where and when the event was, the interviewee found the details in the chat and correctly reported that it was on Friday at 5:30.
+Given the task of leaving the event, the interviewee was initially unsure and asked whether they could just text something in the chat to leave. After being told there was a Leave Plan button, they searched briefly before locating it. We predict that the interviewee expected to communicate leaving through the chat because that was where they had just been.
+
+**3. Their reaction to your AI feature**
+- When given the scenario of a club officer posting an event from a flyer, the interviewee initially asked for clarification on what they were supposed to do. Once the task was clarified, they said they would press the Host button, take a picture of the flyer, and send it out, which matches the intended flow.
+Using a sample flyer from the gallery, the interviewee attempted the upload, but the scan failed with an error saying the app couldn't reach the team's servers. A retry also failed, and the issue was thought to be the Wi-Fi. Because the scan never completed, the interviewee was unable to react to the AI-filled details.
+
+**4. Their answers to the debrief questions**
+- The interviewee stated that the tasks were pretty easy and that everything was right there. They rated the difficulty of using the app at 1 out of 5, where 1 is least difficult and 5 is most difficult.
+When asked if their first guess about the app was right, the interviewee said no. They had initially thought it was about one club but realized it was for multiple events.
+When asked what one thing they would change with a magic wand, the interviewee said the flyer upload, because it didn't work for them. They added that everything else seemed "pretty chill" and commented that the team seemed to know what problem they wanted to solve.
+When asked to describe the app to a friend in one sentence, the interviewee said that if a friend was looking for an event or club to join, they should check out this app.
+
+**5. Your post-interview synthesis**
+- This version's core loop seems to be effective based on this interview; however, it also points to a couple of problems users are still running into. Although the user's first impression was that this was a running app, they quickly understood its purpose once they started using it and completed most tasks with little to no issues. The main problem they faced was leaving an event: they expected to do it through the group chat and only found the Leave Plan button after being told it existed, which suggests the button is still not visible enough. A part of the interview that grabbed my attention was the flyer scan failing to reach our servers, which became the user's biggest frustration and their top suggestion for improvement. My major takeaways from this were making the Leave Plan button easier to find and making sure the flyer scanning feature works reliably before further testing.
 
 ## Interview 8
 **Interviewer:** 
