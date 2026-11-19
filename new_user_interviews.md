@@ -104,23 +104,33 @@ Given the task of connecting with other people going to an already saved event, 
 - When focusing on the Guest side of the user experience, the observations gleaned from this interview were positive overall. The responses all seemed to indicate that the app's overall purpose and page breakdown made intuitive sense for our target audience of UC Davis college students. Some points that might be worth further investigating include the immediate understandability of the titular swiping feature, the ease of navigation between different screens, and the reason why this app appeared useful for UC Davis events but not overall. Luckily, the interviewee's success with the core loop indicates that accomplishing abstract tasks within the current iteration makes logical sense. However, working to smooth out the minor points of friction we have documented and experimenting with how to make the main pull of the app more impactful will be worthwhile efforts as we proceed through these Milestones.
 
 ## Interview 4
-**Interviewer:** 
-**Note Taker:** 
-**Interviewee:** 
-**Date:** 
+**Interviewer:** Haylie Tan
+**Note Taker:** Anant
+**Interviewee:** Grace Macasaet
+
+**Date:** 11/17
 **Recording:** [Recording](https://drive.google.com/file/d/1TNog_tz6y9N6YXuvGJ9GwZKSz1kp67zC/view?usp=sharing)
 
 
 **1. Their answer to the 5-second test**
-- Insert answer here
+- The interviewee's immediate impression was that the app showed different things that could be going on around them. They also pointed out the check and X buttons, explaining that these let you choose between what you like and what you don't like.
+While the interviewee did not name events or campus activities specifically, the keywords chosen indicate that the general purpose of the app and its decision-based layout were implied by the interface.
+
 **2. Where they got stuck during the task**
-- Insert answer here
-**3.Their reaction to your AI feature**
-- Insert answer here
-**4.Their answers to the debrief questions**
-- Insert answer here
-**5.Your post-interview synthesis**
-- Insert answer here
+- When asked to sign up for an event after a stressful week of midterms, the interviewee identified two ways of finding events: going onto the map to find what's going on nearby, or using the first page, which they compared to Tinder. After asking whether they could swipe, the interviewee was briefly unsure how to interact with the screen, but quickly figured it out and found the event they wanted.
+When asked to cancel the event they had signed up for, the interviewee was unable to figure it out and said they did not know how to cancel. The interviewer noted this and moved on; however, the interviewee went back and eventually found that they had to press the Going button and then select Leave Plan. The interviewee stated that they did not think they would have found this on their own. We predict that the interviewee did not associate the Going button with changing their plans, since it reads as a status label rather than an action.
+When asked to add a club event as a club president, the interviewee immediately went to Host without any visible hesitation.
+
+**3. Their reaction to your AI feature**
+- The flyer scanning feature was not tested during this session. When given the scenario of a club president adding an event, the interviewee went directly to the Host button, but the session moved on to the debrief before the interviewee interacted with the scan or the AI-filled details.
+
+**4. Their answers to the debrief questions**
+- When asked to rate the difficulty of using the app on a scale of 1 to 5, the interviewee first answered 4.5 before realizing they had mixed up the scale. After clarifying that 1 was easiest, they rated the difficulty at 1 out of 5, where 1 is least difficult and 5 is most difficult.
+When asked if there was a point where they weren't sure what to do next, the interviewee said yes: canceling the event. They explained that it took them a while, but they got it eventually.
+When asked what one thing they would change to make the app easier, the interviewee suggested replacing the Going > Leave Plan flow with a specific cancel button. They explained that they would not intuitively think to click Going in order to change their plans, and that a button labeled something like "Cancel plans" would be easier.
+
+**5. Your post-interview synthesis**
+- This version's initial impressions and core loop seem to be effective based on this interview; moreover, the interviewee was able to find and sign up for an event and locate the Host button with little to no issues. The interviewee quickly understood the check and X decisions and compared the swiping to Tinder, which suggests the core swiping interaction is becoming more recognizable. The main problem they faced was canceling an event: they could not find how to leave the plan, and once they did, they said they would not have gotten it on their own. A part of the interview that grabbed my attention was that the Going button, which we intended as the way into Leave Plan, reads to users as a status label rather than something they can tap to change their plans. My major takeaways from this were adding a clear, dedicated cancel button for events, testing whether that fixes the leaving flow in future interviews, and making sure the flyer scanning feature gets tested in the next round.
 
 ## Interview 5
 **Interviewer:** Evelyn Xiao
