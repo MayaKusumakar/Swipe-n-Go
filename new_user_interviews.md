@@ -108,7 +108,7 @@ Given the task of connecting with other people going to an already saved event, 
 **Note Taker:** 
 **Interviewee:** 
 **Date:** 
-**Recording:** [Recording]()
+**Recording:** [Recording](https://drive.google.com/file/d/1TNog_tz6y9N6YXuvGJ9GwZKSz1kp67zC/view?usp=sharing)
 
 
 **1. Their answer to the 5-second test**
