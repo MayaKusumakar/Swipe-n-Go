@@ -243,43 +243,54 @@ When asked to describe the app to a friend in one sentence, the interviewee said
 **5. Your post-interview synthesis**
 - This version's core loop seems to be effective based on this interview; however, it also points to a couple of problems users are still running into. Although the user's first impression was that this was a running app, they quickly understood its purpose once they started using it and completed most tasks with little to no issues. The main problem they faced was leaving an event: they expected to do it through the group chat and only found the Leave Plan button after being told it existed, which suggests the button is still not visible enough. A part of the interview that grabbed my attention was the flyer scan failing to reach our servers, which became the user's biggest frustration and their top suggestion for improvement. My major takeaways from this were making the Leave Plan button easier to find and making sure the flyer scanning feature works reliably before further testing.
 
-## Interview 8
-**Interviewer:** 
-**Note Taker:** 
-**Interviewee:** 
-**Date:** 
-**Recording:** [Recording]()
+**Interviewer:** Angus
+**Interviewee:** Mark Copple
+**Date:** 11/18
+**Recording:** [Recording]([link])
 
 
 **1. Their answer to the 5-second test**
-- Insert answer here
+- The interviewee's immediate impression was that the app was for finding club sports and other activities around Davis. While their description focused on sports, it captured the app's broader purpose of discovering local activities and showed that the layout and interface conveyed the app's general use.
+
 **2. Where they got stuck during the task**
-- Insert answer here
-**3.Their reaction to your AI feature**
-- Insert answer here
-**4.Their answers to the debrief questions**
-- Insert answer here
-**5.Your post-interview synthesis**
-- Insert answer here
+- When asked to create an event for the fitness club at the Arboretum, the interviewee found it very simple to make an event and had no issues. He described the user interface as very straightforward and easy to use.
+When asked to go to the homepage and sign up for an event that seemed interesting, the interviewee found it very easy to complete. He went to the Explore page and clicked through different events until he found one he liked.
+When asked to delete the event he had previously created as quickly as possible, the interviewee found it a little confusing at first. Once he reached the Host tab, he was easily able to figure out how to delete the event. We predict that the initial confusion came from not knowing where events he created were stored, rather than from the delete action itself.
+
+**3. Their reaction to your AI feature**
+- The interviewee found the auto-population of event details when creating an event very useful and straightforward. He did not report any part of the event sign-up or matchup features as ambiguous or unclear.
+
+**4. Their answers to the debrief questions**
+- When asked whether his initial impressions of what the app was for were accurate, the interviewee said yes. His impressions matched what the app did, and he said that he honestly found it to be more, and better, than he had expected.
+When asked whether the app was missing anything compared to the methods he normally uses to find and make plans with friends, the interviewee could not think of anything at the time. He found the app to be a lot better than other methods of discovering clubs and making plans.
+
+**5. Your post-interview synthesis**
+- This version's initial impressions and core loop seem to be effective based on this interview; moreover, the interviewee completed every task with little to no issues and found the app better than he had expected. His first impression, that it was an app to find club sports and activities around Davis, matched the app's purpose, which suggests the home page communicates the app's use clearly. The main problem he faced was finding where to delete an event he had created, which was only resolved once he reached the Host tab. A part of the interview that grabbed my attention was how positively he responded to the auto-populated event details, which suggests the AI feature is adding real value when users engage with it. My major takeaways from this were making events a user has hosted easier to reach and continuing to build on the AI features that make event creation feel effortless.
 
 ## Interview 9
-**Interviewer:** 
-**Note Taker:** 
-**Interviewee:** 
-**Date:** 
-**Recording:** [Recording]()
+**Interviewer:** Angus
+**Interviewee:** Mark Copple
+**Date:** 11/18
+**Recording:** [Recording]([link])
 
 
 **1. Their answer to the 5-second test**
-- Insert answer here
+- The interviewee's immediate impression was that the app was an event and club finder for a community. While they did not mention UC Davis specifically, their description captured the app's general purpose, which suggests the layout and interface conveyed what the app is for.
+
 **2. Where they got stuck during the task**
-- Insert answer here
-**3.Their reaction to your AI feature**
-- Insert answer here
-**4.Their answers to the debrief questions**
-- Insert answer here
-**5.Your post-interview synthesis**
-- Insert answer here
+- When asked to create an event for the fitness club at the Arboretum, the interviewee found it very easy to make an event. He particularly enjoyed how the app auto-populated different field locations around Davis when he created a soccer event.
+When asked to go to the homepage and sign up for an event that seemed interesting, the interviewee struggled to reach both the Explore tab and the List tab. He disliked that he thought he had to swipe through every event one at a time. Other than that, he found it really easy to sign up for events. We predict that because he could not find the List or Explore tabs, he assumed swiping was the only way to browse events.
+When asked to delete the event he had previously created as quickly as possible, the interviewee struggled to find the Cancel Plans button. It took a lot of clicking around and roughly a minute or two before he figured it out.
+
+**3. Their reaction to your AI feature**
+- The interviewee found the auto-populated fields of the event he created very straightforward and useful. He especially enjoyed how the app showed recommended locations based on the type of event he was creating.
+
+**4. Their answers to the debrief questions**
+- When asked whether his initial impressions of what the app was for were accurate, the interviewee said yes. His initial belief matched what he found the app to do for him.
+When asked whether the app was missing anything compared to the methods he normally uses to find and make plans with friends, the interviewee said no and found the app very simple and easy to use. He did say he wished he could see more than one club at a time, but this was because he could not find the List and Explore tabs, which already offer that view.
+
+**5. Your post-interview synthesis**
+- This version's initial impressions and event creation flow seem to be effective based on this interview; moreover, the interviewee responded very positively to the AI-recommended locations, which made creating an event feel effortless. However, the interview showed that the rest of the navigation is still a problem for users. The main problems he faced were finding the Explore and List tabs and finding the Cancel Plans button, which took him a minute or two of clicking around. A part of the interview that grabbed my attention was his wish to see more than one club at a time, a feature the app already has but that he never found, which suggests the List and Explore tabs are not visible enough and users may assume swiping is the only way to browse. My major takeaways from this were making the List and Explore tabs more prominent, making the Cancel Plans button easier to find, and continuing to build on the AI location recommendations that users enjoy.
 
 ## Interview 10
 **Interviewer:** 
