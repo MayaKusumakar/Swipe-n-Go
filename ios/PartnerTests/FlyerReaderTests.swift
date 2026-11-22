@@ -24,7 +24,8 @@ struct FlyerReaderTests {
         #expect(result.title == "Fall Climbing Social")
         #expect(result.date == start)
         #expect(result.endDate == start.addingTimeInterval(7200))
-        #expect(result.location == "ARC Climbing Wall, ARC, UC Davis")
+        #expect(result.location == "ARC Climbing Wall")
+        #expect(result.address == "ARC, UC Davis")
         #expect(result.category == .sports)
         #expect(result.missing == ["cost"])
         #expect(result.fallbackReason == nil)
@@ -37,7 +38,32 @@ struct FlyerReaderTests {
         )
         let result = reading.result(image: UIImage())
         #expect(result.category == nil)
-        #expect(result.location == "Coffee House")      // address already includes the venue
+        #expect(result.location == "Coffee House")
+        #expect(FlyerLocation(venue: result.location, address: result.address).query == "The Coffee House, Memorial Union")
+    }
+
+    @Test func reviewedLocationKeepsTheRoomAndUsesTheSelectedCoordinates() {
+        let location = FlyerLocation(venue: "Shields Library", address: "Room 205")
+        let match = Place(name: "Peter J. Shields Library", address: "100 NW Quad", latitude: 38.54, longitude: -121.74)
+        let place = location.pinned(to: match)
+        #expect(place.name == "Shields Library")
+        #expect(place.address == "Room 205")
+        #expect(place.latitude == match.latitude)
+        #expect(place.longitude == match.longitude)
+    }
+
+    @Test func reviewedEndTimeKeepsExactMinutesInHostPicker() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        #expect(FlyerFields.duration(from: start, to: start.addingTimeInterval(75 * 60)) == 75)
+        #expect(CreateActivityView.durationOptions(including: 75).contains(75))
+        #expect(FlyerFields.duration(from: start, to: start) == nil)
+    }
+
+    @Test func freeFoodIsNotTreatedAsFreeAdmission() {
+        let fields = FlyerScanner.parse(lines: ["Film Night", "Free popcorn", "Admission: $8"])
+        #expect(fields.cost == "$8")
+        #expect(FlyerScanner.parse(lines: ["Film Night", "Free popcorn", "$5 parking"]).cost.isEmpty)
+        #expect(FlyerScanner.parse(lines: ["Film Night", "Tickets $8"]).cost == "$8")
     }
 
     @Test func uploadIsShrunkAndHasNoLocationData() throws {

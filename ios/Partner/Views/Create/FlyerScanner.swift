@@ -16,6 +16,7 @@ struct FlyerScanResult: Identifiable {
     var date: Date?
     var endDate: Date? = nil
     var location: String
+    var address = ""
     var details: String
     var cost: String
     var category: ActivityCategory? = nil
@@ -130,11 +131,12 @@ enum FlyerScanner {
         let fields = parse(lines: lines)
         var missing: [String] = []
         if fields.date == nil { missing += ["date", "time"] }
-        if fields.location.isEmpty { missing.append("location") }
+        if fields.location.isEmpty && fields.address.isEmpty { missing.append("location") }
         if fields.cost.isEmpty { missing.append("cost") }
         return FlyerScanResult(
             title: fields.title.isEmpty ? (heading ?? lines[0]) : fields.title,
-            date: fields.date, location: fields.location, details: lines.joined(separator: "\n"),
+            date: fields.date, endDate: fields.endDate, location: fields.location, address: fields.address,
+            details: lines.joined(separator: "\n"),
             cost: fields.cost, missing: missing, reader: .onDevice, image: UIImage(cgImage: image)
         )
     }
@@ -148,15 +150,16 @@ enum FlyerScanner {
         let labeled = parse(lines: lines)
         let plan = PlanSentence.read(text)
         let title = labeled.title.isEmpty ? plan.title : labeled.title
-        let location = plan.location.isEmpty ? labeled.location : plan.location
+        let location = labeled.location.isEmpty ? plan.location : labeled.location
+        let address = labeled.location.isEmpty && !location.isEmpty ? "" : labeled.address
         let cost = plan.cost.isEmpty ? labeled.cost : plan.cost
         var missing: [String] = []
         if title.isEmpty || (labeled.title.isEmpty && plan.titleIsGuess) { missing.append("title") }
         if plan.date == nil { missing += ["date", "time"] } else if !plan.hasTime { missing.append("time") }
-        if location.isEmpty { missing.append("location") }
+        if location.isEmpty && address.isEmpty { missing.append("location") }
         if cost.isEmpty { missing.append("cost") }
         return FlyerScanResult(
-            title: title, date: plan.date, endDate: plan.endDate, location: location,
+            title: title, date: plan.date, endDate: plan.endDate, location: location, address: address,
             details: text.trimmingCharacters(in: .whitespacesAndNewlines), cost: cost, category: plan.category,
             missing: missing, reader: .onDevice, source: .text, image: nil
         )
@@ -171,7 +174,7 @@ enum FlyerScanner {
     }
 
     /// Kept separate from recognition so extraction can be checked with sample flyer text.
-    static func parse(lines: [String]) -> (title: String, date: Date?, location: String, cost: String) {
+    static func parse(lines: [String]) -> (title: String, date: Date?, endDate: Date?, location: String, address: String, cost: String) {
         func labeled(_ labels: [String]) -> String? {
             for line in lines {
                 for label in labels {
@@ -187,24 +190,34 @@ enum FlyerScanner {
         let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
         let dateText = [labeled(["date", "when"]), labeled(["time"])].compactMap { $0 }.joined(separator: " ")
         let input = dateText.isEmpty ? text : dateText
-        let date = detector?.matches(in: input, range: NSRange(input.startIndex..., in: input))
-            .compactMap(\.date).first
-        var location = labeled(["location", "where", "venue"]) ?? ""
-        if location.isEmpty,
+        let timeMatch = detector?.firstMatch(in: input, range: NSRange(input.startIndex..., in: input))
+        let date = timeMatch?.date
+        let endDate = date.flatMap { start in
+            timeMatch.flatMap { $0.duration > 0 ? start.addingTimeInterval($0.duration) : nil }
+        }
+        let location = labeled(["location", "where", "venue"]) ?? ""
+        var address = labeled(["address", "room"]) ?? ""
+        if address.isEmpty, location.isEmpty,
            let addresses = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.address.rawValue),
            let match = addresses.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
            let range = Range(match.range, in: text) {
-            location = String(text[range])
+            address = String(text[range])
         }
         var cost = labeled(["cost", "price", "admission"]) ?? ""
         if cost.isEmpty {
-            if text.range(of: #"\bfree\b"#, options: [.regularExpression, .caseInsensitive]) != nil {
+            if lines.contains(where: {
+                $0.range(of: #"^\s*(?:free(?:\s+(?:entry|admission))?|(?:entry|admission)\s+(?:is\s+)?free)\s*[!.]?\s*$"#,
+                         options: [.regularExpression, .caseInsensitive]) != nil
+            }) {
                 cost = "Free"
-            } else if let range = text.range(of: #"\$\s*\d+(?:\.\d{2})?"#, options: .regularExpression) {
-                cost = String(text[range])
+            } else if let priceLine = lines.first(where: {
+                $0.range(of: #"^\s*(?:(?:tickets?|entry|admission)\s+)?\$\s*\d+(?:\.\d{2})?(?:\s+(?:entry|admission|per person))?\s*[!.]?\s*$"#,
+                         options: [.regularExpression, .caseInsensitive]) != nil
+            }), let range = priceLine.range(of: #"\$\s*\d+(?:\.\d{2})?"#, options: .regularExpression) {
+                cost = String(priceLine[range])
             }
         }
-        return (labeled(["event", "title"]) ?? "", date, location, cost)
+        return (labeled(["event", "title"]) ?? "", date, endDate, location, address, cost)
     }
 }
 
@@ -384,14 +397,40 @@ enum PlanSentence {
 struct FlyerFields {
     var title: String
     var date: Date
-    var endDate: Date?
-    var location: String
-    /// The map place picked in the review, if any. Without one, the Host form looks it up.
+    var duration: Int?
+    var location: FlyerLocation
+    /// The map place explicitly picked in the review, if any.
     var place: Place? = nil
     var details: String
     var cost: String
     var category: ActivityCategory?
     var cover: UIImage?
+
+    static func duration(from start: Date, to end: Date) -> Int? {
+        let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
+        return minutes > 0 ? minutes : nil
+    }
+}
+
+struct FlyerLocation: Codable, Equatable {
+    var venue: String
+    var address: String
+
+    var query: String {
+        let name = venue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty || detail.localizedCaseInsensitiveContains(name) { return detail }
+        return detail.isEmpty ? name : "\(name), \(detail)"
+    }
+
+    func pinned(to match: Place) -> Place {
+        var place = match
+        let name = venue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detail = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty { place.name = name }
+        if !detail.isEmpty { place.address = detail }
+        return place
+    }
 }
 
 struct FlyerReviewView: View {
@@ -400,7 +439,10 @@ struct FlyerReviewView: View {
     let onApply: (FlyerFields) -> Void
     @State private var title: String
     @State private var date: Date
+    @State private var endDate: Date
+    @State private var hasEndDate: Bool
     @State private var location: String
+    @State private var address: String
     @State private var pickedPlace: Place?
     @State private var suggestions: [Place] = []
     @State private var details: String
@@ -413,12 +455,18 @@ struct FlyerReviewView: View {
         self.result = result
         self.onApply = onApply
         _title = State(initialValue: result.title)
-        _date = State(initialValue: result.date ?? .now.addingTimeInterval(3600))
+        let start = result.date ?? .now.addingTimeInterval(3600)
+        _date = State(initialValue: start)
+        _endDate = State(initialValue: result.endDate ?? start.addingTimeInterval(5400))
+        _hasEndDate = State(initialValue: result.endDate != nil)
         _location = State(initialValue: result.location)
+        _address = State(initialValue: result.address)
         _details = State(initialValue: result.details)
         _cost = State(initialValue: result.cost)
         _category = State(initialValue: result.category)
     }
+
+    private var reviewedLocation: FlyerLocation { FlyerLocation(venue: location, address: address) }
 
     private func isMissing(_ field: String) -> Bool { result.missing.contains(field) }
 
@@ -427,8 +475,9 @@ struct FlyerReviewView: View {
         var needed: [String] = []
         if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { needed.append("enter the event name") }
         if date <= .now { needed.append("pick a start time in the future") }
+        if hasEndDate && FlyerFields.duration(from: date, to: endDate) == nil { needed.append("pick an end time after the start") }
         if !confirmedDate { needed.append("turn on \"I checked the date and time\"") }
-        if location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { needed.append("enter the location") }
+        if reviewedLocation.query.isEmpty { needed.append("enter the location") }
         return needed
     }
 
@@ -485,19 +534,24 @@ struct FlyerReviewView: View {
                             .foregroundStyle(.orange)
                     }
                     DatePicker("Starts", selection: $date, in: Date.now...)
-                    if let end = result.endDate {
-                        LabeledContent("Ends", value: end.formatted(date: .omitted, time: .shortened))
+                        .onChange(of: date) { confirmedDate = false }
+                    Toggle("Set end time", isOn: $hasEndDate)
+                        .onChange(of: hasEndDate) {
+                            if hasEndDate && endDate <= date { endDate = date.addingTimeInterval(5400) }
+                            confirmedDate = false
+                        }
+                    if hasEndDate {
+                        DatePicker("Ends", selection: $endDate)
+                            .onChange(of: endDate) { confirmedDate = false }
                     }
                     Toggle("I checked the date and time", isOn: $confirmedDate)
                 } header: {
                     reviewHeader("Date and time", missing: isMissing("date") || isMissing("time"))
                 }
                 Section {
-                    TextField("Search for the venue or address", text: $location)
+                    TextField("Venue", text: $location)
+                    TextField("Address or room", text: $address)
                         .textContentType(.fullStreetAddress)
-                        .onChange(of: location) {
-                            if let pickedPlace, location != pickedPlace.name { self.pickedPlace = nil }
-                        }
                     if let pickedPlace {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
@@ -510,11 +564,11 @@ struct FlyerReviewView: View {
                             Image(systemName: "mappin.circle.fill").foregroundStyle(.green)
                         }
                         .accessibilityLabel("Pinned on the map: \(pickedPlace.name)")
+                        Button("Clear map match") { self.pickedPlace = nil }
                     } else {
                         ForEach(suggestions.prefix(4)) { place in
                             Button {
                                 pickedPlace = place
-                                location = place.name
                             } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(place.name).foregroundStyle(.primary)
@@ -524,18 +578,22 @@ struct FlyerReviewView: View {
                                 }
                             }
                         }
-                        Text("Pick a match to pin it on the map. If you skip this, we'll look it up for you.")
+                        Text("Pick a map match here or in the Host form.")
                             .font(.caption)
                     }
                 } header: {
                     reviewHeader("Location", missing: isMissing("location"))
                 }
-                .task(id: location) {
-                    // Same search as the Host form's place picker; waits for typing to pause.
-                    guard pickedPlace == nil else { suggestions = []; return }
+                .onChange(of: reviewedLocation) { pickedPlace = nil }
+                .task(id: reviewedLocation.query) {
+                    let query = reviewedLocation.query
+                    suggestions = []
                     try? await Task.sleep(for: .milliseconds(350))
                     guard !Task.isCancelled else { return }
-                    let found = await Place.search(location)
+                    var found = await Place.search(query)
+                    if found.isEmpty, !location.isEmpty, location != query, !Task.isCancelled {
+                        found = await Place.search(location)
+                    }
                     if !Task.isCancelled { suggestions = found }
                 }
                 Section("Description") {
@@ -561,8 +619,9 @@ struct FlyerReviewView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Apply details") {
-                        let end = result.endDate.map { date.addingTimeInterval($0.timeIntervalSince(result.date ?? date)) }
-                        onApply(FlyerFields(title: title, date: date, endDate: end, location: location, place: pickedPlace,
+                        let duration = hasEndDate ? FlyerFields.duration(from: date, to: endDate) : nil
+                        onApply(FlyerFields(title: title, date: date, duration: duration, location: reviewedLocation,
+                                            place: pickedPlace.map(reviewedLocation.pinned(to:)),
                                             details: details, cost: cost, category: category,
                                             cover: useCover ? result.image : nil))
                         dismiss()

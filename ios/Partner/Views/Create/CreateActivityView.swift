@@ -94,9 +94,7 @@ struct CreateActivityView: View {
     @State private var scanning = false
     @State private var showCamera = false
     @State private var scannedLocation = ""
-    @State private var findingPlace = false
-    /// The place was matched from the flyer's text, so the host should glance at it.
-    @State private var placeFromFlyer = false
+    @State private var reviewedLocation: FlyerLocation?
     @State private var pendingFlyerCover: UIImage?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var coverPhotoData: Data?
@@ -110,6 +108,10 @@ struct CreateActivityView: View {
 
     /// The Duration picker's options, in minutes.
     static let durations = [30, 45, 60, 90, 120, 180, 240, 480]
+
+    static func durationOptions(including selected: Int) -> [Int] {
+        durations.contains(selected) ? durations : (durations + [selected]).sorted()
+    }
 
     private var formSnapshot: PlanFormSnapshot {
         PlanFormSnapshot(
@@ -230,8 +232,8 @@ struct CreateActivityView: View {
                 setCost(draft.cost)
                 details = draft.details
                 coverPhotoData = draft.coverPhotoData
-                scannedLocation = draft.suggestedLocation ?? ""
-                if place == nil, !scannedLocation.isEmpty { Task { await findScannedPlace() } }
+                reviewedLocation = draft.reviewedFlyerLocation
+                scannedLocation = reviewedLocation?.query ?? draft.suggestedLocation ?? ""
                 repeats = draft.recurrence != nil
                 frequency = draft.recurrence?.frequency ?? .weekly
                 occurrenceCount = draft.recurrence?.count ?? 6
@@ -258,7 +260,11 @@ struct CreateActivityView: View {
                 }
             }
             .sheet(isPresented: $showPlacePicker) {
-                PlacePickerView(selection: $place, initialQuery: scannedLocation)
+                PlacePickerView(selection: Binding(get: { place }, set: { match in
+                    place = match.map { reviewedLocation?.pinned(to: $0) ?? $0 }
+                    reviewedLocation = nil
+                    scannedLocation = ""
+                }), initialQuery: scannedLocation)
             }
             .sheet(item: $cropSource, onDismiss: { selectedPhoto = nil }) { source in
                 CoverPhotoCropView(image: source.image) { data in
@@ -284,25 +290,13 @@ struct CreateActivityView: View {
                 FlyerReviewView(result: result) { fields in
                     title = fields.title
                     date = fields.date
-                    // The location is entered once, in the review. Use the place picked there,
-                    // or look the text up on the map; never ask for it again.
-                    if let picked = fields.place {
-                        place = picked
-                        scannedLocation = ""
-                        placeFromFlyer = false
-                    } else {
-                        scannedLocation = fields.location
-                        place = nil
-                        Task { await findScannedPlace() }
-                    }
-                    details = fields.details
-                    setCost(fields.cost)
+                    place = fields.place
+                    reviewedLocation = fields.place == nil ? fields.location : nil
+                    scannedLocation = reviewedLocation?.query ?? ""
+                    if !fields.details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { details = fields.details }
+                    if !fields.cost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { setCost(fields.cost) }
                     if let scanned = fields.category { category = scanned }
-                    if let end = fields.endDate {
-                        // Closest option in the Duration picker.
-                        let minutes = Int(end.timeIntervalSince(fields.date) / 60)
-                        duration = Self.durations.min { abs($0 - minutes) < abs($1 - minutes) } ?? duration
-                    }
+                    if let minutes = fields.duration { duration = minutes }
                     pendingFlyerCover = fields.cover
                 }
             }
@@ -683,6 +677,7 @@ struct CreateActivityView: View {
             recurrence: repeats ? EventRecurrence(frequency: frequency, count: occurrenceCount,
                                                   timeZoneID: recurrenceTimeZoneID) : nil,
             suggestedLocation: scannedLocation.isEmpty ? nil : scannedLocation,
+            reviewedFlyerLocation: reviewedLocation,
             updatedAt: .now
         )
     }
@@ -771,7 +766,7 @@ struct CreateActivityView: View {
                     .padding(14)
                 Divider().padding(.leading, 14)
                 Picker("Duration", selection: $duration) {
-                    ForEach(Self.durations, id: \.self) { m in
+                    ForEach(Self.durationOptions(including: duration), id: \.self) { m in
                         Text(m < 60 ? "\(m) min" : m % 60 == 0 ? "\(m / 60) hr" : "\(m / 60)h \(m % 60)m").tag(m)
                     }
                 }
@@ -781,37 +776,15 @@ struct CreateActivityView: View {
         }
     }
 
-    /// Matches the flyer's location to a real place. If nothing matches, the place picker
-    /// opens already searching for it.
-    private func findScannedPlace() async {
-        let query = scannedLocation.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty, place == nil else { return }
-        findingPlace = true
-        defer { findingPlace = false }
-        if let match = await Place.search(query).first, place == nil {
-            withAnimation(.snappy) { place = match }
-            placeFromFlyer = true
-        }
-    }
-
     private var whereSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             label("Location")
-            if findingPlace {
-                Label("Finding “\(scannedLocation)” on the map…", systemImage: "magnifyingglass")
+            if !scannedLocation.isEmpty && place == nil {
+                Text("From the scan: \(scannedLocation). Choose a map match below.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-            } else if placeFromFlyer, let place {
-                Label("Matched “\(scannedLocation)” to \(place.name). Tap it to choose a different spot.",
-                      systemImage: "checkmark.circle.fill")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            } else if !scannedLocation.isEmpty && place == nil {
-                Text("Couldn't find “\(scannedLocation)” on the map. Tap below to pick it; we've already searched for it.")
-                    .font(.subheadline)
-                    .foregroundStyle(.orange)
             }
-            Button { placeFromFlyer = false; showPlacePicker = true } label: {
+            Button { showPlacePicker = true } label: {
                 HStack(spacing: 14) {
                     Image(systemName: place == nil ? "mappin.and.ellipse" : "mappin.circle.fill")
                         .font(.title2)

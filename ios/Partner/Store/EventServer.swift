@@ -318,7 +318,7 @@ extension ActivityLevel {
 
 extension Activity {
     init(server e: EventServer.ServerEvent, hostID: UUID) {
-        let duration = e.endTime.map { max(15, Int($0.timeIntervalSince(e.startTime) / 60)) } ?? 60
+        let duration = e.endTime.map { max(1, Int(($0.timeIntervalSince(e.startTime) / 60).rounded())) } ?? 60
         // A private location arrives without a name or coordinates; it stays hidden until the server shares it.
         let hidden = e.locationPrivate == true && e.locationName == nil
         self.init(
