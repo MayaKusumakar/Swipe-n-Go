@@ -181,6 +181,16 @@ class EventService:
         self._update_attendance(event.id, approved, +1)
         return approved
 
+    def set_check_in(self, event_id, attendee_id, user, checked_in):
+        event = self._event(event_id)
+        self._require_host(event, user)
+        attendee = self._store(self._repository.set_check_in, event_id, attendee_id, checked_in)
+        if attendee is None:
+            raise NotFoundError("attendee")
+        if attendee.status != APPROVED:
+            raise ForbiddenError("Approve the guest before checking them in")
+        return attendee
+
     def remove_attendee(self, event_id, attendee_id, user):
         """The host can remove anyone (or decline a request); anyone else only themselves."""
         event = self._event(event_id)

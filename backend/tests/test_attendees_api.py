@@ -151,3 +151,31 @@ def test_unknown_event_or_attendee_is_404(client, private_event):
 def test_location_private_must_be_boolean(client):
     response = client.post("/api/events", json=VALID_BODY | {"location_private": "yes"})
     assert response.status_code == 400
+
+
+def test_host_can_check_in_confirmed_guests_and_undo(client, private_event):
+    event_id = private_event["id"]
+    attendee = join(client, event_id)
+    roster = f"/api/events/{event_id}/attendees"
+    path = f"{roster}/{attendee['id']}/check-in"
+
+    assert client.put(path, json={"checked_in": "true"}, headers=host()).status_code == 400
+    assert client.put(path, json={"checked_in": True}, headers=host()).status_code == 403
+    assert client.post(f"{roster}/{attendee['id']}/approve", headers=host()).status_code == 200
+    assert client.put(path, json={"checked_in": True}, headers=guest()).status_code == 403
+
+    for _ in range(2):
+        response = client.put(path, json={"checked_in": True}, headers=host())
+        assert response.status_code == 200
+        assert response.get_json()["checked_in"] is True
+    assert client.get(roster, headers=host()).get_json()["attendees"][0]["checked_in"] is True
+    assert "checked_in" not in client.get(f"{roster}/me", headers=guest()).get_json()
+    assert client.get("/api/events").get_json()["events"][0]["attendee_count"] == 1
+
+    response = client.put(path, json={"checked_in": False}, headers=host())
+    assert response.status_code == 200
+    assert response.get_json()["checked_in"] is False
+    assert "checked_in" not in client.get(roster, headers=host()).get_json()["attendees"][0]
+
+    assert client.delete(f"{roster}/{attendee['id']}", headers=guest()).status_code == 204
+    assert client.put(path, json={"checked_in": True}, headers=host()).status_code == 404

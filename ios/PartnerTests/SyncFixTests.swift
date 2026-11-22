@@ -27,7 +27,8 @@ struct AccountSyncTests {
 struct FlyerPlaceTests {
     @Test func reviewCanCarryAPickedPlace() {
         let place = Place.presets[0]
-        let fields = FlyerFields(title: "Run", date: .now, endDate: nil, location: place.name, place: place,
+        let fields = FlyerFields(title: "Run", date: .now, duration: nil,
+                                 location: FlyerLocation(venue: place.name, address: place.address), place: place,
                                  details: "", cost: "", category: nil, cover: nil)
         #expect(fields.place == place)
     }

@@ -75,6 +75,9 @@ there or you can't read it, leave it empty and list it in `missing`.
 - Dates: flyers often skip the year. Use the next date on or after `now` that matches (and its \
 weekday, if one is printed). Times are local, so use the UTC offset from `now`. If a time range \
 is given ("7-9pm"), fill both start and end.
+- Location: put only the venue or building name in location_name. Put the printed street address \
+and room or suite in address. Leave either field empty when the flyer omits it.
+- Cost: read the price of admission. Free food, parking, or giveaways do not mean free admission.
 - Title: the event's name, not the club's slogan or a sponsor. Fix ALL-CAPS into normal \
 capitalization.
 - Description: 1-3 short sentences a student would find useful (what it is, who it's for, what to \

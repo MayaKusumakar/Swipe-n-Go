@@ -387,13 +387,17 @@ Your own entry for this event, e.g. to see when the host approved you. `404 not_
 
 ### GET /api/events/\<id\>/attendees
 
-Host only. Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`.
+Host only. Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`. Checked-in guests include `"checked_in": true`. An omitted field means the guest has yet to check in.
 
 ### POST /api/events/\<id\>/attendees/\<attendee_id\>/approve
 
 Host only. Accepts a pending request. Response `200`: the updated Attendee. Approving someone already approved changes nothing.
 
 Errors: `409 event_full` (the request stays `pending`).
+
+### PUT /api/events/\<id\>/attendees/\<attendee_id\>/check-in
+
+Host only. Send `{"checked_in": true}` to mark an approved guest as arrived or `{"checked_in": false}` to undo. Response `200` includes the updated Attendee with its `checked_in` value. Retrying the same value has no additional effect. Check-in leaves RSVP status and capacity unchanged.
 
 ### DELETE /api/events/\<id\>/attendees/\<attendee_id\>
 

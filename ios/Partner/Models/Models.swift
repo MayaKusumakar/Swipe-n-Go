@@ -302,6 +302,7 @@ struct ActivityDraft: Codable, Identifiable {
     var scheduledAt: Date?
     var recurrence: EventRecurrence?
     var suggestedLocation: String?
+    var reviewedFlyerLocation: FlyerLocation?
     var updatedAt = Date.now
 
     var activity: Activity? {

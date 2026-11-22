@@ -53,20 +53,11 @@ extension ClaudeFlyerReader.Reading {
     func result(image: UIImage) -> FlyerScanResult {
         FlyerScanResult(
             title: title, date: startTime, endDate: endTime,
-            location: ClaudeFlyerReader.place(locationName, address),
+            location: locationName, address: address,
             details: description, cost: cost,
             category: ActivityCategory(rawValue: category),
             missing: missing, isEventFlyer: isEventFlyer, reader: .claude, image: image
         )
-    }
-}
-
-extension ClaudeFlyerReader {
-    /// "Venue, address", or whichever of the two is there (and no repeat when the address names the venue).
-    static func place(_ locationName: String, _ address: String) -> String {
-        let place = [locationName, address].filter { !$0.isEmpty }
-        return place.count == 2 && !address.localizedCaseInsensitiveContains(locationName)
-            ? "\(locationName), \(address)" : (place.first ?? "")
     }
 }
 
@@ -109,7 +100,7 @@ extension ClaudeTextReader.Reading {
     var result: FlyerScanResult {
         FlyerScanResult(
             title: title, date: startTime, endDate: endTime,
-            location: ClaudeFlyerReader.place(locationName, address),
+            location: locationName, address: address,
             details: description, cost: cost,
             category: ActivityCategory(rawValue: category),
             missing: missing, isEventFlyer: isEvent, reader: .claude, source: .text, image: nil

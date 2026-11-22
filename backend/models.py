@@ -169,6 +169,7 @@ class Attendee:
     name: str
     status: str
     created_at: datetime
+    checked_in: bool = False
 
     @classmethod
     def from_entity(cls, entity):
@@ -177,6 +178,7 @@ class Attendee:
             event_id=str(entity.key.parent.id_or_name),
             name=entity.get("name", ""),
             status=entity.get("status", PENDING),
+            checked_in=entity.get("checked_in", False),
             created_at=entity["created_at"],
         )
 

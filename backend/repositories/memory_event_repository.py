@@ -5,6 +5,9 @@ set up. Same interface as EventRepository. Events added while the server runs
 are lost when it stops.
 """
 import threading
+from dataclasses import replace
+
+from models import APPROVED
 
 
 class InMemoryEventRepository:
@@ -96,6 +99,15 @@ class InMemoryEventRepository:
     def get_attendee(self, event_id, attendee_id):
         with self._lock:
             return self._attendees.get((event_id, attendee_id))
+
+    def set_check_in(self, event_id, attendee_id, checked_in):
+        with self._lock:
+            key = (event_id, attendee_id)
+            attendee = self._attendees.get(key)
+            if attendee is not None and attendee.status == APPROVED:
+                attendee = replace(attendee, checked_in=checked_in)
+                self._attendees[key] = attendee
+            return attendee
 
     def save_attendee(self, attendee):
         with self._lock:
