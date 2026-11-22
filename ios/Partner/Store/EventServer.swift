@@ -33,10 +33,11 @@ enum EventServer {
         var summary: String?
     }
 
-    struct Attendee: Decodable {
+    struct Attendee: Decodable, Identifiable {
         var id: String
         var name: String
         var status: String
+        var checkedIn: Bool?
         var isApproved: Bool { status == "approved" }
     }
 
@@ -206,6 +207,13 @@ enum EventServer {
 
     static func approve(eventID: String, attendeeID: String, baseURL: URL) async throws {
         _ = try await send("POST", "api/events/\(eventID)/attendees/\(attendeeID)/approve", baseURL: baseURL)
+    }
+
+    static func setCheckIn(eventID: String, attendeeID: String, checkedIn: Bool, baseURL: URL) async throws -> Attendee {
+        let url = baseURL.appending(path: "api/events/\(eventID)/attendees/\(attendeeID)/check-in")
+        let body = try JSONEncoder().encode(["checked_in": checkedIn])
+        let data = try await send("PUT", url, body: body)
+        return try decoder.decode(Attendee.self, from: data)
     }
 
     /// The host removes someone (or declines a request), or you remove yourself.

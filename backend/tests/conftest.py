@@ -1,4 +1,5 @@
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from main import create_app  # noqa: E402
-from models import Event  # noqa: E402
+from models import APPROVED, Event  # noqa: E402
 from repositories.user_repository import InMemoryUserRepository  # noqa: E402
 from services.auth_service import AuthService  # noqa: E402
 from services.event_service import EventService  # noqa: E402
@@ -82,6 +83,14 @@ class FakeEventRepository:
 
     def get_attendee(self, event_id, attendee_id):
         return self.attendees.get((event_id, attendee_id))
+
+    def set_check_in(self, event_id, attendee_id, checked_in):
+        key = (event_id, attendee_id)
+        attendee = self.attendees.get(key)
+        if attendee is not None and attendee.status == APPROVED:
+            attendee = replace(attendee, checked_in=checked_in)
+            self.attendees[key] = attendee
+        return attendee
 
     def save_attendee(self, attendee):
         self.attendees[(attendee.event_id, attendee.id)] = attendee

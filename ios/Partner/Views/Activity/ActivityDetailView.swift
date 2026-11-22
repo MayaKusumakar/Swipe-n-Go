@@ -11,6 +11,7 @@ struct ActivityDetailView: View {
     @State private var confirmLeave = false
     @State private var confirmCancel = false
     @State private var removing: Person?
+    @State private var showCheckIn = false
 
     private var live: Activity { store.activity(activity.id) ?? activity }
     private var host: Person? { store.person(live.hostID) }
@@ -56,6 +57,11 @@ struct ActivityDetailView: View {
         .safeAreaInset(edge: .bottom) { bottomBar }
         .fullScreenCover(item: $celebration) { c in
             CelebrationView(celebration: c).presentationBackground(.clear)
+        }
+        .sheet(isPresented: $showCheckIn) {
+            if store.isHost(live), let eventID = live.serverID, let baseURL = store.serverURL {
+                HostCheckInView(eventID: eventID, baseURL: baseURL, title: live.title)
+            }
         }
         .confirmationDialog("Leave this plan?", isPresented: $confirmLeave, titleVisibility: .visible) {
             Button("Leave plan", role: .destructive) { withAnimation { store.leave(live) } }
@@ -151,6 +157,30 @@ struct ActivityDetailView: View {
 
     private var hostTools: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if live.serverID != nil, store.serverURL != nil {
+                Button {
+                    showCheckIn = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(Color.accentColor)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Guest check-in").font(.headline)
+                            Text("See who has arrived").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(14)
+                    .background(.background, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
+            }
             SectionHeader(title: "Requests", subtitle: store.requests(for: live).isEmpty ? "No pending requests right now" : nil)
             ForEach(store.requests(for: live)) { req in
                 RequestRow(request: req)
@@ -472,5 +502,136 @@ struct RequestRow: View {
         .padding(14)
         .cardStyle(radius: 20)
         .transition(.move(edge: .trailing).combined(with: .opacity))
+    }
+}
+
+
+private struct HostCheckInView: View {
+    @Environment(\.dismiss) private var dismiss
+    let eventID: String
+    let baseURL: URL
+    let title: String
+
+    @State private var guests: [EventServer.Attendee] = []
+    @State private var search = ""
+    @State private var loaded = false
+    @State private var loading = false
+    @State private var updatingID: String?
+    @State private var errorMessage: String?
+
+    private var arrived: Int { guests.filter { $0.checkedIn == true }.count }
+    private var visibleGuests: [EventServer.Attendee] {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        return guests.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if loaded {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(title).font(.subheadline).foregroundStyle(.secondary)
+                            Text("\(arrived) of \(guests.count) checked in")
+                                .font(.title2.bold())
+                                .monospacedDigit()
+                            if !guests.isEmpty {
+                                ProgressView(value: Double(arrived), total: Double(guests.count))
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    if guests.isEmpty {
+                        ContentUnavailableView("No confirmed guests", systemImage: "person.2",
+                                               description: Text("Guests appear here once they join or you approve their request."))
+                    } else if visibleGuests.isEmpty {
+                        ContentUnavailableView.search(text: search)
+                    } else {
+                        Section("Confirmed guests") {
+                            ForEach(visibleGuests) { guest in
+                                guestRow(guest)
+                            }
+                        }
+                    }
+                }
+                if loading && !loaded {
+                    ProgressView("Loading guests…")
+                }
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage).foregroundStyle(.secondary)
+                        Button("Reload guest list") { Task { await load() } }
+                            .disabled(loading || updatingID != nil)
+                    }
+                }
+            }
+            .navigationTitle("Guest check-in")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $search, prompt: "Find a guest")
+            .refreshable { await load() }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .task { await load() }
+        }
+    }
+
+    private func guestRow(_ guest: EventServer.Attendee) -> some View {
+        let isCheckedIn = guest.checkedIn == true
+        return HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(guest.name).font(.body.weight(.medium))
+                Label(isCheckedIn ? "Arrived" : "Expected",
+                      systemImage: isCheckedIn ? "checkmark.circle.fill" : "clock")
+                    .font(.caption)
+                    .foregroundStyle(isCheckedIn ? Color.green : Color.secondary)
+            }
+            Spacer()
+            if updatingID == guest.id {
+                ProgressView()
+                    .accessibilityLabel("Updating \(guest.name)")
+            } else {
+                Button(isCheckedIn ? "Undo" : "Check in") {
+                    Task { await update(guest, checkedIn: !isCheckedIn) }
+                }
+                .buttonStyle(.bordered)
+                .disabled(updatingID != nil || loading)
+                .accessibilityLabel(isCheckedIn ? "Undo check-in for \(guest.name)" : "Check in \(guest.name)")
+            }
+        }
+    }
+
+    private func load() async {
+        guard !loading, updatingID == nil else { return }
+        loading = true
+        errorMessage = nil
+        defer { loading = false }
+        do {
+            let roster = try await EventServer.attendees(eventID: eventID, baseURL: baseURL)
+            guests = roster.filter(\.isApproved)
+            loaded = true
+        } catch {
+            errorMessage = "Couldn't load the guest list. \(error.localizedDescription)"
+        }
+    }
+
+    private func update(_ guest: EventServer.Attendee, checkedIn: Bool) async {
+        guard !loading, updatingID == nil else { return }
+        updatingID = guest.id
+        errorMessage = nil
+        defer { updatingID = nil }
+        do {
+            let updated = try await EventServer.setCheckIn(
+                eventID: eventID, attendeeID: guest.id, checkedIn: checkedIn, baseURL: baseURL
+            )
+            if let index = guests.firstIndex(where: { $0.id == updated.id }) {
+                guests[index] = updated
+            }
+        } catch {
+            errorMessage = "Couldn't update \(guest.name). \(error.localizedDescription)"
+        }
     }
 }

@@ -236,7 +236,10 @@ def my_attendance(event_id):
 def list_attendees(event_id):
     service = current_app.extensions["event_service"]
     return _guarded(lambda: jsonify({
-        "attendees": [a.to_dict() for a in service.list_attendees(event_id, g.user)],
+        "attendees": [
+            a.to_dict() | ({"checked_in": True} if a.checked_in else {})
+            for a in service.list_attendees(event_id, g.user)
+        ],
     }))
 
 
@@ -244,6 +247,21 @@ def list_attendees(event_id):
 def approve_attendee(event_id, attendee_id):
     service = current_app.extensions["event_service"]
     return _guarded(lambda: jsonify(service.approve_attendee(event_id, attendee_id, g.user).to_dict()))
+
+
+@events_bp.put("/<event_id>/attendees/<attendee_id>/check-in")
+def set_check_in(event_id, attendee_id):
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("checked_in"), bool):
+        return error_response(400, "invalid_check_in", "checked_in must be a boolean")
+
+    service = current_app.extensions["event_service"]
+
+    def run():
+        attendee = service.set_check_in(event_id, attendee_id, g.user, body["checked_in"])
+        return jsonify(attendee.to_dict() | {"checked_in": attendee.checked_in})
+
+    return _guarded(run)
 
 
 @events_bp.delete("/<event_id>/attendees/<attendee_id>")

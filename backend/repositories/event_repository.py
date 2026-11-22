@@ -2,7 +2,7 @@
 from google.cloud import datastore
 from google.cloud.datastore.query import PropertyFilter
 
-from models import ATTENDEE_KIND, COVER_KIND, EVENT_KIND, UNINDEXED_EVENT_PROPERTIES, Attendee, Event
+from models import APPROVED, ATTENDEE_KIND, COVER_KIND, EVENT_KIND, UNINDEXED_EVENT_PROPERTIES, Attendee, Event
 
 # Sorts after every geohash character, so [prefix, prefix + "~") is "starts with prefix".
 _PREFIX_END = "~"
@@ -142,6 +142,19 @@ class EventRepository:
                 attendee_entity.update(attendee.to_entity_properties())
                 self.client.put(attendee_entity)
         return True
+
+    def set_check_in(self, event_id, attendee_id, checked_in):
+        key = self._attendee_key(event_id, attendee_id)
+        with self.client.transaction():
+            entity = self.client.get(key)
+            if entity is None:
+                return None
+            attendee = Attendee.from_entity(entity)
+            if attendee.status == APPROVED and attendee.checked_in != checked_in:
+                attendee.checked_in = checked_in
+                entity["checked_in"] = checked_in
+                self.client.put(entity)
+        return attendee
 
     def save_attendee(self, attendee):
         entity = datastore.Entity(key=self._attendee_key(attendee.event_id, attendee.id))
