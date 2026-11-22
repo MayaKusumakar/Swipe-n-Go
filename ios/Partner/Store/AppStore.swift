@@ -82,6 +82,8 @@ final class AppStore {
     init() {
         me = AppStore.defaultMe()
         if !load() { seed() }
+        // People who were already swiping before the tutorial existed don't need it.
+        if !joinedIDs.isEmpty || !skippedIDs.isEmpty || !savedIDs.isEmpty { hasSeenSwipeTutorial = true }
         let auth = auth
         EventServer.tokenProvider = { try await auth.bearerToken() }
         #if DEBUG
@@ -104,6 +106,30 @@ final class AppStore {
     /// Guests never talk to the server (see `serverURL`), so nothing is shared.
     var isGuest: Bool = UserDefaults.standard.bool(forKey: AppStore.guestModeKey) {
         didSet { UserDefaults.standard.set(isGuest, forKey: AppStore.guestModeKey) }
+    }
+
+    // MARK: Swipe tutorial
+
+    static let swipeTutorialKey = "hasSeenSwipeTutorial"
+
+    /// Set once the first-run "how swiping works" demo is dismissed, so it shows only once.
+    var hasSeenSwipeTutorial: Bool = UserDefaults.standard.bool(forKey: AppStore.swipeTutorialKey) {
+        didSet { UserDefaults.standard.set(hasSeenSwipeTutorial, forKey: AppStore.swipeTutorialKey) }
+    }
+    /// Profile → "How swiping works" plays it again.
+    var isReplayingSwipeTutorial = false
+
+    var showsSwipeTutorial: Bool { !hasSeenSwipeTutorial || isReplayingSwipeTutorial }
+
+    func finishSwipeTutorial() {
+        hasSeenSwipeTutorial = true
+        isReplayingSwipeTutorial = false
+    }
+
+    func replaySwipeTutorial() {
+        showProfile = false
+        selectedTab = .discover
+        isReplayingSwipeTutorial = true
     }
 
     func continueAsGuest() {
@@ -132,6 +158,8 @@ final class AppStore {
     private func applyDebugLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
         if args.contains("-onboarding") { hasOnboarded = false }
+        if args.contains("-swipeTutorial") { isReplayingSwipeTutorial = true }
+        if args.contains("-noSwipeTutorial") { hasSeenSwipeTutorial = true }
         if args.contains("-host") { showCreate = true }
         if args.contains("-samples") { showSampleEvents = true; serverURLString = "" }
         if let i = args.firstIndex(of: "-server"), i + 1 < args.count { serverURLString = args[i + 1] }
@@ -845,6 +873,7 @@ final class AppStore {
     func resetEverything() {
         auth.signOut()
         isGuest = false
+        hasSeenSwipeTutorial = false
         try? FileManager.default.removeItem(at: fileURL)
         hasOnboarded = false
         drafts = []

@@ -558,3 +558,290 @@ struct DiscoverySettingsSheet: View {
         }
     }
 }
+
+// MARK: - Swipe tutorial
+
+/// First-run demo of the Discover deck: a hand swipes one sample card left ("PASS") and
+/// another right ("I'LL JOIN"), then a short sign-off. About four seconds, then it waits
+/// for "Let's go". Sample cards only, so nothing in the real feed is touched.
+struct SwipeTutorialView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var onFinish: () -> Void
+
+    private enum Step: Equatable { case intro, passing, passed, joining, joined, done }
+
+    @State private var step: Step = .intro
+    @State private var cardIndex = 0
+    @State private var offset: CGFloat = 0
+    @State private var handVisible = false
+    @State private var handPressed = false
+    @State private var run = 0
+
+    private static let samples: [(title: String, category: ActivityCategory, when: String, place: String)] = [
+        ("Sunset pickup soccer", .sports, "Today 6:30 PM", "0.4 mi"),
+        ("Open mic at the CoHo", .music, "Fri 8:00 PM", "0.8 mi")
+    ]
+
+    private var isPassing: Bool { cardIndex == 0 }
+    /// How far the card is dragged, 0...1, for the stamp and tilt.
+    private var progress: CGFloat { min(abs(offset) / 120, 1) }
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(Color.black.opacity(0.35))
+                .ignoresSafeArea()
+
+            VStack(spacing: 22) {
+                header
+                    .frame(minHeight: 84, alignment: .bottom)
+
+                ZStack {
+                    if step == .done {
+                        finale.transition(.scale(scale: 0.85).combined(with: .opacity))
+                    } else {
+                        cardStage
+                    }
+                }
+                .frame(height: 380)
+
+                VStack(spacing: 10) {
+                    Button("Let's go", action: onFinish)
+                        .buttonStyle(PrimaryButtonStyle())
+                    Button {
+                        restart()
+                    } label: {
+                        Label("Watch again", systemImage: "arrow.counterclockwise")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.white.opacity(0.85))
+                    .opacity(step == .done ? 1 : 0)
+                    .disabled(step != .done)
+                }
+                .padding(.horizontal, 32)
+            }
+            .padding(.vertical, 24)
+            .frame(maxWidth: 440)
+        }
+        .task(id: run) { await play() }
+        .sensoryFeedback(.impact(weight: .medium), trigger: step) { _, new in new == .passed || new == .joined }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+    }
+
+    // MARK: Pieces
+
+    private var header: some View {
+        VStack(spacing: 6) {
+            Text(headline)
+                .font(.title2.weight(.bold))
+                .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+            Text(subline)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(.white.opacity(0.8))
+                .contentTransition(.opacity)
+        }
+        .foregroundStyle(.white)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 24)
+        .animation(.smooth(duration: 0.25), value: step)
+    }
+
+    private var headline: String {
+        switch step {
+        case .intro: "Here's how Discover works"
+        case .passing, .passed: "Swipe left to pass"
+        case .joining, .joined: "Swipe right to join"
+        case .done: "That's how you find your next plan!"
+        }
+    }
+
+    private var subline: String {
+        switch step {
+        case .intro: "Every card is a plan near you."
+        case .passing, .passed: "Not for you? It's gone. No one is told."
+        case .joining, .joined: "You're in, or the host gets your request."
+        case .done: "Swipe up to save one for later, tap a card for details."
+        }
+    }
+
+    private var cardStage: some View {
+        let sample = Self.samples[cardIndex]
+        return ZStack {
+            TutorialCard(title: sample.title, category: sample.category, when: sample.when, place: sample.place)
+                .overlay(alignment: isPassing ? .topTrailing : .topLeading) {
+                    TutorialStamp(text: isPassing ? "PASS" : "I'LL JOIN", color: isPassing ? .red : .green,
+                                  angle: isPassing ? 14 : -14)
+                        .opacity(progress)
+                        .scaleEffect(0.8 + 0.2 * progress)
+                        .padding(22)
+                        .padding(.top, 24)
+                }
+                .overlay(alignment: .bottom) {
+                    Image(systemName: "hand.point.up.left.fill")
+                        .font(.system(size: 54))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                        .scaleEffect(handPressed ? 0.88 : 1)
+                        .opacity(handVisible ? 1 : 0)
+                        .offset(x: 60, y: 30)
+                        .accessibilityHidden(true)
+                }
+                .offset(x: offset)
+                .rotationEffect(.degrees(Double(offset / 22)), anchor: .bottom)
+                .id(cardIndex)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+        }
+        .frame(width: 270)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(isPassing ? "Example: swiping a card left passes on it."
+                                      : "Example: swiping a card right joins the plan.")
+    }
+
+    private var finale: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 28) {
+                legend(symbol: "arrow.left", label: "PASS", color: .red)
+                legend(symbol: "arrow.right", label: "I'LL JOIN", color: .green)
+            }
+            Image(systemName: "sparkles.rectangle.stack.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(Brand.gradient)
+                .symbolEffect(.bounce, value: step)
+                .padding(26)
+                .background(.white, in: Circle())
+        }
+    }
+
+    private func legend(symbol: String, label: String, color: Color) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 54, height: 54)
+                .background(color.gradient, in: Circle())
+            Text(label)
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(.white)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Timeline
+
+    private func restart() {
+        run += 1
+    }
+
+    private func play() async {
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t) {
+            step = .intro; cardIndex = 0; offset = 0; handVisible = false; handPressed = false
+        }
+        if reduceMotion {
+            // No sliding: show each result, then the sign-off.
+            await pause(0.4)
+            step = .passing; withAnimation(.easeInOut(duration: 0.2)) { offset = -120 }
+            await pause(1.2)
+            withTransaction(t) { cardIndex = 1; offset = 0 }
+            step = .joining; withAnimation(.easeInOut(duration: 0.2)) { offset = 120 }
+            await pause(1.2)
+            withAnimation(.smooth) { step = .done }
+            return
+        }
+
+        await pause(0.5)
+        await swipe(to: -1, during: .passing, finished: .passed)
+        guard !Task.isCancelled else { return }
+
+        withAnimation(.spring(duration: 0.4, bounce: 0.25)) { cardIndex = 1; offset = 0 }
+        await pause(0.45)
+        await swipe(to: 1, during: .joining, finished: .joined)
+        guard !Task.isCancelled else { return }
+
+        await pause(0.15)
+        withAnimation(.spring(duration: 0.5, bounce: 0.3)) { step = .done }
+    }
+
+    /// The hand presses, drags the card about a third of the way, and it flies off.
+    private func swipe(to direction: CGFloat, during: Step, finished: Step) async {
+        withAnimation(.smooth(duration: 0.25)) { step = during; handVisible = true }
+        await pause(0.25)
+        withAnimation(.easeOut(duration: 0.12)) { handPressed = true }
+        await pause(0.12)
+        withAnimation(.easeInOut(duration: 0.55)) { offset = 120 * direction }
+        await pause(0.6)
+        step = finished
+        withAnimation(.easeIn(duration: 0.28)) { offset = 600 * direction; handVisible = false; handPressed = false }
+        await pause(0.32)
+    }
+
+    private func pause(_ seconds: Double) async {
+        try? await Task.sleep(for: .seconds(seconds))
+    }
+}
+
+/// A look-alike of the real Discover card, filled with sample text.
+private struct TutorialCard: View {
+    let title: String
+    let category: ActivityCategory
+    let when: String
+    let place: String
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            ActivityCover(category: category, photoData: nil)
+            LinearGradient(colors: [.clear, .black.opacity(0.15), .black.opacity(0.75)],
+                           startPoint: .center, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 12) {
+                Label(category.title, systemImage: category.symbol)
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .glassEffect(.regular.tint(.white.opacity(0.1)), in: Capsule())
+                Spacer()
+                Text(title)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                HStack(spacing: 6) {
+                    chip("calendar", when)
+                    chip("location.fill", place)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(18)
+        }
+        .frame(width: 270, height: 370)
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .shadow(color: .black.opacity(0.3), radius: 18, y: 10)
+    }
+
+    private func chip(_ symbol: String, _ text: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.caption.weight(.semibold))
+            .lineLimit(1)
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .background(.white.opacity(0.18), in: Capsule())
+    }
+}
+
+/// Same look as the stamps on the real card.
+private struct TutorialStamp: View {
+    let text: String
+    let color: Color
+    let angle: Double
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 30, weight: .black, design: .rounded))
+            .foregroundStyle(color)
+            .padding(.horizontal, 12).padding(.vertical, 3)
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(color, lineWidth: 4))
+            .background(.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
+            .rotationEffect(.degrees(angle))
+            .fixedSize()
+    }
+}

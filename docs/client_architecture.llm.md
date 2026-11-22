@@ -66,3 +66,23 @@ Differences from our design:
 - The team's table suggested 5–6 character geohashes. At a 5-mile radius those cells are smaller than the circle and miss events near the edge, so the server picks the cell size from the radius (4 characters in Davis at 5 miles).
 - The table names the child entity `Signup`; the code keeps the existing name `Attendee`.
 - The AI planner uses `claude-opus-5-5`, which costs money as soon as a key is set. `claude-haiku-4-5` would cost a quarter as much; the team should decide.
+
+## Swipe tutorial and leaving the Host form (iOS)
+
+- **Swipe tutorial.**
+  - New users see a short demo over Discover the first time they reach it: a sample card swiped left ("PASS"), then one swiped right ("I'LL JOIN"), about four seconds.
+  - `SwipeTutorialView` is in `DiscoverView.swift` and is shown from `MainTabView`.
+  - It runs only on sample cards, never the real deck.
+  - `AppStore.hasSeenSwipeTutorial` is stored in UserDefaults. "Sign out & reset" clears it.
+  - People who already have swipes are treated as having seen it.
+  - Profile → Preferences → "How swiping works" replays it.
+- **Closing the Host form.** X and swipe-down both go through `attemptClose()`.
+  - A new plan with little in it closes without asking.
+  - Otherwise a bottom sheet offers Save as Draft, Discard Post (red) and Continue Editing.
+  - `DraftEligibility` (in `CreateActivityView.swift`) scores changes from the form's starting values. The threshold is 3 points:
+    - A description of 25+ characters: 3.
+    - A location: 2.
+    - A cover photo: 2.
+    - A title, a category change, or a date change: 1 each.
+    - Other settings: 1 each, at most 2 in total.
+  - Reopening a saved draft and closing it unchanged just closes. Changing it asks Save Changes or Discard Changes, and discarding keeps the draft as it was last saved. Nothing here deletes a saved draft.

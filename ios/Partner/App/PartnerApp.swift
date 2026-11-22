@@ -106,6 +106,17 @@ struct MainTabView: View {
             .badge(store.requests.count)
         }
         .tabBarMinimizeBehavior(.onScrollDown)
+        .overlay {
+            // First run (or a replay from Profile): show how swiping works over Discover.
+            if store.showsSwipeTutorial && store.selectedTab == .discover && !store.showCreate
+                && !store.showProfile && !store.showPlanner {
+                SwipeTutorialView {
+                    withAnimation(.smooth(duration: 0.35)) { store.finishSwipeTutorial() }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.smooth(duration: 0.35), value: store.showsSwipeTutorial)
         .sheet(isPresented: $store.showCreate, onDismiss: {
             hostTabSelected = false
         }) {

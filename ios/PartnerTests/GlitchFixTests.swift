@@ -61,3 +61,43 @@ struct CoverUploadTests {
         #expect(AppStore.coverJPEG(Data("hello".utf8)) == nil)
     }
 }
+
+// MARK: - Draft eligibility (closing the Host form)
+
+@Suite("Draft eligibility")
+struct DraftEligibilityTests {
+    private let start = PlanFormSnapshot(
+        category: .social, title: "", date: Date(timeIntervalSince1970: 1_800_000_000), duration: 90,
+        placeID: nil, suggestedLocation: "", capacity: 4, level: .anyone, requiresApproval: false,
+        privateLocation: false, costIsFree: true, cost: "", details: "", coverPhotoData: nil,
+        repeats: false, frequency: .weekly, occurrenceCount: 6, schedulePost: false,
+        publishAt: Date(timeIntervalSince1970: 1_799_000_000)
+    )
+
+    private func worth(_ change: (inout PlanFormSnapshot) -> Void) -> Bool {
+        var form = start
+        change(&form)
+        return DraftEligibility.isWorthSaving(form, comparedTo: start)
+    }
+
+    @Test func nothingEnteredIsNotWorthSaving() { #expect(!worth { _ in }) }
+    @Test func titleOnly() { #expect(!worth { $0.title = "Board games night" }) }
+    @Test func categoryOnly() { #expect(!worth { $0.category = .gaming }) }
+    @Test func titleAndCategory() { #expect(!worth { $0.title = "Board games"; $0.category = .gaming }) }
+    @Test func whitespaceDoesNotCount() { #expect(!worth { $0.title = "   "; $0.details = "  \n " }) }
+    @Test func settingsAloneDoNotCount() {
+        #expect(!worth { $0.capacity = 8; $0.duration = 60; $0.level = .beginner; $0.requiresApproval = true })
+    }
+    @Test func meaningfulDescription() {
+        #expect(worth { $0.details = "Bring your favorite games, snacks provided by us." })
+    }
+    @Test func shortDescriptionAlone() { #expect(!worth { $0.details = "fun" }) }
+    @Test func locationAndTime() {
+        #expect(worth { $0.placeID = "Mishka's"; $0.date = start.date.addingTimeInterval(3600) })
+    }
+    @Test func photoAndTitle() { #expect(worth { $0.coverPhotoData = Data([1, 2, 3]); $0.title = "Picnic" }) }
+    @Test func photoAlone() { #expect(!worth { $0.coverPhotoData = Data([1, 2, 3]) }) }
+    @Test func severalDetails() {
+        #expect(worth { $0.title = "Hike"; $0.date = start.date.addingTimeInterval(7200); $0.capacity = 10 })
+    }
+}

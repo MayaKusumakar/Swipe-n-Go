@@ -70,6 +70,9 @@ private struct ProfileContent: View {
                     Label("Show age on profile", systemImage: "person.text.rectangle")
                 }
                 .onChange(of: store.showAgeOnProfile) { store.save() }
+                Button { store.replaySwipeTutorial() } label: {
+                    Label("How swiping works", systemImage: "hand.draw.fill")
+                }
                 NavigationLink {
                     DiscoverySettingsSheet()
                 } label: {

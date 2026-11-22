@@ -57,7 +57,10 @@ struct CreateActivityView: View {
     @State private var recurrenceTimeZoneID = TimeZone.current.identifier
     @State private var schedulePost = false
     @State private var publishAt = Date.now.addingTimeInterval(3600)
-    @State private var showCloseOptions = false
+    @State private var showExitSheet = false
+    @State private var exitChoice: PlanExitChoice?
+    /// The form as it was when the sheet opened (defaults, or the draft being edited).
+    @State private var baseline: PlanFormSnapshot?
 
     init(draft: ActivityDraft? = nil) {
         self.draft = draft
@@ -108,11 +111,30 @@ struct CreateActivityView: View {
     /// The Duration picker's options, in minutes.
     static let durations = [30, 45, 60, 90, 120, 180, 240, 480]
 
-    /// Something worth keeping: swiping the sheet down asks before throwing it away.
-    private var hasChanges: Bool {
-        draft != nil || !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !details.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || place != nil || coverPhotoData != nil || !scannedLocation.isEmpty
+    private var formSnapshot: PlanFormSnapshot {
+        PlanFormSnapshot(
+            category: category, title: title, date: date, duration: duration, placeID: place?.id,
+            suggestedLocation: scannedLocation, capacity: capacity, level: level,
+            requiresApproval: requiresApproval, privateLocation: privateLocation,
+            costIsFree: costIsFree, cost: cost, details: details, coverPhotoData: coverPhotoData,
+            repeats: repeats, frequency: frequency, occurrenceCount: occurrenceCount,
+            schedulePost: schedulePost, publishAt: publishAt
+        )
+    }
+
+    /// X or a swipe down. A plan with barely anything in it just closes; real work asks first.
+    /// A draft that's already saved is never deleted here: closing it unchanged just closes.
+    private func attemptClose() {
+        focus = nil
+        let now = formSnapshot
+        let start = baseline ?? now
+        if draft != nil {
+            if now == start { dismiss() } else { showExitSheet = true }
+        } else if DraftEligibility.isWorthSaving(now, comparedTo: start) {
+            showExitSheet = true
+        } else {
+            dismiss()
+        }
     }
 
     private var canPublish: Bool {
@@ -161,7 +183,7 @@ struct CreateActivityView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close", systemImage: "xmark") { showCloseOptions = true }
+                    Button("Close", systemImage: "xmark") { attemptClose() }
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -192,6 +214,7 @@ struct CreateActivityView: View {
                 .animation(.snappy, value: missing)
             }
             .onAppear {
+                defer { if baseline == nil { baseline = formSnapshot } }
                 guard !restoredDraft, let draft else { return }
                 restoredDraft = true
                 draftID = draft.id
@@ -216,15 +239,23 @@ struct CreateActivityView: View {
                 schedulePost = draft.scheduledAt != nil
                 publishAt = draft.scheduledAt ?? .now.addingTimeInterval(3600)
             }
-            .interactiveDismissDisabled(hasChanges)
-            .onDismissAttempt { showCloseOptions = true }
-            .confirmationDialog("Keep this post?", isPresented: $showCloseOptions, titleVisibility: .visible) {
-                Button("Save draft and close") { saveDraftAndClose() }
-                    .disabled(isLoadingPhoto || scanning)
-                Button("Discard changes", role: .destructive) { dismiss() }
-                Button("Keep editing", role: .cancel) {}
-            } message: {
-                Text("Saving as a draft pauses any scheduled publishing until you schedule it again.")
+            .onDismissAttempt { attemptClose() }
+            .sheet(isPresented: $showExitSheet, onDismiss: {
+                // Act once the small sheet is gone, so closing the form doesn't race it.
+                let choice = exitChoice
+                exitChoice = nil
+                switch choice {
+                case .save: saveDraftAndClose()
+                case .discard: dismiss()
+                case .keepEditing, nil: break
+                }
+            }) {
+                PlanExitSheet(isExistingDraft: draft != nil,
+                              pausesSchedule: schedulePost,
+                              canSave: !isLoadingPhoto && !scanning) { choice in
+                    exitChoice = choice
+                    showExitSheet = false
+                }
             }
             .sheet(isPresented: $showPlacePicker) {
                 PlacePickerView(selection: $place, initialQuery: scannedLocation)
@@ -1354,5 +1385,167 @@ enum PlanCost {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed.lowercased().hasPrefix("free") { return (true, "") }
         return (false, trimmed.hasPrefix("$") ? String(trimmed.dropFirst()) : trimmed)
+    }
+}
+
+// MARK: - Leaving the form
+
+/// Every field of the Host form that the host can change, to tell real input from defaults.
+struct PlanFormSnapshot: Equatable {
+    var category: ActivityCategory
+    var title: String
+    var date: Date
+    var duration: Int
+    var placeID: String?
+    var suggestedLocation: String
+    var capacity: Int
+    var level: ActivityLevel
+    var requiresApproval: Bool
+    var privateLocation: Bool
+    var costIsFree: Bool
+    var cost: String
+    var details: String
+    var coverPhotoData: Data?
+    var repeats: Bool
+    var frequency: EventRecurrence.Frequency
+    var occurrenceCount: Int
+    var schedulePost: Bool
+    var publishAt: Date
+}
+
+/// Decides whether closing a new plan offers "Save as Draft" or just throws it away.
+/// Each change from the defaults earns points; at `threshold` the plan is worth keeping.
+/// Tune the numbers here; nothing else in the app hard-codes them.
+///
+/// | Input                                   | Points |
+/// |-----------------------------------------|--------|
+/// | Description of 25+ characters, 4+ words | 3      |
+/// | Shorter description                     | 1      |
+/// | Location picked (or read from a flyer)  | 2      |
+/// | Cover photo                             | 2      |
+/// | Title of 3+ characters                  | 1      |
+/// | Category changed                        | 1      |
+/// | Date or time changed                    | 1      |
+/// | Other settings changed (each)           | 1, at most 2 in all |
+///
+/// So a title, a category, or both, is not enough; a real description is; a location with a
+/// time, or a photo with a title, is.
+enum DraftEligibility {
+    static let threshold = 3
+    static let meaningfulDescriptionLength = 25
+    static let meaningfulDescriptionWords = 4
+    static let maxSettingsPoints = 2
+
+    static func isWorthSaving(_ form: PlanFormSnapshot, comparedTo start: PlanFormSnapshot) -> Bool {
+        score(form, comparedTo: start) >= threshold
+    }
+
+    static func score(_ form: PlanFormSnapshot, comparedTo start: PlanFormSnapshot) -> Int {
+        var points = 0
+
+        let details = trimmed(form.details)
+        if details != trimmed(start.details), !details.isEmpty {
+            let words = details.split(whereSeparator: { $0.isWhitespace }).count
+            points += details.count >= meaningfulDescriptionLength && words >= meaningfulDescriptionWords ? 3 : 1
+        }
+
+        let hasPlace = form.placeID != nil || !trimmed(form.suggestedLocation).isEmpty
+        if hasPlace, form.placeID != start.placeID || form.suggestedLocation != start.suggestedLocation {
+            points += 2
+        }
+        if form.coverPhotoData != nil, form.coverPhotoData != start.coverPhotoData { points += 2 }
+
+        let title = trimmed(form.title)
+        if title.count >= 3, title != trimmed(start.title) { points += 1 }
+        if form.category != start.category { points += 1 }
+        if form.date != start.date { points += 1 }
+
+        let settings = [
+            form.duration != start.duration,
+            form.capacity != start.capacity,
+            form.level != start.level,
+            form.requiresApproval != start.requiresApproval,
+            form.privateLocation != start.privateLocation,
+            !form.costIsFree && !trimmed(form.cost).isEmpty,
+            form.repeats != start.repeats,
+            form.schedulePost != start.schedulePost
+        ].filter { $0 }.count
+        points += min(settings, maxSettingsPoints)
+
+        return points
+    }
+
+    private static func trimmed(_ text: String) -> String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+enum PlanExitChoice { case save, discard, keepEditing }
+
+/// The bottom sheet shown when closing a plan worth keeping: save, discard, or keep going.
+private struct PlanExitSheet: View {
+    let isExistingDraft: Bool
+    let pausesSchedule: Bool
+    let canSave: Bool
+    let choose: (PlanExitChoice) -> Void
+    @State private var height: CGFloat = 300
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 6) {
+                Text(isExistingDraft ? "Save your changes?" : "Save this plan as a draft?")
+                    .font(.headline)
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 28)
+            .padding(.top, 30)
+            .padding(.bottom, 18)
+
+            VStack(spacing: 0) {
+                Divider()
+                row(isExistingDraft ? "Save Changes" : "Save as Draft", symbol: "square.and.arrow.down", choice: .save)
+                    .disabled(!canSave)
+                    .opacity(canSave ? 1 : 0.4)
+                Divider().padding(.leading, 60)
+                row(isExistingDraft ? "Discard Changes" : "Discard Post", symbol: "trash", choice: .discard, role: .destructive)
+                Divider().padding(.leading, 60)
+                row("Continue Editing", symbol: "pencil", choice: .keepEditing)
+            }
+            .padding(.bottom, 8)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        .presentationDetents([.height(height)])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var message: String {
+        if isExistingDraft {
+            return "Discarding keeps the draft as it was last saved."
+        }
+        return pausesSchedule
+            ? "Find it in Plans → Host → Drafts. Scheduled publishing is paused until you schedule it again."
+            : "Find it in Plans → Host → Drafts and pick up where you left off."
+    }
+
+    private func row(_ title: String, symbol: String, choice: PlanExitChoice, role: ButtonRole? = nil) -> some View {
+        Button(role: role) { choose(choice) } label: {
+            HStack(spacing: 16) {
+                Image(systemName: symbol)
+                    .font(.system(size: 19, weight: .medium))
+                    .frame(width: 28)
+                Text(title)
+                    .font(.body.weight(choice == .keepEditing ? .regular : .semibold))
+                Spacer()
+            }
+            .foregroundStyle(role == .destructive ? Color.red : Color.primary)
+            .padding(.horizontal, 20)
+            .frame(height: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
