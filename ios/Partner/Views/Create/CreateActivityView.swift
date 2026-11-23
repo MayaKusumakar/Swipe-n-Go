@@ -84,6 +84,8 @@ struct CreateActivityView: View {
     @State private var flyerData: Data?
     @State private var capturedFlyerData: Data?
     @State private var scanResult: FlyerScanResult?
+    /// A flyer that couldn't be read, kept so the host can try it again.
+    @State private var failedScan: FailedScan?
     /// "Describe your plan": what the host typed, and the text being read right now.
     @State private var planDescription = ""
     @State private var describedText: String?
@@ -330,7 +332,7 @@ struct CreateActivityView: View {
                 } catch {
                     flyerPhoto = nil
                     self.flyerData = nil
-                    photoError = "No readable flyer text was found. Try a clearer photo or enter the details manually."
+                    failedScan = FailedScan(data: flyerData, error: error)
                 }
             }
             .task(id: describedText) {
@@ -367,6 +369,23 @@ struct CreateActivityView: View {
                 } catch {
                     photoError = "This photo could not be opened. Please choose another image."
                 }
+            }
+            // A failed scan never leaves an unexplained empty form: say why, and offer a retry or typing it in.
+            .alert("Couldn't read this flyer", isPresented: Binding(
+                get: { failedScan != nil },
+                set: { if !$0 { failedScan = nil } }
+            ), presenting: failedScan) { failed in
+                Button("Try Again") {
+                    failedScan = nil
+                    flyerData = failed.data
+                }
+                Button("Enter Manually") {
+                    failedScan = nil
+                    focus = .title
+                }
+                Button("Cancel", role: .cancel) { failedScan = nil }
+            } message: { failed in
+                Text(failed.message)
             }
             .alert("Unable to complete action", isPresented: Binding(
                 get: { photoError != nil },
@@ -1450,6 +1469,23 @@ enum DraftEligibility {
 
     private static func trimmed(_ text: String) -> String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// A flyer scan that failed, and what to tell the host.
+struct FailedScan: Equatable {
+    let data: Data
+    let message: String
+
+    init(data: Data, error: Error) {
+        self.data = data
+        if let error = error as? CocoaError, error.code == .fileReadCorruptFile {
+            message = "This image couldn't be opened. Try another photo, or enter the details yourself."
+        } else if error is URLError || error is EventServer.ServerError {
+            message = "The connection dropped while reading it. Try again, or enter the details yourself."
+        } else {
+            message = "No event details were found. The photo may be blurry or not a flyer. Try a clearer photo, or enter the details yourself."
+        }
     }
 }
 

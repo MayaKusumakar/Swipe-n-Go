@@ -109,6 +109,45 @@ def test_end_before_start_is_dropped(post):
     assert post(FlyerService(client=client), body()).get_json()["end_time"] is None
 
 
+# Sample answers from Claude for the date and time: the cases that used to lose the flyer's date.
+def test_time_without_utc_offset_uses_the_hosts_time_zone(post):
+    client, _ = flyer_client(output=output(start_time="2026-11-14T19:00:00", end_time="2026-11-14T21:00"))
+    data = post(FlyerService(client=client), body()).get_json()
+
+    assert data["start_time"] == "2026-11-14T19:00:00-08:00"     # offset from "now", not dropped
+    assert data["end_time"] == "2026-11-14T21:00:00-08:00"
+    assert "date" not in data["missing"] and "time" not in data["missing"]
+
+
+def test_date_without_a_time_keeps_the_day_and_asks_for_the_time(post):
+    client, _ = flyer_client(output=output(start_time="2026-11-14", end_time=""))
+    data = post(FlyerService(client=client), body()).get_json()
+
+    assert data["start_time"] == "2026-11-14T12:00:00-08:00"
+    assert data["end_time"] is None
+    assert data["missing"] == ["time"]
+
+
+def test_end_given_as_a_bare_day_is_dropped(post):
+    client, _ = flyer_client(output=output(end_time="2026-11-15"))
+    assert post(FlyerService(client=client), body()).get_json()["end_time"] is None
+
+
+def test_partial_answer_returns_null_times_and_flags_them(post):
+    client, _ = flyer_client(output=output(start_time="", end_time="", location_name="", address="", cost="",
+                                           missing=["location"]))
+    data = post(FlyerService(client=client), body()).get_json()
+
+    assert data["start_time"] is None and data["end_time"] is None
+    assert data["organizer"] is None
+    assert data["missing"] == ["location", "date", "time"]
+
+
+def test_organizer_is_returned_when_printed(post):
+    client, _ = flyer_client(output=output(organizer="  Davis   Climbing Club "))
+    assert post(FlyerService(client=client), body()).get_json()["organizer"] == "Davis Climbing Club"
+
+
 @pytest.mark.parametrize("change, message", [
     ({"media_type": "image/gif"}, "media_type"),
     ({"image": "not base64!!"}, "base64"),

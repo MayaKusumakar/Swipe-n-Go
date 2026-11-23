@@ -316,13 +316,17 @@ Response `200`:
   "description": "Beginner-friendly climbing night with free gear rental.",
   "cost": "Free",
   "category": "sports",
+  "organizer": "Davis Climbing Club",
   "missing": [],
   "model": "claude-opus-5-5"
 }
 ```
-- `missing` lists what wasn't on the flyer or wasn't clear: any of `title`, `date`, `time`, `location`, `cost`. The app marks those for the host to fill in. When there's no start time, `date` and `time` are always listed.
+- `missing` lists what wasn't on the flyer or wasn't clear: any of `title`, `date`, `time`, `location`, `cost`. The app marks those for the host to fill in. When there's no start time, `date` and `time` are always listed; when only the day was found, `time` is.
 - `category` is one of the app's club categories (`sports, outdoors, wellness, cultural, arts, music, academic, career, tech, service, greek, faith, gaming, social`), or `""`.
 - `start_time` / `end_time` may be `null`. An end time that isn't after the start is dropped.
+- Times always carry a UTC offset. If Claude leaves the offset off, the host's offset from `now` is used. If Claude gives only a day (`2026-11-23`), `start_time` is that day at 12:00 and `time` is added to `missing`; an end given as only a day is dropped. Anything that isn't an ISO-8601 date is `null`.
+- `organizer`: the club or group hosting the event, as printed, or `null`. The app adds it to the top of the description ("Hosted by …").
+- Text fields (`title`, `location_name`, `address`, `description`, `cost`, `category`) are `""` when not found, so app builds from before `organizer` was added still decode. The app accepts `null` for any field.
 - If the image isn't an event flyer, `is_event_flyer` is `false` and the other fields are empty.
 
 Errors:

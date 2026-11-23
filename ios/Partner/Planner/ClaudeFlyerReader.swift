@@ -26,6 +26,8 @@ struct ClaudeFlyerReader {
         var cost: String
         var category: String
         var missing: [String]
+        /// The club or group hosting it, if printed. Newer servers only.
+        var organizer: String? = nil
     }
 
     func read(_ image: CGImage, ocrText: String, now: Date = .now) async throws -> Reading {
@@ -50,14 +52,80 @@ struct ClaudeFlyerReader {
 }
 
 extension ClaudeFlyerReader.Reading {
+    private enum CodingKeys: String, CodingKey {
+        case isEventFlyer, title, startTime, endTime, locationName, address, description, cost, category, missing, organizer
+    }
+
+    /// Forgiving on purpose: any field may be missing or `null`, and a time Claude wrote oddly
+    /// (no UTC offset, or only a day) is still read. One bad field never throws away the rest.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func text(_ key: CodingKeys) -> String {
+            (try? c.decodeIfPresent(String.self, forKey: key))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
+        func time(_ key: CodingKeys) -> FlyerTime {
+            FlyerTime.parse(try? c.decodeIfPresent(String.self, forKey: key))
+        }
+        let start = time(.startTime)
+        let end = time(.endTime)
+        var missing = (try? c.decodeIfPresent([String].self, forKey: .missing)) ?? []
+        if start.date == nil {
+            missing += ["date", "time"]
+        } else if !start.hasTime {
+            missing.append("time")
+        }
+        self.init(
+            isEventFlyer: (try? c.decodeIfPresent(Bool.self, forKey: .isEventFlyer)) ?? true,
+            title: text(.title),
+            startTime: start.date,
+            // A bare day, or an end that isn't after the start, isn't an end time.
+            endTime: end.hasTime ? end.date.flatMap { e in start.date.flatMap { e > $0 ? e : nil } } : nil,
+            locationName: text(.locationName), address: text(.address), description: text(.description),
+            cost: text(.cost), category: text(.category), missing: missing.uniqued(),
+            organizer: text(.organizer).isEmpty ? nil : text(.organizer)
+        )
+    }
+
     func result(image: UIImage) -> FlyerScanResult {
         FlyerScanResult(
             title: title, date: startTime, endDate: endTime,
             location: locationName, address: address,
             details: description, cost: cost,
             category: ActivityCategory(rawValue: category),
+            organizer: organizer ?? "",
             missing: missing, isEventFlyer: isEventFlyer, reader: .claude, image: image
         )
+    }
+}
+
+/// A time from the server's JSON, read the way the flyer reader needs it.
+struct FlyerTime: Equatable {
+    var date: Date?
+    /// False when only a day was given: the time is a placeholder (noon) for the host to set.
+    var hasTime = false
+
+    /// ISO-8601 with an offset (what the server sends), with or without fractional seconds.
+    /// Without an offset the time is the phone's own; a bare "2026-11-23" is that day at noon.
+    static func parse(_ string: String?, timeZone: TimeZone = .current) -> FlyerTime {
+        guard let string = string?.trimmingCharacters(in: .whitespaces), !string.isEmpty else { return FlyerTime() }
+        if let date = (try? Date(string, strategy: .iso8601))
+            ?? (try? Date(string, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))) {
+            return FlyerTime(date: date, hasTime: true)
+        }
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.timeZone = timeZone
+        for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm"] {
+            local.dateFormat = format
+            if let date = local.date(from: string) { return FlyerTime(date: date, hasTime: true) }
+        }
+        local.dateFormat = "yyyy-MM-dd"
+        if let day = local.date(from: string) {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = timeZone
+            return FlyerTime(date: calendar.date(bySettingHour: 12, minute: 0, second: 0, of: day), hasTime: false)
+        }
+        return FlyerTime()
     }
 }
 
