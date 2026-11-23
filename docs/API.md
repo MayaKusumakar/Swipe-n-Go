@@ -408,7 +408,7 @@ Your own entry for this event, e.g. to see when the host approved you. `404 not_
 
 ### GET /api/events/\<id\>/attendees
 
-Host only. Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`. Checked-in guests include `"checked_in": true`. An omitted field means the guest has yet to check in.
+Host only. Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`. Checked-in guests include `"checked_in": true`. An omitted field means the guest has yet to check in. Guests who answered "Did you attend?" (below) also include `"attended": true|false` and `"feedback": "…"|null`; those who haven't answered don't have these fields.
 
 ### POST /api/events/\<id\>/attendees/\<attendee_id\>/approve
 
@@ -419,6 +419,14 @@ Errors: `409 event_full` (the request stays `pending`).
 ### PUT /api/events/\<id\>/attendees/\<attendee_id\>/check-in
 
 Host only. Send `{"checked_in": true}` to mark an approved guest as arrived or `{"checked_in": false}` to undo. Response `200` includes the updated Attendee with its `checked_in` value. Retrying the same value has no additional effect. Check-in leaves RSVP status and capacity unchanged.
+
+### PUT /api/events/\<id\>/attendees/me/attendance
+
+After the event, an approved guest says whether they went, with optional feedback for the host. The app asks once per event ("Did you attend?") when it's opened after the event ends. Body: `{"attended": true, "feedback": "Great night!"}`.
+- `attended` (boolean) is required. `feedback` is optional, up to 1000 characters, trimmed; `""` counts as none. Feedback is only kept when `attended` is `true`.
+- Answering again replaces the earlier answer. Stored on the guest's Attendee entity (`attended`, `feedback` unindexed, `feedback_at`).
+
+Response `200`: your Attendee object plus `attended` and `feedback`. Errors: `400 invalid_attendance`, `403` (you're not an approved guest, or the event hasn't ended: its `end_time`, or `start_time` if it has none), `404`. The host reads the answers in `GET /api/events/<id>/attendees`; the app has no screen for them yet.
 
 ### DELETE /api/events/\<id\>/attendees/\<attendee_id\>
 

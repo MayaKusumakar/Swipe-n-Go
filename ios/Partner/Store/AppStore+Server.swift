@@ -75,6 +75,9 @@ extension AppStore {
             await syncSaved(baseURL: url)
             await syncName(baseURL: url)
             await syncAttendance(baseURL: url)
+            if attendanceAnswers.values.contains(where: { $0.needsSync == true }) {
+                await sendPendingAttendance(baseURL: url)
+            }
         } catch let error as EventServer.ServerError where error.status == 401 || error.status == 403 {
             // The server no longer accepts this sign-in (expired, revoked, or not @ucdavis.edu).
             auth.signOut(message: error.message)

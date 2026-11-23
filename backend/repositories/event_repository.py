@@ -167,6 +167,18 @@ class EventRepository:
                 self.client.put(entity)
         return attendee
 
+    def set_attendance(self, event_id, attendee_id, attended, feedback, answered_at):
+        """Stores a guest's "Did you attend?" answer and feedback. None if there's no such attendee."""
+        key = self._attendee_key(event_id, attendee_id)
+        with self.client.transaction():
+            entity = self.client.get(key)
+            if entity is None:
+                return None
+            entity.exclude_from_indexes = set(entity.exclude_from_indexes) | {"feedback"}
+            entity.update({"attended": attended, "feedback": feedback, "feedback_at": answered_at})
+            self.client.put(entity)
+        return Attendee.from_entity(entity)
+
     def save_attendee(self, attendee):
         entity = datastore.Entity(key=self._attendee_key(attendee.event_id, attendee.id))
         entity.update(attendee.to_entity_properties())

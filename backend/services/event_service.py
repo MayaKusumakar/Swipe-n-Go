@@ -198,6 +198,21 @@ class EventService:
             raise ForbiddenError("Approve the guest before checking them in")
         return attendee
 
+    def record_attendance(self, event_id, user, attended, feedback):
+        """A guest says whether they went, after the event, with optional feedback for the host.
+        Answering again replaces the earlier answer. Feedback is kept only when they went."""
+        event = self._event(event_id)
+        attendee = self._store(self._repository.get_attendee, event.id, user.id)
+        if attendee is None or attendee.status != APPROVED:
+            raise ForbiddenError("Only guests of this event can say whether they went")
+        if (event.end_time or event.start_time) > self.now():
+            raise ForbiddenError("You can answer once the event is over")
+        attendee = self._store(self._repository.set_attendance, event.id, user.id, attended,
+                               feedback if attended else None, self.now())
+        if attendee is None:
+            raise NotFoundError("attendee")
+        return attendee
+
     def remove_attendee(self, event_id, attendee_id, user):
         """The host can remove anyone (or decline a request); anyone else only themselves."""
         event = self._event(event_id)

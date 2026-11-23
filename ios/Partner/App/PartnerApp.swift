@@ -44,6 +44,8 @@ struct RootView: View {
         }
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
+            // Opening the app (or coming back to it) after a plan you joined: ask how it went.
+            store.checkForAttendancePrompts()
             while !Task.isCancelled {
                 store.publishScheduledPosts()
                 do {
@@ -70,6 +72,8 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(AppStore.self) private var store
     @State private var hostTabSelected = false
+    /// The plan the attendance popup was showing, for its onDismiss (by then the item is nil).
+    @State private var attendanceShown: Activity?
 
     var body: some View {
         @Bindable var store = store
@@ -124,5 +128,16 @@ struct MainTabView: View {
         }
         .sheet(isPresented: $store.showPlanner) { PlannerView(initialQuery: store.debugPlannerQuery) }
         .sheet(isPresented: $store.showProfile) { ProfileView() }
+        // After a plan you joined: "Did you attend?", one plan at a time.
+        .sheet(item: $store.attendancePrompt, onDismiss: {
+            if let plan = attendanceShown { store.finishAttendancePrompt(plan) }
+            attendanceShown = nil
+        }) { plan in
+            AttendancePromptView(activity: plan)
+                .onAppear { attendanceShown = plan }
+        }
+        .onChange(of: store.showsSwipeTutorial) { _, showing in
+            if !showing { store.checkForAttendancePrompts() }
+        }
     }
 }

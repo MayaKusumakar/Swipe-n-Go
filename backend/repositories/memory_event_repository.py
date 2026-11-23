@@ -118,6 +118,16 @@ class InMemoryEventRepository:
                 self._attendees[key] = attendee
             return attendee
 
+    def set_attendance(self, event_id, attendee_id, attended, feedback, answered_at):
+        with self._lock:
+            key = (event_id, attendee_id)
+            attendee = self._attendees.get(key)
+            if attendee is None:
+                return None
+            attendee = replace(attendee, attended=attended, feedback=feedback, feedback_at=answered_at)
+            self._attendees[key] = attendee
+            return attendee
+
     def save_attendee(self, attendee):
         with self._lock:
             self._attendees[(attendee.event_id, attendee.id)] = attendee

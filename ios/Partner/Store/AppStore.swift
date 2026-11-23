@@ -37,6 +37,8 @@ final class AppStore {
     var notificationsEnabled = true
     var radiusMiles: Double = 50
     var showAgeOnProfile = true
+    /// "Did you attend?" answers, per plan (see AppStore.attendanceQueue).
+    var attendanceAnswers: [UUID: AttendanceAnswer] = [:]
 
     // MARK: Transient UI state
     var banner: InAppBanner?
@@ -47,6 +49,7 @@ final class AppStore {
     var showProfile = false                   // Profile sheet, opened from the top-right avatar
     var openConversationID: UUID?
     var requestedChat: UUID?                  // set to deep-link into a conversation
+    var attendancePrompt: Activity?           // the plan the "Did you attend?" popup is asking about
     private(set) var swipeHistory: [(UUID, SwipeAction)] = []
 
     // MARK: Server (see AppStore+Server.swift)
@@ -162,6 +165,16 @@ final class AppStore {
         if args.contains("-onboarding") { hasOnboarded = false }
         if args.contains("-swipeTutorial") { isReplayingSwipeTutorial = true }
         if args.contains("-noSwipeTutorial") { hasSeenSwipeTutorial = true }
+        if args.contains("-attendancePrompt"), hasOnboarded {
+            // Makes two sample plans you joined end in the last few hours, so "Did you attend?" shows (queued).
+            for (n, i) in activities.indices.filter({ !isHost(activities[$0]) && activities[$0].serverID == nil }).prefix(2).enumerated() {
+                activities[i].date = .now.addingTimeInterval(-Double(3 + n * 2) * 3600)
+                activities[i].durationMinutes = 60
+                joinedIDs.insert(activities[i].id)
+                attendanceAnswers[activities[i].id] = nil
+            }
+            activities.sort { $0.date < $1.date }
+        }
         if args.contains("-host") { showCreate = true }
         if args.contains("-samples") { showSampleEvents = true; serverURLString = "" }
         if let i = args.firstIndex(of: "-server"), i + 1 < args.count { serverURLString = args[i + 1] }
@@ -783,6 +796,7 @@ final class AppStore {
         var notificationsEnabled: Bool
         var radiusMiles: Double
         var showAgeOnProfile: Bool
+        var attendanceAnswers: [UUID: AttendanceAnswer]? = nil
     }
 
     @discardableResult
@@ -790,7 +804,8 @@ final class AppStore {
         let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activitiesWithoutCovers(), drafts: drafts,
                             joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, pendingSaves: pendingSaves, skippedIDs: skippedIDs,
                             conversations: conversations, requests: requests, notificationsEnabled: notificationsEnabled,
-                            radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile)
+                            radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile,
+                            attendanceAnswers: attendanceAnswers)
         do {
             let data = try JSONEncoder().encode(snap)
             try data.write(to: fileURL, options: .atomic)
@@ -861,6 +876,7 @@ final class AppStore {
         notificationsEnabled = s.notificationsEnabled
         radiusMiles = s.radiusMiles
         showAgeOnProfile = s.showAgeOnProfile
+        attendanceAnswers = s.attendanceAnswers ?? [:]
         // Keep the demo fresh: if every seeded plan has passed, reseed activities.
         if !activities.contains(where: { !$0.isPast && !isHost($0) }) {
             let hosted = activities.filter { isHost($0) }
@@ -912,6 +928,8 @@ final class AppStore {
         try? FileManager.default.removeItem(at: fileURL)
         hasOnboarded = false
         drafts = []
+        attendanceAnswers = [:]
+        attendancePrompt = nil
         notificationsEnabled = true
         radiusMiles = 50
         seed()
@@ -924,6 +942,82 @@ final class AppStore {
     /// Keeps the profile but restores fresh demo activities and chats.
     func refreshDemoContent() {
         seed(keepingMe: true)
+        save()
+    }
+}
+
+// MARK: - After a plan: "Did you attend?"
+
+extension AppStore {
+    /// How long after a plan ends it's still worth asking about. Older ones are skipped, so a phone
+    /// that's been away for months doesn't get a pile of popups.
+    nonisolated static let attendanceWindow: TimeInterval = 7 * 24 * 3600
+
+    /// Plans to ask about, oldest first: joined (not hosted), over, ended within the window, not yet answered.
+    nonisolated static func attendanceQueue(activities: [Activity], joinedIDs: Set<UUID>, hostID: UUID,
+                                answers: [UUID: AttendanceAnswer], now: Date = .now) -> [Activity] {
+        activities
+            .filter { a in
+                joinedIDs.contains(a.id) && a.hostID != hostID && answers[a.id] == nil
+                    && a.endDate <= now && a.endDate >= now.addingTimeInterval(-attendanceWindow)
+            }
+            .sorted { $0.endDate < $1.endDate }
+    }
+
+    var attendanceQueue: [Activity] {
+        Self.attendanceQueue(activities: activities, joinedIDs: joinedIDs, hostID: me.id, answers: attendanceAnswers)
+    }
+
+    /// Shows the next "Did you attend?" popup, if there is one and nothing else is in the way
+    /// (onboarding, the swipe tutorial, or another sheet). Called when the app opens or comes back.
+    func checkForAttendancePrompts() {
+        guard attendancePrompt == nil, hasOnboarded, canOpenApp, !showsSwipeTutorial,
+              !showCreate, !showProfile, !showPlanner, let next = attendanceQueue.first else { return }
+        attendancePrompt = next
+    }
+
+    /// Saves an answer on this phone right away (so closing the popup mid-way keeps it).
+    func recordAttendance(_ activity: Activity, response: AttendanceAnswer.Response, feedback: String? = nil) {
+        let text = feedback?.trimmingCharacters(in: .whitespacesAndNewlines)
+        attendanceAnswers[activity.id] = AttendanceAnswer(
+            response: response,
+            feedback: response == .attended && text?.isEmpty == false ? String(text!.prefix(1000)) : nil,
+            answeredAt: .now,
+            needsSync: response != .dismissed && activity.serverID != nil ? true : nil
+        )
+        save()
+    }
+
+    /// The popup closed. No answer means it was dismissed: it won't be asked again. Then the answer is
+    /// sent to the server, and the next plan in the queue (if any) is shown.
+    func finishAttendancePrompt(_ activity: Activity) {
+        if attendanceAnswers[activity.id] == nil { recordAttendance(activity, response: .dismissed) }
+        attendancePrompt = nil
+        Task {
+            if let url = serverURL, auth.isSignedIn { await sendPendingAttendance(baseURL: url) }
+            try? await Task.sleep(for: .milliseconds(450))   // let the sheet finish closing
+            checkForAttendancePrompts()
+        }
+    }
+
+    /// Sends answers that haven't reached the server yet. Retried on every sync until they do;
+    /// one the server refuses for good (not your plan any more, or it's gone) isn't retried.
+    func sendPendingAttendance(baseURL url: URL) async {
+        for (id, answer) in attendanceAnswers where answer.needsSync == true {
+            guard let serverID = activity(id)?.serverID, answer.response != .dismissed else {
+                attendanceAnswers[id]?.needsSync = nil
+                continue
+            }
+            do {
+                try await EventServer.recordAttendance(eventID: serverID, attended: answer.response == .attended,
+                                                       feedback: answer.feedback, baseURL: url)
+                attendanceAnswers[id]?.needsSync = nil
+            } catch let error as EventServer.ServerError where [403, 404].contains(error.status) {
+                attendanceAnswers[id]?.needsSync = nil
+            } catch {
+                continue   // offline or server error: try again on the next sync
+            }
+        }
         save()
     }
 }

@@ -101,6 +101,15 @@ class FakeEventRepository:
             self.attendees[key] = attendee
         return attendee
 
+    def set_attendance(self, event_id, attendee_id, attended, feedback, answered_at):
+        key = (event_id, attendee_id)
+        attendee = self.attendees.get(key)
+        if attendee is None:
+            return None
+        attendee = replace(attendee, attended=attended, feedback=feedback, feedback_at=answered_at)
+        self.attendees[key] = attendee
+        return attendee
+
     def save_attendee(self, attendee):
         self.attendees[(attendee.event_id, attendee.id)] = attendee
 

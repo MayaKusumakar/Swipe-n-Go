@@ -737,3 +737,104 @@ private struct HostCheckInView: View {
         }
     }
 }
+
+// MARK: - After a plan: "Did you attend?"
+
+/// Shown when the app opens after a plan you joined has ended. Yes → optional feedback for the host
+/// (can be skipped); No → done. Closing it any other way counts as dismissed (see AppStore.finishAttendancePrompt).
+struct AttendancePromptView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let activity: Activity
+
+    @State private var step: Step = .ask
+    @State private var feedback = ""
+    @FocusState private var writing: Bool
+
+    private enum Step { case ask, feedback }
+
+    private var hostName: String { store.person(activity.hostID)?.firstName ?? "the host" }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 14) {
+                ActivityCover(category: activity.category, photoData: activity.coverPhotoData)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(activity.title).font(.headline).lineLimit(2)
+                    Text("\(activity.date.friendlyDateTime) · \(store.placeLabel(activity))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+
+            switch step {
+            case .ask: ask
+            case .feedback: feedbackForm
+            }
+        }
+        .padding(24)
+        .presentationDetents([.height(step == .ask ? 300 : 400)])
+        .presentationDragIndicator(.visible)
+        .animation(.snappy, value: step)
+        .sensoryFeedback(.success, trigger: step) { _, new in new == .feedback }
+    }
+
+    private var ask: some View {
+        VStack(spacing: 12) {
+            Text("Did you attend?")
+                .font(.title2.weight(.bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                store.recordAttendance(activity, response: .attended)
+                step = .feedback
+                writing = true
+            } label: {
+                Label("Yes, I went", systemImage: "checkmark")
+            }
+            .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(activity.category.gradient)))
+            Button {
+                store.recordAttendance(activity, response: .missed)
+                dismiss()
+            } label: {
+                Text("No, I didn't make it")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var feedbackForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Glad you made it!")
+                .font(.title2.weight(.bold))
+            Text("Anything you'd like \(hostName) to know? Optional.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            TextField("What went well, what could be better…", text: $feedback, axis: .vertical)
+                .lineLimit(3...5)
+                .focused($writing)
+                .padding(12)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            HStack(spacing: 12) {
+                Button("Skip") { dismiss() }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                Button("Send to \(hostName)") {
+                    store.recordAttendance(activity, response: .attended, feedback: feedback)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(activity.category.color)
+                .disabled(feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+        }
+    }
+}

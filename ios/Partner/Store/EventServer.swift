@@ -220,6 +220,13 @@ enum EventServer {
         return try decoder.decode(Attendee.self, from: data)
     }
 
+    /// After the event: whether you went, and optional feedback for the host (`PUT …/attendees/me/attendance`).
+    static func recordAttendance(eventID: String, attended: Bool, feedback: String?, baseURL: URL) async throws {
+        struct Body: Encodable { var attended: Bool; var feedback: String? }
+        let url = baseURL.appending(path: "api/events/\(eventID)/attendees/me/attendance")
+        _ = try await send("PUT", url, body: try encoder.encode(Body(attended: attended, feedback: feedback)))
+    }
+
     /// The host deletes their event (with its attendees and cover). Already gone counts as done.
     static func deleteEvent(eventID: String, baseURL: URL) async throws {
         do {

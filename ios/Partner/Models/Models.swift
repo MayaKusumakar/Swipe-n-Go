@@ -229,6 +229,26 @@ struct Conversation: Codable, Identifiable, Hashable {
     var lastMessage: Message? { messages.last }
 }
 
+// MARK: - After a plan: "Did you attend?"
+
+/// A guest's answer to the popup shown after a plan they joined has ended. Kept per plan so each
+/// plan is asked about once, whatever the answer, and sent to the host's server when there is one.
+struct AttendanceAnswer: Codable, Equatable {
+    enum Response: String, Codable {
+        case attended
+        case missed
+        /// Closed without answering. Not asked again, and nothing is sent.
+        case dismissed
+    }
+
+    var response: Response
+    /// Optional, for the host. Only kept when they went.
+    var feedback: String?
+    var answeredAt: Date
+    /// Still to be sent to the server (a shared plan whose answer hasn't gone through yet).
+    var needsSync: Bool?
+}
+
 // MARK: - Join requests (for activities you host)
 
 struct JoinRequest: Codable, Identifiable, Hashable {

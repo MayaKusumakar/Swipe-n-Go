@@ -175,6 +175,11 @@ class Attendee:
     status: str
     created_at: datetime
     checked_in: bool = False
+    # The guest's answer to "Did you attend?" after the event (None = not answered),
+    # and their optional feedback for the host. Set through set_attendance.
+    attended: bool | None = None
+    feedback: str | None = None
+    feedback_at: datetime | None = None
 
     @classmethod
     def from_entity(cls, entity):
@@ -185,6 +190,9 @@ class Attendee:
             status=entity.get("status", PENDING),
             checked_in=entity.get("checked_in", False),
             created_at=entity["created_at"],
+            attended=entity.get("attended"),
+            feedback=entity.get("feedback"),
+            feedback_at=entity.get("feedback_at"),
         )
 
     def to_entity_properties(self):
