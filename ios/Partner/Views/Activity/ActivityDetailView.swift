@@ -63,10 +63,11 @@ struct ActivityDetailView: View {
                 HostCheckInView(eventID: eventID, baseURL: baseURL, title: live.title)
             }
         }
-        .confirmationDialog("Leave this plan?", isPresented: $confirmLeave, titleVisibility: .visible) {
-            Button("Leave plan", role: .destructive) { withAnimation { store.leave(live) } }
+        // "Delete" is how a guest leaves a plan. It removes the plan for you only; the event stays.
+        .confirmationDialog("Delete this plan?", isPresented: $confirmLeave, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { withAnimation { store.leave(live) } }
         } message: {
-            Text("\(host?.firstName ?? "The host") will be notified. You can always request to join again.")
+            Text("You'll leave the plan and its group chat. It still happens for everyone else. \(host?.firstName ?? "The host") will be notified, and you can always request to join again.")
         }
         .confirmationDialog("Cancel this plan?", isPresented: $confirmCancel, titleVisibility: .visible) {
             Button("Cancel plan", role: .destructive) {
@@ -386,7 +387,7 @@ struct ActivityDetailView: View {
                 chatButton(title: "Open group chat")
             } else if store.isGoing(live) {
                 Button(role: .destructive) { confirmLeave = true } label: {
-                    Label("Leave Plan", systemImage: "rectangle.portrait.and.arrow.right")
+                    Label("Delete", systemImage: "trash")
                         .font(.headline)
                         .foregroundStyle(.red)
                         .frame(height: 54)
