@@ -11,6 +11,8 @@ struct ActivityDetailView: View {
     @State private var celebration: Celebration?
     @State private var confirmLeave = false
     @State private var confirmCancel = false
+    /// Set by the delete sheet; acted on once the sheet is gone, so the two animations don't fight.
+    @State private var cancelConfirmed = false
     @State private var removing: Person?
     @State private var showCheckIn = false
 
@@ -70,13 +72,13 @@ struct ActivityDetailView: View {
         } message: {
             Text("You'll leave the plan and its group chat. It still happens for everyone else. \(host?.firstName ?? "The host") will be notified, and you can always request to join again.")
         }
-        .confirmationDialog("Cancel this plan?", isPresented: $confirmCancel, titleVisibility: .visible) {
-            Button("Cancel plan", role: .destructive) {
-                store.cancel(live)
-                dismiss()
-            }
-        } message: {
-            Text("Everyone who joined will be notified.")
+        .sheet(isPresented: $confirmCancel, onDismiss: {
+            guard cancelConfirmed else { return }
+            cancelConfirmed = false
+            withAnimation(.snappy) { store.cancel(live) }
+            dismiss()
+        }) {
+            CancelPlanSheet(activity: live) { cancelConfirmed = true }
         }
         .confirmationDialog("Remove \(removing?.firstName ?? "this person")?",
                             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
@@ -539,6 +541,72 @@ struct RequestRow: View {
     }
 }
 
+
+/// Instagram-style confirmation for deleting a plan you host: a small bottom sheet with one clear
+/// destructive choice. The caller deletes once the sheet is gone (optimistic, see `AppStore.cancel`).
+struct CancelPlanSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let activity: Activity
+    let onConfirm: () -> Void
+    @State private var height: CGFloat = 280
+    @State private var confirmed = false
+
+    private var message: String {
+        let joined = activity.attendeeIDs.count
+        guard joined > 0 else { return "It's deleted for everyone and can't be undone." }
+        let people = joined == 1 ? "1 person has" : "\(joined) people have"
+        return "It's deleted for everyone and can't be undone. \(people) joined and won't be notified automatically, so you may want to tell them in the group chat first."
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 6) {
+                Text("Cancel “\(activity.title)”?")
+                    .font(.headline)
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 28)
+            .padding(.top, 30)
+            .padding(.bottom, 18)
+
+            Divider()
+            row("Cancel Plan", symbol: "trash", role: .destructive) {
+                confirmed = true
+                onConfirm()
+                dismiss()
+            }
+            Divider().padding(.leading, 60)
+            row("Keep Plan", symbol: "arrow.uturn.backward", role: nil) { dismiss() }
+                .padding(.bottom, 8)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        .presentationDetents([.height(height)])
+        .presentationDragIndicator(.visible)
+        .sensoryFeedback(.warning, trigger: confirmed) { _, new in new }
+    }
+
+    private func row(_ title: String, symbol: String, role: ButtonRole?, action: @escaping () -> Void) -> some View {
+        Button(role: role, action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: symbol)
+                    .font(.system(size: 19, weight: .medium))
+                    .frame(width: 28)
+                Text(title)
+                    .font(.body.weight(role == .destructive ? .semibold : .regular))
+                Spacer()
+            }
+            .foregroundStyle(role == .destructive ? Color.red : Color.primary)
+            .padding(.horizontal, 20)
+            .frame(height: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 private struct HostCheckInView: View {
     @Environment(\.dismiss) private var dismiss

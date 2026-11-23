@@ -230,6 +230,19 @@ Errors:
 
 Code: `backend/api/events.py` (route), `backend/api/event_input.py` (validation), `services/event_service.py`, `repositories/`.
 
+## DELETE /api/events/\<id\>
+
+Host only. Deletes the event, all its attendees (join requests and approved guests), and its cover photo. Response `204` with no body. The app calls it from "Cancel plan".
+
+Errors:
+- `403 forbidden`: you're not the host (sample events without a `host_id` can't be deleted)
+- `404 not_found`: no such event. The app treats this as already deleted.
+- `503 datastore_unavailable`
+
+Attendees are not notified; their phones keep the event they joined until the app learns about deletions (not built yet). Users' saved lists may still contain the id; the app ignores ids it doesn't have.
+
+Code: `backend/api/events.py`, `services/event_service.py` (`delete_event`), `repositories/` (`delete_event`).
+
 ## POST /api/planner
 
 The AI planner behind the app's "I'm free…" screen. The app sends what the student typed, their interests, and the events it can see. Claude (`claude-opus-5-5`, low effort, structured output) reads them and returns picks with a reason for each. The Claude API key stays on the server (`ANTHROPIC_API_KEY`: in `backend/.env` locally; on App Engine it's loaded at startup from the Secret Manager secret `anthropic-api-key` if that exists, see `infra/README.md`). Nothing is stored.

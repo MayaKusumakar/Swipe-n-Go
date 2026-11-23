@@ -6,6 +6,10 @@ struct PlansView: View {
     @State private var hostingSection: HostingSection = .plans
     @State private var editingDraft: ActivityDraft?
     @State private var draftError = false
+    /// A hosted plan whose delete sheet is open (long-press menu), and the one the host confirmed.
+    @State private var deleting: Activity?
+    @State private var confirmedDelete: Activity?
+    @State private var draftToDelete: ActivityDraft?
 
     enum Tab: String, CaseIterable { case hosting = "Host", going = "Going", saved = "Saved" }
     /// Shown inside the Host tab only.
@@ -95,9 +99,16 @@ struct PlansView: View {
                             ForEach(items) { a in
                                 NavigationLink(value: a) { ActivityRow(activity: a) }
                                     .buttonStyle(PressableStyle())
-                                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                                    .contextMenu {
+                                        if store.isHost(a) {
+                                            Button("Cancel plan", systemImage: "trash", role: .destructive) { deleting = a }
+                                        }
+                                    }
+                                    .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                                            removal: .opacity.combined(with: .scale(scale: 0.9))))
                             }
                         }
+                        .animation(.snappy, value: items.map(\.id))
                     }
                 }
                 .padding(.horizontal, 16)
@@ -109,6 +120,23 @@ struct PlansView: View {
             .navigationDestination(for: Activity.self) { ActivityDetailView(activity: $0) }
             .profileToolbarButton()
             .sheet(item: $editingDraft) { CreateActivityView(draft: $0) }
+            .sheet(item: $deleting, onDismiss: {
+                // Delete once the sheet is gone; the row animates out right away (see AppStore.cancel).
+                guard let plan = confirmedDelete else { return }
+                confirmedDelete = nil
+                withAnimation(.snappy) { store.cancel(plan) }
+            }) { plan in
+                CancelPlanSheet(activity: plan) { confirmedDelete = plan }
+            }
+            .confirmationDialog("Delete this draft?", isPresented: Binding(
+                get: { draftToDelete != nil }, set: { if !$0 { draftToDelete = nil } }
+            ), titleVisibility: .visible, presenting: draftToDelete) { draft in
+                Button("Delete Draft", role: .destructive) {
+                    withAnimation(.snappy) { if !store.deleteDraft(draft.id) { draftError = true } }
+                }
+            } message: { _ in
+                Text("This can't be undone.")
+            }
             .alert("Could not save changes", isPresented: $draftError) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -160,9 +188,7 @@ struct PlansView: View {
                             editingDraft = editable
                         }
                         Spacer()
-                        Button("Delete", role: .destructive) {
-                            if !store.deleteDraft(draft.id) { draftError = true }
-                        }
+                        Button("Delete", role: .destructive) { draftToDelete = draft }
                     }
                     .buttonStyle(.bordered)
                 }

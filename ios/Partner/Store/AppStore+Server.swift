@@ -111,7 +111,7 @@ extension AppStore {
         let before = activities
         var newHosts: [Person] = []
         var fetched = Set<UUID>()
-        for event in events {
+        for event in events where !deletedServerIDs.contains(event.id) {
             let localID = EventServer.localID(for: event.id)
             fetched.insert(localID)
             if let i = activities.firstIndex(where: { $0.id == localID }) {
@@ -387,7 +387,7 @@ extension AppStore {
         }
     }
 
-    private static func describe(_ error: Error) -> String {
+    static func describe(_ error: Error) -> String {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .cannotConnectToHost, .cannotFindHost, .timedOut, .networkConnectionLost:

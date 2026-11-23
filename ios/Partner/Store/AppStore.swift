@@ -54,6 +54,8 @@ final class AppStore {
     let auth = Auth()
     var serverStatus: ServerStatus = .off
     @ObservationIgnored var rejectedUploads: Set<UUID> = []   // plans the server refused; not retried
+    /// Server ids of plans you deleted, so a sync that raced the delete doesn't bring them back.
+    @ObservationIgnored var deletedServerIDs: Set<String> = []
     @ObservationIgnored var debugPlannerQuery: String?         // DEBUG: `-plan "<text>"` opens I'm free… and runs it
     var serverURLString: String = UserDefaults.standard.string(forKey: AppStore.serverURLKey) ?? AppStore.defaultServerURL {
         didSet { UserDefaults.standard.set(serverURLString, forKey: AppStore.serverURLKey) }
@@ -498,11 +500,44 @@ final class AppStore {
         Task { await upload(a) }
     }
 
+    /// Deletes a plan you host. It disappears at once, with its chat and requests (optimistic). A shared plan
+    /// is then deleted on the server; if that fails, it all comes back and a banner says why.
     func cancel(_ activity: Activity) {
+        let removedActivities = activities.filter { $0.id == activity.id }
+        let removedChats = conversations.filter { $0.activityID == activity.id }
+        let removedRequests = requests.filter { $0.activityID == activity.id }
         activities.removeAll { $0.id == activity.id }
         conversations.removeAll { $0.activityID == activity.id }
         requests.removeAll { $0.activityID == activity.id }
         save()
+
+        guard let serverID = activity.serverID else { return }
+        deletedServerIDs.insert(serverID)
+        Task {
+            let failure: String?
+            if let url = serverURL {
+                do {
+                    try await EventServer.deleteEvent(eventID: serverID, baseURL: url)
+                    failure = nil
+                } catch {
+                    failure = Self.describe(error)
+                }
+            } else {
+                failure = "Set a server in Profile → Server to delete shared plans."
+            }
+            guard let failure else { return }
+            // Roll back: put the plan, its chat and its requests back where they were.
+            deletedServerIDs.remove(serverID)
+            withAnimation(.snappy) {
+                if !activities.contains(where: { $0.id == activity.id }) { activities.append(contentsOf: removedActivities) }
+                activities.sort { $0.date < $1.date }
+                conversations.append(contentsOf: removedChats.filter { c in !conversations.contains { $0.id == c.id } })
+                requests.append(contentsOf: removedRequests.filter { r in !requests.contains { $0.id == r.id } })
+            }
+            save()
+            show(InAppBanner(title: "Couldn't delete “\(activity.title)”", subtitle: failure,
+                             symbol: "exclamationmark.icloud", color: .orange))
+        }
     }
 
     func requests(for activity: Activity) -> [JoinRequest] {

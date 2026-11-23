@@ -33,6 +33,15 @@ class InMemoryEventRepository:
         with self._lock:
             return next((event for event in self._events if event.id == event_id), None)
 
+    def delete_event(self, event_id):
+        with self._lock:
+            if self._find(event_id) is None:
+                return False
+            self._events = [event for event in self._events if event.id != event_id]
+            self._attendees = {key: a for key, a in self._attendees.items() if key[0] != event_id}
+            self._covers.pop(event_id, None)
+        return True
+
     def rename_host(self, host_id, host_name):
         with self._lock:
             changed = [e for e in self._events if e.host_id == host_id and e.host_name != host_name]

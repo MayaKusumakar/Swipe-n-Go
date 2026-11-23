@@ -45,6 +45,15 @@ class FakeEventRepository:
             raise self.error
         return next((e for e in self.events if e.id == event_id), None)
 
+    def delete_event(self, event_id):
+        if self.error:
+            raise self.error
+        if self.get(event_id) is None:
+            return False
+        self.events = [e for e in self.events if e.id != event_id]
+        self.attendees = {key: a for key, a in self.attendees.items() if key[0] != event_id}
+        return True
+
     def list_in_geohash_cells(self, prefixes):
         self.calls.append(("cells", tuple(prefixes)))
         if self.error:

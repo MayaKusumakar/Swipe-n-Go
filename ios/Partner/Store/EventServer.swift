@@ -220,6 +220,15 @@ enum EventServer {
         return try decoder.decode(Attendee.self, from: data)
     }
 
+    /// The host deletes their event (with its attendees and cover). Already gone counts as done.
+    static func deleteEvent(eventID: String, baseURL: URL) async throws {
+        do {
+            _ = try await send("DELETE", "api/events/\(eventID)", baseURL: baseURL)
+        } catch let error as ServerError where error.status == 404 {
+            return
+        }
+    }
+
     /// The host removes someone (or declines a request), or you remove yourself.
     static func removeAttendee(eventID: String, attendeeID: String, baseURL: URL) async throws {
         _ = try await send("DELETE", "api/events/\(eventID)/attendees/\(attendeeID)", baseURL: baseURL)

@@ -264,6 +264,17 @@ def set_check_in(event_id, attendee_id):
     return _guarded(run)
 
 
+@events_bp.delete("/<event_id>")
+def delete_event(event_id):
+    """Host only. Removes the event, its attendees and its cover."""
+    service = current_app.extensions["event_service"]
+
+    def run():
+        service.delete_event(event_id, g.user)
+        return "", 204
+    return _guarded(run)
+
+
 @events_bp.delete("/<event_id>/attendees/<attendee_id>")
 def remove_attendee(event_id, attendee_id):
     service = current_app.extensions["event_service"]

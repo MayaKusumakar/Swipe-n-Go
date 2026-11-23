@@ -43,6 +43,17 @@ class EventRepository:
         entity = self.client.get(self.client.key(EVENT_KIND, event_id))
         return Event.from_entity(entity) if entity is not None else None
 
+    def delete_event(self, event_id):
+        """Deletes the event with its attendees and cover. Returns False if there was no such event."""
+        event_key = self.client.key(EVENT_KIND, event_id)
+        if self.client.get(event_key) is None:
+            return False
+        attendees = self.client.query(kind=ATTENDEE_KIND, ancestor=event_key)
+        attendees.keys_only()
+        keys = [entity.key for entity in attendees.fetch()]
+        self.client.delete_multi(keys + [self.client.key(COVER_KIND, event_id), event_key])
+        return True
+
     def list_in_geohash_cells(self, prefixes):
         """Events whose geohash starts with any of `prefixes` (past ones too)."""
         events = {}

@@ -78,6 +78,13 @@ class EventService:
             raise ServiceUnavailableError("Event store unavailable") from e
         return event
 
+    def delete_event(self, event_id, user):
+        """The host deletes their event, with its attendees and cover."""
+        event = self._event(event_id)
+        self._require_host(event, user)
+        if not self._store(self._repository.delete_event, event.id):
+            raise NotFoundError("event")
+
     # MARK: Attendees. Every check below runs on the server; the app only hides buttons.
 
     def _store(self, call, *args):
