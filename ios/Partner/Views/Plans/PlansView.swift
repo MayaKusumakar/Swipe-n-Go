@@ -101,7 +101,7 @@ struct PlansView: View {
                                     .buttonStyle(PressableStyle())
                                     .contextMenu {
                                         if store.isHost(a) {
-                                            Button("Cancel plan", systemImage: "trash", role: .destructive) { deleting = a }
+                                            Button("Cancel Event", systemImage: "xmark.circle", role: .destructive) { deleting = a }
                                         }
                                     }
                                     .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .bottom)),

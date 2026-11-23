@@ -66,9 +66,9 @@ struct ActivityDetailView: View {
                 HostCheckInView(eventID: eventID, baseURL: baseURL, title: live.title)
             }
         }
-        // "Delete" is how a guest leaves a plan. It removes the plan for you only; the event stays.
-        .confirmationDialog("Delete this plan?", isPresented: $confirmLeave, titleVisibility: .visible) {
-            Button("Delete", role: .destructive) { withAnimation { store.leave(live) } }
+        // "Delete Event" is how a guest leaves. It removes the event for you only; it still happens for others.
+        .confirmationDialog("Delete this event?", isPresented: $confirmLeave, titleVisibility: .visible) {
+            Button("Delete Event", role: .destructive) { withAnimation { store.leave(live) } }
         } message: {
             Text("You'll leave the plan and its group chat. It still happens for everyone else. \(host?.firstName ?? "The host") will be notified, and you can always request to join again.")
         }
@@ -188,10 +188,6 @@ struct ActivityDetailView: View {
             SectionHeader(title: "Requests", subtitle: store.requests(for: live).isEmpty ? "No pending requests right now" : nil)
             ForEach(store.requests(for: live)) { req in
                 RequestRow(request: req)
-            }
-            Button(role: .destructive) { confirmCancel = true } label: {
-                Label("Cancel plan", systemImage: "xmark.circle")
-                    .font(.subheadline.weight(.semibold))
             }
         }
     }
@@ -418,19 +414,13 @@ struct ActivityDetailView: View {
 
     @ViewBuilder private var bottomBar: some View {
         HStack(spacing: 12) {
+            // Host and guest get the same layout: group chat, then the red action at the bottom right.
             if store.isHost(live) {
-                chatButton(title: "Open group chat")
-            } else if store.isGoing(live) {
-                Button(role: .destructive) { confirmLeave = true } label: {
-                    Label("Delete", systemImage: "trash")
-                        .font(.headline)
-                        .foregroundStyle(.red)
-                        .frame(height: 54)
-                        .padding(.horizontal, 18)
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                }
-                .buttonStyle(.plain)
                 chatButton(title: "Group chat")
+                destructiveButton("Cancel Event", symbol: "xmark.circle") { confirmCancel = true }
+            } else if store.isGoing(live) {
+                chatButton(title: "Group chat")
+                destructiveButton("Delete Event", symbol: "trash") { confirmLeave = true }
             } else if store.isPending(live) {
                 HStack(spacing: 10) {
                     ProgressView()
@@ -474,6 +464,21 @@ struct ActivityDetailView: View {
         .padding(.bottom, 4)
         .animation(.snappy, value: store.isGoing(live))
         .animation(.snappy, value: store.isPending(live))
+    }
+
+    /// The red capsule at the bottom right: Cancel Event (host) or Delete Event (guest).
+    private func destructiveButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(role: .destructive, action: action) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+                .foregroundStyle(.red)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(height: 54)
+                .padding(.horizontal, 18)
+                .glassEffect(.regular.interactive(), in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func chatButton(title: String) -> some View {
@@ -573,13 +578,13 @@ struct CancelPlanSheet: View {
             .padding(.bottom, 18)
 
             Divider()
-            row("Cancel Plan", symbol: "trash", role: .destructive) {
+            row("Cancel Event", symbol: "xmark.circle", role: .destructive) {
                 confirmed = true
                 onConfirm()
                 dismiss()
             }
             Divider().padding(.leading, 60)
-            row("Keep Plan", symbol: "arrow.uturn.backward", role: nil) { dismiss() }
+            row("Keep Event", symbol: "arrow.uturn.backward", role: nil) { dismiss() }
                 .padding(.bottom, 8)
         }
         .fixedSize(horizontal: false, vertical: true)
