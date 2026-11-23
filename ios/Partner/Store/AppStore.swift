@@ -408,6 +408,28 @@ final class AppStore {
         save()
     }
 
+    /// The host deleted a plan you joined or asked to join. It leaves your plans, and you're told twice:
+    /// a banner now, and a message in the plan's group chat (unread, so the Chats badge shows it later).
+    /// Does nothing if the plan isn't yours to be told about, so repeating it is harmless.
+    func hostCancelled(_ id: UUID, hostName: String?) {
+        guard let plan = activity(id), !isHost(plan), isGoing(plan) || isPending(plan) else { return }
+        let host = hostName?.split(separator: " ").first.map(String.init) ?? person(plan.hostID)?.firstName ?? "The host"
+        let when = plan.date.friendlyDateTime
+        joinedIDs.remove(id)
+        pendingIDs.remove(id)
+        savedIDs.remove(id)
+        if let c = conversations.firstIndex(where: { $0.activityID == id }) {
+            conversations[c].messages.append(Message(senderID: plan.hostID,
+                                                     text: "\(host) cancelled “\(plan.title)” (\(when)).",
+                                                     date: .now, kind: .system))
+            conversations[c].unreadCount += 1
+        }
+        withAnimation(.snappy) { activities.removeAll { $0.id == id } }
+        save()
+        show(InAppBanner(title: "Plan cancelled", subtitle: "\(host) cancelled \(plan.title) (\(when)).",
+                         symbol: "calendar.badge.exclamationmark", color: .orange))
+    }
+
     func toggleSaved(_ activity: Activity) {
         let saved = !savedIDs.contains(activity.id)
         if saved { savedIDs.insert(activity.id) } else { savedIDs.remove(activity.id) }

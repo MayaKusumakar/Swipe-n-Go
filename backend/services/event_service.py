@@ -79,11 +79,16 @@ class EventService:
         return event
 
     def delete_event(self, event_id, user):
-        """The host deletes their event, with its attendees and cover."""
+        """The host deletes their event, with its attendees and cover. Everyone who had joined
+        or asked to join is told through cancellations_for()."""
         event = self._event(event_id)
         self._require_host(event, user)
-        if not self._store(self._repository.delete_event, event.id):
+        if self._store(self._repository.delete_event, event.id, self.now()) is None:
             raise NotFoundError("event")
+
+    def cancellations_for(self, user, limit=50):
+        """Events this user joined or asked to join that their host has since deleted."""
+        return self._store(self._repository.list_cancellations_for, user.id, limit)
 
     # MARK: Attendees. Every check below runs on the server; the app only hides buttons.
 

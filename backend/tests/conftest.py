@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from main import create_app  # noqa: E402
-from models import APPROVED, Event  # noqa: E402
+from models import APPROVED, Cancellation, Event  # noqa: E402
 from repositories.user_repository import InMemoryUserRepository  # noqa: E402
 from services.auth_service import AuthService  # noqa: E402
 from services.event_service import EventService  # noqa: E402
@@ -23,6 +23,7 @@ class FakeEventRepository:
     def __init__(self):
         self.events = []
         self.attendees = {}
+        self.cancellations = {}
         self.error = None
         self.calls = []
 
@@ -45,14 +46,25 @@ class FakeEventRepository:
             raise self.error
         return next((e for e in self.events if e.id == event_id), None)
 
-    def delete_event(self, event_id):
+    def delete_event(self, event_id, cancelled_at):
         if self.error:
             raise self.error
-        if self.get(event_id) is None:
-            return False
+        event = self.get(event_id)
+        if event is None:
+            return None
+        guests = [attendee_id for (eid, attendee_id) in self.attendees if eid == event_id]
+        cancellation = Cancellation.for_event(event, guests, cancelled_at)
+        if guests:
+            self.cancellations[event_id] = cancellation
         self.events = [e for e in self.events if e.id != event_id]
         self.attendees = {key: a for key, a in self.attendees.items() if key[0] != event_id}
-        return True
+        return cancellation
+
+    def list_cancellations_for(self, user_id, limit):
+        if self.error:
+            raise self.error
+        found = [c for c in self.cancellations.values() if user_id in c.attendee_ids]
+        return sorted(found, key=lambda c: c.cancelled_at, reverse=True)[:limit]
 
     def list_in_geohash_cells(self, prefixes):
         self.calls.append(("cells", tuple(prefixes)))

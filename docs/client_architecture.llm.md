@@ -107,8 +107,10 @@ Differences from our design:
   - "Cancel plan" used to remove the plan only from the host's phone. The server kept it and the next sync brought it back. Now it calls `DELETE /api/events/<id>`.
   - The plan disappears at once and comes back with a banner if the server refuses (`AppStore.cancel`, `deletedServerIDs`).
   - Confirmed in a bottom sheet (`CancelPlanSheet`), also reachable by long-pressing a plan in Plans → Host. Deleting a draft now asks first.
+  - **Guests are notified (added 2026-11-23).** On each sync the phone asks `GET /api/events/cancelled`. A plan you joined or asked to join that its host deleted leaves your plans, a "Plan cancelled" banner shows, and its group chat gets "<host> cancelled “<plan>” (<when>)." as an unread message, so the Chats badge still shows it if the banner was missed (`AppStore.hostCancelled`). People who only asked to join have no group chat, so they get only the banner. This is in-app only: there are no push notifications, so a guest finds out the next time they open the app.
 - **Differences / open questions for the team:**
-  - Guests aren't told when a plan they joined is deleted. Their phones keep it, because `merge` keeps events you're going to even when the server drops them. The old dialog claimed they'd be notified; the new sheet says they won't be.
+  - Cancellation notices are in-app only. Real push notifications need an Apple Developer account and APNs keys on the server.
+  - People who only saved a deleted plan aren't told; it just disappears from Saved on the next sync.
   - The Host form has no organizer field, so the flyer's organizer goes into the description.
   - The swipe tutorial's "seen" flag is per phone (UserDefaults), like the rest of the app's state, not per account. "Sign out & reset" clears it.
   - New tests were added to existing test files (`FlyerReaderTests.swift`, `SyncFixTests.swift`) so `project.pbxproj` didn't need changing.

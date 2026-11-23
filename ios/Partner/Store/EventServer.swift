@@ -227,6 +227,21 @@ enum EventServer {
         _ = try await send("PUT", url, body: try encoder.encode(Body(attended: attended, feedback: feedback)))
     }
 
+    /// A plan you joined or asked to join that its host deleted (`GET /api/events/cancelled`).
+    struct Cancellation: Decodable, Equatable {
+        var eventId: String
+        var title: String
+        var hostName: String?
+        var startTime: Date
+        var cancelledAt: Date
+    }
+
+    static func cancelledEvents(baseURL: URL) async throws -> [Cancellation] {
+        struct Response: Decodable { var events: [Cancellation] }
+        let data = try await send("GET", "api/events/cancelled", baseURL: baseURL)
+        return try decoder.decode(Response.self, from: data).events
+    }
+
     /// The host deletes their event (with its attendees and cover). Already gone counts as done.
     static func deleteEvent(eventID: String, baseURL: URL) async throws {
         do {

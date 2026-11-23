@@ -85,3 +85,18 @@ struct AttendancePromptTests {
         #expect(try JSONDecoder().decode(AttendanceAnswer.self, from: Data(old.utf8)).needsSync == nil)
     }
 }
+
+/// Guests hear about plans their host deleted (GET /api/events/cancelled).
+struct CancelledPlanTests {
+    @Test func cancellationsDecodeAndPointAtTheLocalPlan() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        let json = #"{"event_id":"6f1c2b9e-1d2a-4c7b-9a51-0d6e2f3a4b5c","title":"Pickup Soccer","host_name":"Avery Lee","#
+            + #""start_time":"2026-12-01T19:00:00Z","cancelled_at":"2026-11-23T18:00:00Z"}"#
+        let c = try decoder.decode(EventServer.Cancellation.self, from: Data(json.utf8))
+        #expect(c.title == "Pickup Soccer" && c.hostName == "Avery Lee")
+        // The same id the plan got when it was synced, so the phone finds it.
+        #expect(EventServer.localID(for: c.eventId) == UUID(uuidString: "6F1C2B9E-1D2A-4C7B-9A51-0D6E2F3A4B5C"))
+    }
+}

@@ -292,6 +292,13 @@ def set_check_in(event_id, attendee_id):
     return _guarded(run)
 
 
+@events_bp.get("/cancelled")
+def cancelled_events():
+    """Plans you joined or asked to join that the host deleted, newest first."""
+    service = current_app.extensions["event_service"]
+    return _guarded(lambda: jsonify({"events": [c.to_dict() for c in service.cancellations_for(g.user)]}))
+
+
 @events_bp.delete("/<event_id>")
 def delete_event(event_id):
     """Host only. Removes the event, its attendees and its cover."""

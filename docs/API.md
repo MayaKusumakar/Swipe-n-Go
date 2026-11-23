@@ -239,9 +239,17 @@ Errors:
 - `404 not_found`: no such event. The app treats this as already deleted.
 - `503 datastore_unavailable`
 
-Attendees are not notified; their phones keep the event they joined until the app learns about deletions (not built yet). Users' saved lists may still contain the id; the app ignores ids it doesn't have.
+Everyone who had joined or asked to join is told: a `CancelledEvent` entity (keyed by the event id: title, host name, start time, `cancelled_at`, and the list of their account ids) is left behind and returned by `GET /api/events/cancelled` below. Nothing is left if nobody had joined. Users' saved lists may still contain the id; the app ignores ids it doesn't have.
 
 Code: `backend/api/events.py`, `services/event_service.py` (`delete_event`), `repositories/` (`delete_event`).
+
+## GET /api/events/cancelled
+
+Plans the signed-in user joined or asked to join that the host has since deleted, most recently cancelled first (at most 50). The app checks it on every sync and tells the guest once. Response `200`:
+```json
+{"events": [{"event_id": "6f1c…", "title": "Pickup Soccer", "host_name": "Avery", "start_time": "2026-12-01T19:00:00+00:00", "cancelled_at": "2026-11-23T18:00:00+00:00"}]}
+```
+The guest list isn't returned. Errors: `401`, `503 datastore_unavailable`. One Datastore query on a list property (built-in index).
 
 ## POST /api/planner
 

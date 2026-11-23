@@ -554,8 +554,8 @@ struct CancelPlanSheet: View {
     private var message: String {
         let joined = activity.attendeeIDs.count
         guard joined > 0 else { return "It's deleted for everyone and can't be undone." }
-        let people = joined == 1 ? "1 person has" : "\(joined) people have"
-        return "It's deleted for everyone and can't be undone. \(people) joined and won't be notified automatically, so you may want to tell them in the group chat first."
+        let people = joined == 1 ? "The 1 person who joined" : "The \(joined) people who joined"
+        return "It's deleted for everyone and can't be undone. \(people), and anyone who asked to join, will be told it was cancelled."
     }
 
     var body: some View {

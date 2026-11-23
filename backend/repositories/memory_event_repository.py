@@ -7,7 +7,7 @@ are lost when it stops.
 import threading
 from dataclasses import replace
 
-from models import APPROVED
+from models import APPROVED, Cancellation
 
 
 class InMemoryEventRepository:
@@ -16,6 +16,7 @@ class InMemoryEventRepository:
         self._lock = threading.Lock()
         self._attendees = {}  # (event_id, attendee_id) -> Attendee
         self._covers = {}     # event_id -> JPEG bytes
+        self._cancellations = {}  # event_id -> Cancellation
 
     def list_upcoming(self, now, limit):
         with self._lock:
@@ -33,14 +34,24 @@ class InMemoryEventRepository:
         with self._lock:
             return next((event for event in self._events if event.id == event_id), None)
 
-    def delete_event(self, event_id):
+    def delete_event(self, event_id, cancelled_at):
         with self._lock:
-            if self._find(event_id) is None:
-                return False
-            self._events = [event for event in self._events if event.id != event_id]
+            event = self._find(event_id)
+            if event is None:
+                return None
+            guests = [attendee_id for (eid, attendee_id) in self._attendees if eid == event_id]
+            cancellation = Cancellation.for_event(event, guests, cancelled_at)
+            if guests:
+                self._cancellations[event_id] = cancellation
+            self._events = [e for e in self._events if e.id != event_id]
             self._attendees = {key: a for key, a in self._attendees.items() if key[0] != event_id}
             self._covers.pop(event_id, None)
-        return True
+        return cancellation
+
+    def list_cancellations_for(self, user_id, limit):
+        with self._lock:
+            found = [c for c in self._cancellations.values() if user_id in c.attendee_ids]
+        return sorted(found, key=lambda c: c.cancelled_at, reverse=True)[:limit]
 
     def rename_host(self, host_id, host_name):
         with self._lock:

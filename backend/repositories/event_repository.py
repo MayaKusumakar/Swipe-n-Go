@@ -2,7 +2,8 @@
 from google.cloud import datastore
 from google.cloud.datastore.query import PropertyFilter
 
-from models import APPROVED, ATTENDEE_KIND, COVER_KIND, EVENT_KIND, UNINDEXED_EVENT_PROPERTIES, Attendee, Event
+from models import (APPROVED, ATTENDEE_KIND, CANCELLED_KIND, COVER_KIND, EVENT_KIND, UNINDEXED_EVENT_PROPERTIES,
+                    Attendee, Cancellation, Event)
 
 # Sorts after every geohash character, so [prefix, prefix + "~") is "starts with prefix".
 _PREFIX_END = "~"
@@ -43,16 +44,30 @@ class EventRepository:
         entity = self.client.get(self.client.key(EVENT_KIND, event_id))
         return Event.from_entity(entity) if entity is not None else None
 
-    def delete_event(self, event_id):
-        """Deletes the event with its attendees and cover. Returns False if there was no such event."""
+    def delete_event(self, event_id, cancelled_at):
+        """Deletes the event with its attendees and cover, leaving a Cancellation for the people who
+        joined or asked to join. Returns the Cancellation, or None if there was no such event."""
         event_key = self.client.key(EVENT_KIND, event_id)
-        if self.client.get(event_key) is None:
-            return False
+        entity = self.client.get(event_key)
+        if entity is None:
+            return None
         attendees = self.client.query(kind=ATTENDEE_KIND, ancestor=event_key)
         attendees.keys_only()
-        keys = [entity.key for entity in attendees.fetch()]
+        keys = [a.key for a in attendees.fetch()]
+        cancellation = Cancellation.for_event(Event.from_entity(entity), [k.id_or_name for k in keys], cancelled_at)
+        if cancellation.attendee_ids:
+            notice = datastore.Entity(key=self.client.key(CANCELLED_KIND, event_id), exclude_from_indexes=("title",))
+            notice.update(cancellation.to_entity_properties())
+            self.client.put(notice)
         self.client.delete_multi(keys + [self.client.key(COVER_KIND, event_id), event_key])
-        return True
+        return cancellation
+
+    def list_cancellations_for(self, user_id, limit):
+        """Deleted events `user_id` had joined or asked to join, most recently cancelled first."""
+        query = self.client.query(kind=CANCELLED_KIND)
+        query.add_filter(filter=PropertyFilter("attendee_ids", "=", user_id))
+        found = [Cancellation.from_entity(e) for e in query.fetch(limit=200)]
+        return sorted(found, key=lambda c: c.cancelled_at, reverse=True)[:limit]
 
     def list_in_geohash_cells(self, prefixes):
         """Events whose geohash starts with any of `prefixes` (past ones too)."""

@@ -8,6 +8,8 @@ EVENT_KIND = "Event"
 # One cover photo per event, stored apart from the event so lists stay small.
 COVER_KIND = "Cover"
 ATTENDEE_KIND = "Attendee"
+# Left behind when a host deletes an event, so its guests can be told (GET /api/events/cancelled).
+CANCELLED_KIND = "CancelledEvent"
 USER_KIND = "User"
 
 # Attendee.status values.
@@ -204,6 +206,53 @@ class Attendee:
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "status": self.status}
+
+
+@dataclass
+class Cancellation:
+    """A deleted event, kept small so the people who joined or asked to join find out.
+    Keyed by the event id; `attendee_ids` is a list property, so "cancellations for me" is
+    one equality query on the built-in index."""
+    event_id: str
+    title: str
+    host_name: str | None
+    start_time: datetime
+    cancelled_at: datetime
+    attendee_ids: list[str] = field(default_factory=list)
+
+    @classmethod
+    def for_event(cls, event, attendee_ids, cancelled_at):
+        return cls(event.id, event.title, event.host_name, event.start_time, cancelled_at, list(attendee_ids))
+
+    @classmethod
+    def from_entity(cls, entity):
+        return cls(
+            event_id=str(entity.key.id_or_name),
+            title=entity.get("title", ""),
+            host_name=entity.get("host_name"),
+            start_time=entity["start_time"],
+            cancelled_at=entity["cancelled_at"],
+            attendee_ids=list(entity.get("attendee_ids") or []),
+        )
+
+    def to_entity_properties(self):
+        return {
+            "title": self.title,
+            "host_name": self.host_name,
+            "start_time": self.start_time,
+            "cancelled_at": self.cancelled_at,
+            "attendee_ids": self.attendee_ids,
+        }
+
+    def to_dict(self):
+        """What a guest sees. The guest list itself is never returned."""
+        return {
+            "event_id": self.event_id,
+            "title": self.title,
+            "host_name": self.host_name,
+            "start_time": self.start_time.isoformat(),
+            "cancelled_at": self.cancelled_at.isoformat(),
+        }
 
 
 @dataclass
