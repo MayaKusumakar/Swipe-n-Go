@@ -562,8 +562,9 @@ struct DiscoverySettingsSheet: View {
 // MARK: - Swipe tutorial
 
 /// First-run demo of the Discover deck: a hand swipes one sample card left ("PASS") and
-/// another right ("I'LL JOIN"), then a short sign-off. About four seconds, then it waits
-/// for "Let's go". Sample cards only, so nothing in the real feed is touched.
+/// another right ("JOIN", the same stamps as the real deck), then a short sign-off. About four
+/// seconds. "Let's go", or a tap or swipe anywhere, closes it. Sample cards only (marked SAMPLE),
+/// so nothing in the real feed is touched.
 struct SwipeTutorialView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onFinish: () -> Void
@@ -578,8 +579,8 @@ struct SwipeTutorialView: View {
     @State private var run = 0
 
     private static let samples: [(title: String, category: ActivityCategory, when: String, place: String)] = [
-        ("Sunset pickup soccer", .sports, "Today 6:30 PM", "0.4 mi"),
-        ("Open mic at the CoHo", .music, "Fri 8:00 PM", "0.8 mi")
+        ("Pickup soccer at the ARC fields", .sports, "Today 6:30 PM", "UC Davis"),
+        ("Open mic at the CoHo", .music, "Fri 8:00 PM", "Memorial Union")
     ]
 
     private var isPassing: Bool { cardIndex == 0 }
@@ -618,12 +619,20 @@ struct SwipeTutorialView: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .opacity(step == .done ? 1 : 0)
                     .disabled(step != .done)
+                    Text("Tap anywhere to start swiping")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.7))
                 }
                 .padding(.horizontal, 32)
             }
             .padding(.vertical, 24)
             .frame(maxWidth: 440)
         }
+        // Never in the way: a tap or swipe anywhere (outside the buttons) closes it.
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onFinish)
+        .gesture(DragGesture(minimumDistance: 24).onEnded { _ in onFinish() })
+        .accessibilityAction(.escape, onFinish)
         .task(id: run) { await play() }
         .sensoryFeedback(.impact(weight: .medium), trigger: step) { _, new in new == .passed || new == .joined }
         .accessibilityElement(children: .contain)
@@ -673,7 +682,7 @@ struct SwipeTutorialView: View {
         return ZStack {
             TutorialCard(title: sample.title, category: sample.category, when: sample.when, place: sample.place)
                 .overlay(alignment: isPassing ? .topTrailing : .topLeading) {
-                    TutorialStamp(text: isPassing ? "PASS" : "I'LL JOIN", color: isPassing ? .red : .green,
+                    TutorialStamp(text: isPassing ? "PASS" : "JOIN", color: isPassing ? .red : .green,
                                   angle: isPassing ? 14 : -14)
                         .opacity(progress)
                         .scaleEffect(0.8 + 0.2 * progress)
@@ -705,7 +714,7 @@ struct SwipeTutorialView: View {
         VStack(spacing: 18) {
             HStack(spacing: 28) {
                 legend(symbol: "arrow.left", label: "PASS", color: .red)
-                legend(symbol: "arrow.right", label: "I'LL JOIN", color: .green)
+                legend(symbol: "arrow.right", label: "JOIN", color: .green)
             }
             Image(systemName: "sparkles.rectangle.stack.fill")
                 .font(.system(size: 64))
@@ -802,6 +811,11 @@ private struct TutorialCard: View {
                     .padding(.horizontal, 10).padding(.vertical, 6)
                     .glassEffect(.regular.tint(.white.opacity(0.1)), in: Capsule())
                 Spacer()
+                // Makes clear this is a demo card, not a real event. Kept clear of the corner stamps.
+                Text("SAMPLE EVENT")
+                    .font(.caption2.weight(.heavy))
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.black.opacity(0.45), in: Capsule())
                 Text(title)
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .lineLimit(2)
