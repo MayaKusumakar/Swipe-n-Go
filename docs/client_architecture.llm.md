@@ -34,8 +34,8 @@ Current state (iOS app in `ios/`, `Milestone1-v1` branch):
 - **Cover photos (2026-11-12):** the host's phone uploads the cover (`PUT /api/events/<id>/cover`) on the next sync; other phones download it when the event's `image_url` changes (`Activity.serverCoverURL` / `coverSyncedURL`, both optional so old saves load). The crop screen offers Wide 16:9 (1600 × 900) or Poster 3:4 (1200 × 1600, the default for tall photos such as flyers), with pinch to zoom; poster covers get a taller header in event details and the Host preview (`CoverShape.isPoster`).
 - **Account and saved events (2026-11-12):** the server's profile name (`display_name`) is the account's name on every device: a device adopts it on sign-in and on each sync, and only sends its own name when it was changed there (`nameNeedsSync`). Saved events moved to their own Plans tab (Host | Going | Saved) and sync through `/api/me/saved`; changes made offline wait in `pendingSaves` (persisted) and are sent first, then the server's list wins for server events. Sample events' saves stay on the phone.
 - **Explore map:** a button switches between the standard map and Apple's satellite imagery (`.hybrid`), remembered in `@AppStorage("exploreSatelliteMap")`; the camera, pins and selection don't change.
-- **Flyer location:** the review screen searches places as you type (the same `Place.search` as the place picker), and a picked match goes straight into the Host form. Typed text with no pick is looked up automatically and labeled "Matched … Tap it to choose a different spot."
-- **Glitch fixes (2026-11-12):** a scanned flyer's location is looked up on the map automatically (`Place.search`), so it isn't typed twice. Swiping the Host sheet down with unsaved changes asks to save a draft or discard (`onDismissAttempt`, `Design/DismissAttempt.swift`). Chats can be muted or deleted by swiping or with a long press; muted chats don't count toward the Chats badge (`Conversation.isMuted`). Deleting a chat only removes it from the phone.
+- **Flyer location:** the review screen searches places as you type (the same `Place.search` as the place picker), and a picked match goes straight into the Host form. Since 2026-11-22 typed text with no pick is no longer matched automatically: the Host form shows "From the scan: … Choose a map match below." and the host picks.
+- **Glitch fixes (2026-11-12):** a scanned flyer's location was looked up on the map automatically (`Place.search`); replaced on 2026-11-22 by the host picking a match (see Flyer location). Swiping the Host sheet down with unsaved changes asks to save a draft or discard (`onDismissAttempt`, `Design/DismissAttempt.swift`). Chats can be muted or deleted by swiping or with a long press; muted chats don't count toward the Chats badge (`Conversation.isMuted`). Deleting a chat only removes it from the phone.
 - **Still only on the phone (simulated):** sample events and people (can be hidden with Profile → Server → Show sample events), the simulated hosts and guests, chats, saved events, drafts, recurring events, and flyer images (only the extracted details are posted). For sample (local) events, private locations and removals are only hidden in the app, since there's no server copy.
 
 Server side (`backend/`, mapped from the team's "Mapping these ideas to Google Cloud" table, 2026-11-11):
@@ -70,7 +70,7 @@ Differences from our design:
 ## Swipe tutorial and leaving the Host form (iOS)
 
 - **Swipe tutorial.**
-  - New users see a short demo over Discover the first time they reach it: a sample card swiped left ("PASS"), then one swiped right ("I'LL JOIN"), about four seconds.
+  - New users see a short demo over Discover the first time they reach it: a sample card swiped left ("PASS"), then one swiped right ("JOIN", the same stamps as the real deck; was "I'LL JOIN" until 2026-11-23), about four seconds. The cards say "SAMPLE EVENT". "Let's go", or a tap or swipe anywhere, closes it.
   - `SwipeTutorialView` is in `DiscoverView.swift` and is shown from `MainTabView`.
   - It runs only on sample cards, never the real deck.
   - `AppStore.hasSeenSwipeTutorial` is stored in UserDefaults. "Sign out & reset" clears it.
@@ -86,3 +86,29 @@ Differences from our design:
     - A title, a category change, or a date change: 1 each.
     - Other settings: 1 each, at most 2 in total.
   - Reopening a saved draft and closing it unchanged just closes. Changing it asks Save Changes or Discard Changes, and discarding keeps the draft as it was last saved. Nothing here deletes a saved draft.
+
+## Attendance popup, scanner fix, Instagram, deleting plans (2026-11-23, branch `feat/attendance-scanner-tutorial-instagram`)
+
+- **"Did you attend?" popup.**
+  - When the app opens (or comes back) after a plan you joined has ended, a small sheet asks "Did you attend?". Yes → optional feedback for the host (Skip or Send); No → done.
+  - Asked once per plan: the answer, or "dismissed" if the sheet is swiped away, is saved in `AppStore.attendanceAnswers` (in the state file). Several ended plans are asked one after another, oldest first.
+  - Only plans you joined (not hosted, not just requested) that ended in the last 7 days (`AppStore.attendanceQueue`). Not shown over onboarding, the swipe tutorial, or another sheet.
+  - Shared plans send the answer to `PUT /api/events/<id>/attendees/me/attendance` (retried on each sync until it goes through). The host can read it in `GET /api/events/<id>/attendees`; there's no host screen for it yet.
+  - Code: `AttendancePromptView` (bottom of `ActivityDetailView.swift`), the attendance extension at the end of `AppStore.swift`. DEBUG flag `-attendancePrompt` makes two sample plans you joined end a few hours ago.
+  - Known gap: if every non-hosted plan on the phone is in the past, `load()` reseeds the sample data and resets `joinedIDs`, so those plans aren't asked about. Rare with a server.
+- **Flyer scanner fix.** The date and time were read but didn't reach the form:
+  - On the phone (no server, or Claude unavailable), Apple's date detector returns "Nov 23" and "6-8 PM" as two matches and only the first was used, so the plan landed at noon with no end time. `FlyerDateTime` (in `FlyerScanner.swift`) combines them, rolls a year-less past date to next year, and flags a missing day or time.
+  - On the server, times from Claude without a UTC offset, or with only a day, were thrown away. They're now kept (see `docs/API.md`).
+  - The app decodes the flyer answer forgivingly (`ClaudeFlyerReader.Reading.init(from:)`, `FlyerTime`): missing or null fields or an odd time don't discard the rest.
+  - Review screen: fields that weren't detected get an orange outline and "We couldn't detect this, please fill it in", which clear once filled. New optional "Hosted by" (organizer, added to the top of the description) and Instagram fields. A failed scan offers Try Again / Enter Manually.
+- **Instagram link.** Optional `instagram` on events (bare handle). Host form field with validation (accepts "@handle", "handle" or a profile link). Event details show "@handle", which opens the Instagram app or instagram.com. Filled from the flyer when one is printed. `InstagramHandle` in `Models.swift` matches `backend/services/instagram.py`.
+- **"Leave Plan" is now "Delete"** for guests on event details, with "Delete this plan?" explaining it only removes it for you. Same behavior.
+- **Deleting a hosted plan.**
+  - "Cancel plan" used to remove the plan only from the host's phone. The server kept it and the next sync brought it back. Now it calls `DELETE /api/events/<id>`.
+  - The plan disappears at once and comes back with a banner if the server refuses (`AppStore.cancel`, `deletedServerIDs`).
+  - Confirmed in a bottom sheet (`CancelPlanSheet`), also reachable by long-pressing a plan in Plans → Host. Deleting a draft now asks first.
+- **Differences / open questions for the team:**
+  - Guests aren't told when a plan they joined is deleted. Their phones keep it, because `merge` keeps events you're going to even when the server drops them. The old dialog claimed they'd be notified; the new sheet says they won't be.
+  - The Host form has no organizer field, so the flyer's organizer goes into the description.
+  - The swipe tutorial's "seen" flag is per phone (UserDefaults), like the rest of the app's state, not per account. "Sign out & reset" clears it.
+  - New tests were added to existing test files (`FlyerReaderTests.swift`, `SyncFixTests.swift`) so `project.pbxproj` didn't need changing.
