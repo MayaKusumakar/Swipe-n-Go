@@ -54,6 +54,8 @@ class Event:
     summary: str | None = None
     summary_stale: bool = False
     summary_updated_at: datetime | None = None
+    # Bare Instagram handle ("davisclimbing"), or None. See services/instagram.py.
+    instagram: str | None = None
 
     @property
     def geohash(self):
@@ -93,6 +95,7 @@ class Event:
             summary=entity.get("summary"),
             summary_stale=bool(entity.get("summary_stale", False)),
             summary_updated_at=entity.get("summary_updated_at"),
+            instagram=entity.get("instagram"),
         )
 
     def to_entity_properties(self):
@@ -121,6 +124,7 @@ class Event:
             "summary": self.summary,
             "summary_stale": self.summary_stale,
             "summary_updated_at": self.summary_updated_at,
+            "instagram": self.instagram,
         }
 
     def to_dict(self):
@@ -148,6 +152,7 @@ class Event:
             "requires_approval": self.requires_approval,
             "location_private": self.location_private,
             "summary": self.summary,
+            "instagram": self.instagram,
         }
 
     def location_dict(self):

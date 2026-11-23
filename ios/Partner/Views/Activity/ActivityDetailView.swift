@@ -4,6 +4,7 @@ import MapKit
 struct ActivityDetailView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     let activity: Activity
     var isSheet = false
 
@@ -238,7 +239,39 @@ struct ActivityDetailView: View {
                 if live.isLocationPrivate { TagPill(text: "Private location", tint: .orange) }
                 ForEach(live.tags, id: \.self) { TagPill(text: $0) }
             }
+            if let handle = live.instagram { instagramLink(handle) }
         }
+    }
+
+    /// Opens the Instagram app on the profile, or instagram.com in the browser if the app isn't installed.
+    private func instagramLink(_ handle: String) -> some View {
+        Button {
+            guard let app = InstagramHandle.appURL(handle) else { return }
+            openURL(app) { opened in
+                if !opened, let web = InstagramHandle.webURL(handle) { openURL(web) }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "camera.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(live.category.color)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("@\(handle)").font(.subheadline.weight(.semibold))
+                    Text("Open on Instagram").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(12)
+            .background(.background, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Instagram: @\(handle)")
+        .accessibilityHint("Opens Instagram")
     }
 
     // MARK: Going

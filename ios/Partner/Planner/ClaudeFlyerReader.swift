@@ -28,6 +28,8 @@ struct ClaudeFlyerReader {
         var missing: [String]
         /// The club or group hosting it, if printed. Newer servers only.
         var organizer: String? = nil
+        /// An Instagram handle printed on the flyer. Newer servers only.
+        var instagram: String? = nil
     }
 
     func read(_ image: CGImage, ocrText: String, now: Date = .now) async throws -> Reading {
@@ -53,7 +55,7 @@ struct ClaudeFlyerReader {
 
 extension ClaudeFlyerReader.Reading {
     private enum CodingKeys: String, CodingKey {
-        case isEventFlyer, title, startTime, endTime, locationName, address, description, cost, category, missing, organizer
+        case isEventFlyer, title, startTime, endTime, locationName, address, description, cost, category, missing, organizer, instagram
     }
 
     /// Forgiving on purpose: any field may be missing or `null`, and a time Claude wrote oddly
@@ -82,7 +84,8 @@ extension ClaudeFlyerReader.Reading {
             endTime: end.hasTime ? end.date.flatMap { e in start.date.flatMap { e > $0 ? e : nil } } : nil,
             locationName: text(.locationName), address: text(.address), description: text(.description),
             cost: text(.cost), category: text(.category), missing: missing.uniqued(),
-            organizer: text(.organizer).isEmpty ? nil : text(.organizer)
+            organizer: text(.organizer).isEmpty ? nil : text(.organizer),
+            instagram: InstagramHandle.normalize(text(.instagram))
         )
     }
 
@@ -92,7 +95,7 @@ extension ClaudeFlyerReader.Reading {
             location: locationName, address: address,
             details: description, cost: cost,
             category: ActivityCategory(rawValue: category),
-            organizer: organizer ?? "",
+            organizer: organizer ?? "", instagram: instagram ?? "",
             missing: missing, isEventFlyer: isEventFlyer, reader: .claude, image: image
         )
     }

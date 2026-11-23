@@ -22,6 +22,8 @@ struct FlyerScanResult: Identifiable {
     var category: ActivityCategory? = nil
     /// The club or group hosting it, if the flyer names one.
     var organizer = ""
+    /// An Instagram handle printed on the flyer (bare, no "@").
+    var instagram = ""
     /// Fields the reader couldn't find or wasn't sure about: title, date, time, location, cost.
     var missing: [String] = []
     var isEventFlyer = true
@@ -450,6 +452,8 @@ struct FlyerFields {
     var cost: String
     var category: ActivityCategory?
     var cover: UIImage?
+    /// Raw text from the review's Instagram field ("" when none).
+    var instagram = ""
 
     static func duration(from start: Date, to end: Date) -> Int? {
         let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
@@ -504,6 +508,7 @@ struct FlyerReviewView: View {
     @State private var cost: String
     @State private var category: ActivityCategory?
     @State private var organizer: String
+    @State private var instagram: String
     @State private var confirmedDate = false
     /// The host changed the date or time, so a "not detected" date no longer needs pointing out.
     @State private var dateEdited = false
@@ -523,6 +528,7 @@ struct FlyerReviewView: View {
         _cost = State(initialValue: result.cost)
         _category = State(initialValue: result.category)
         _organizer = State(initialValue: result.organizer)
+        _instagram = State(initialValue: result.instagram.isEmpty ? "" : "@" + result.instagram)
     }
 
     private var reviewedLocation: FlyerLocation { FlyerLocation(venue: location, address: address) }
@@ -555,6 +561,7 @@ struct FlyerReviewView: View {
         if hasEndDate && FlyerFields.duration(from: date, to: endDate) == nil { needed.append("pick an end time after the start") }
         if !confirmedDate { needed.append("turn on \"I checked the date and time\"") }
         if reviewedLocation.query.isEmpty { needed.append("enter the location") }
+        if !InstagramHandle.isAcceptable(instagram) { needed.append("fix the Instagram handle") }
         return needed
     }
 
@@ -686,10 +693,18 @@ struct FlyerReviewView: View {
                 }
                 Section {
                     TextField("Club or organization (optional)", text: $organizer)
+                    TextField("Instagram (optional), e.g. @davisclimbing", text: $instagram)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
                 } header: {
                     Text("Hosted by")
                 } footer: {
-                    Text("Added to the top of the description.")
+                    if InstagramHandle.isAcceptable(instagram) {
+                        Text("The club goes at the top of the description. Guests can tap the Instagram link on the event.")
+                    } else {
+                        helper("Enter a handle like @davisclimbing or an instagram.com profile link.")
+                    }
                 }
                 Section {
                     TextField("Description", text: $details, axis: .vertical)
@@ -727,7 +742,8 @@ struct FlyerReviewView: View {
                                             place: pickedPlace.map(reviewedLocation.pinned(to:)),
                                             details: FlyerFields.details(details, organizer: organizer),
                                             cost: cost, category: category,
-                                            cover: useCover ? result.image : nil))
+                                            cover: useCover ? result.image : nil,
+                                            instagram: instagram))
                         dismiss()
                     }
                     .disabled(!stillNeeded.isEmpty)

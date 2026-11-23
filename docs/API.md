@@ -116,6 +116,7 @@ Code: `backend/api/auth.py` (routes and the check before every request), `backen
 | `requires_approval` | boolean | default `false`. Always `true` when `location_private` is true |
 | `location_private` | boolean | default `false`. The location is shared only with the host and approved attendees, through `GET /api/events/<id>/location` |
 | `summary` | string \| null | short "what it is / who's going" blurb written by the summaries job (see **Summaries**). `null` until the job has run. Never mentions the location |
+| `instagram` | string \| null | the event's or club's Instagram handle, bare and lowercase (`"davisclimbing"`, no `@`). The app links to `instagram.com/<handle>` |
 
 `capacity` counts the host, like the app's "spots left": an event is full when `attendee_count` reaches `capacity - 1`.
 
@@ -218,6 +219,7 @@ Request body (JSON). Required: `title`, `start_time`, `location_name`, `category
 - Text fields are trimmed.
 
 - `location_private` is optional (`true`/`false`). When `true`, the server also sets `requires_approval` to `true`.
+- `instagram` is optional: `"@davisclimbing"`, `"davisclimbing"` or a profile link like `"https://www.instagram.com/davisclimbing/"`. It's stored as the bare lowercase handle. Handles follow Instagram's rules (1–30 letters, digits, `.` and `_`; no leading, trailing or doubled `.`); post and reel links, other sites, and anything else are `400`. `null`, `""` or leaving it out means none. Code: `backend/services/instagram.py`.
 
 Response `201`: the created Event object with its full location. The signed-in user is the host (`host_id`), and `host_name` comes from their account.
 
@@ -317,6 +319,7 @@ Response `200`:
   "cost": "Free",
   "category": "sports",
   "organizer": "Davis Climbing Club",
+  "instagram": "davisclimbing",
   "missing": [],
   "model": "claude-opus-5-5"
 }
@@ -326,6 +329,7 @@ Response `200`:
 - `start_time` / `end_time` may be `null`. An end time that isn't after the start is dropped.
 - Times always carry a UTC offset. If Claude leaves the offset off, the host's offset from `now` is used. If Claude gives only a day (`2026-11-23`), `start_time` is that day at 12:00 and `time` is added to `missing`; an end given as only a day is dropped. Anything that isn't an ISO-8601 date is `null`.
 - `organizer`: the club or group hosting the event, as printed, or `null`. The app adds it to the top of the description ("Hosted by …").
+- `instagram`: an Instagram handle printed on the flyer, normalized like the event field, or `null` (also when what Claude read isn't a valid handle). The app fills the event's Instagram field with it.
 - Text fields (`title`, `location_name`, `address`, `description`, `cost`, `category`) are `""` when not found, so app builds from before `organizer` was added still decode. The app accepts `null` for any field.
 - If the image isn't an event flyer, `is_event_flyer` is `false` and the other fields are empty.
 

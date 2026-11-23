@@ -31,6 +31,8 @@ enum EventServer {
         var requiresApproval: Bool?
         var locationPrivate: Bool?
         var summary: String?
+        /// Bare Instagram handle, or nil. Older servers don't send it.
+        var instagram: String?
     }
 
     struct Attendee: Decodable, Identifiable {
@@ -66,6 +68,8 @@ enum EventServer {
         var level: String
         var requiresApproval: Bool
         var locationPrivate: Bool
+        /// Left out of the JSON when nil.
+        var instagram: String?
     }
 
     struct ServerError: LocalizedError {
@@ -333,7 +337,8 @@ extension Activity {
             serverID: e.id,
             privateLocation: e.locationPrivate == true ? true : nil,
             locationHidden: hidden ? true : nil,
-            serverCoverURL: e.imageUrl
+            serverCoverURL: e.imageUrl,
+            instagram: e.instagram.flatMap(InstagramHandle.normalize)
         )
     }
 
@@ -343,7 +348,8 @@ extension Activity {
             locationName: placeName, latitude: latitude, longitude: longitude, category: category.rawValue,
             address: address, capacity: min(max(capacity, 2), 500), cost: costNote,
             tags: Array(tags.prefix(10)).map { String($0.prefix(30)) }, level: level.apiValue,
-            requiresApproval: requiresApproval || isLocationPrivate, locationPrivate: isLocationPrivate
+            requiresApproval: requiresApproval || isLocationPrivate, locationPrivate: isLocationPrivate,
+            instagram: instagram.flatMap(InstagramHandle.normalize)
         )
     }
 }

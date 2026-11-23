@@ -13,6 +13,7 @@ from datetime import datetime, time
 from pydantic import BaseModel, Field
 
 from services import claude_call
+from services import instagram as instagram_handle
 from services.claude_call import MODEL, clip
 
 # The app's categories (ios/Partner/Models/Models.swift, ActivityCategory).
@@ -33,6 +34,7 @@ class _FlyerOutput(BaseModel):
     cost: str = Field(description='"Free", a price like "$5", or empty if not mentioned.')
     category: str = Field(description="The best fit from: " + ", ".join(CATEGORIES) + ". Empty if none fits.")
     organizer: str = Field(default="", description="The club or organization hosting the event, as printed. Empty if not found.")
+    instagram: str = Field(default="", description="The event's or club's Instagram handle or link, as printed (e.g. @davisclimbing). Empty if not found.")
     missing: list[str] = Field(description="Which of title, date, time, location, cost you could not read or are unsure about.")
 
 
@@ -50,6 +52,7 @@ class FlyerReading:
     missing: list[str] = field(default_factory=list)
     model: str = MODEL
     organizer: str = ""
+    instagram: str = ""
 
     def to_dict(self):
         return {
@@ -63,6 +66,7 @@ class FlyerReading:
             "cost": self.cost,
             "category": self.category,
             "organizer": self.organizer or None,
+            "instagram": self.instagram or None,
             "missing": self.missing,
             "model": self.model,
         }
@@ -83,6 +87,7 @@ is given ("7-9pm"), fill both start and end.
 and room or suite in address. Leave either field empty when the flyer omits it.
 - Cost: read the price of admission. Free food, parking, or giveaways do not mean free admission.
 - Organizer: the club or group putting on the event, if printed (not a sponsor).
+- Instagram: an Instagram handle (@name) or instagram.com link printed on the flyer. Never guess one.
 - Title: the event's name, not the club's slogan or a sponsor. Fix ALL-CAPS into normal \
 capitalization.
 - Description: 1-3 short sentences a student would find useful (what it is, who it's for, what to \
@@ -146,6 +151,7 @@ class FlyerService:
             missing=missing,
             model=self._model,
             organizer=clip(o.organizer, 120),
+            instagram=instagram_handle.normalize(o.instagram) or "",
         )
 
 

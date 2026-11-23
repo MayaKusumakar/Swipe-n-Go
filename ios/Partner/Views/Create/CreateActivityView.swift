@@ -79,6 +79,8 @@ struct CreateActivityView: View {
     @State private var costIsFree = true
     @State private var cost = ""
     @State private var details = ""
+    /// Optional: "@club" or an instagram.com link.
+    @State private var instagram = ""
     @State private var showPlacePicker = false
     @State private var flyerPhoto: PhotosPickerItem?
     @State private var flyerData: Data?
@@ -106,7 +108,7 @@ struct CreateActivityView: View {
     @State private var published = false
     @FocusState private var focus: Field?
 
-    enum Field { case title, details, cost, planDescription }
+    enum Field { case title, details, cost, instagram, planDescription }
 
     /// The Duration picker's options, in minutes.
     static let durations = [30, 45, 60, 90, 120, 180, 240, 480]
@@ -122,7 +124,7 @@ struct CreateActivityView: View {
             requiresApproval: requiresApproval, privateLocation: privateLocation,
             costIsFree: costIsFree, cost: cost, details: details, coverPhotoData: coverPhotoData,
             repeats: repeats, frequency: frequency, occurrenceCount: occurrenceCount,
-            schedulePost: schedulePost, publishAt: publishAt
+            schedulePost: schedulePost, publishAt: publishAt, instagram: instagram
         )
     }
 
@@ -152,6 +154,7 @@ struct CreateActivityView: View {
         if date <= .now { items.append("a time in the future") }
         if place == nil { items.append("a location") }
         if !costIsFree && cost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { items.append("a price") }
+        if !InstagramHandle.isAcceptable(instagram) { items.append("a valid Instagram handle") }
         if schedulePost && !(publishAt > .now && publishAt < date) { items.append("a publish time before the plan") }
         return items
     }
@@ -233,6 +236,7 @@ struct CreateActivityView: View {
                 privateLocation = draft.privateLocation == true
                 setCost(draft.cost)
                 details = draft.details
+                instagram = draft.instagram ?? ""
                 coverPhotoData = draft.coverPhotoData
                 reviewedLocation = draft.reviewedFlyerLocation
                 scannedLocation = reviewedLocation?.query ?? draft.suggestedLocation ?? ""
@@ -299,6 +303,7 @@ struct CreateActivityView: View {
                     if !fields.cost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { setCost(fields.cost) }
                     if let scanned = fields.category { category = scanned }
                     if let minutes = fields.duration { duration = minutes }
+                    if !fields.instagram.isEmpty { instagram = fields.instagram }
                     pendingFlyerCover = fields.cover
                 }
             }
@@ -697,6 +702,7 @@ struct CreateActivityView: View {
                                                   timeZoneID: recurrenceTimeZoneID) : nil,
             suggestedLocation: scannedLocation.isEmpty ? nil : scannedLocation,
             reviewedFlyerLocation: reviewedLocation,
+            instagram: instagram.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : instagram,
             updatedAt: .now
         )
     }
@@ -914,6 +920,42 @@ struct CreateActivityView: View {
                 .focused($focus, equals: .details)
                 .padding(16)
                 .cardStyle(radius: 18)
+            instagramField
+        }
+    }
+
+    /// Optional. Guests see it as a link on the event that opens Instagram.
+    private var instagramField: some View {
+        let valid = InstagramHandle.isAcceptable(instagram)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: "camera.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(category.color)
+                    .accessibilityHidden(true)
+                TextField("Instagram (optional), e.g. @davisclimbing", text: $instagram)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .focused($focus, equals: .instagram)
+                    .accessibilityLabel("Instagram handle or link, optional")
+            }
+            .padding(16)
+            .cardStyle(radius: 18)
+            .overlay {
+                if !valid {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(.red, lineWidth: 1.5)
+                }
+            }
+            if !valid {
+                Text("Enter a handle like @davisclimbing or an instagram.com profile link.")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if let handle = InstagramHandle.normalize(instagram), focus != .instagram {
+                Text("Guests will see @\(handle)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -1403,6 +1445,7 @@ struct PlanFormSnapshot: Equatable {
     var occurrenceCount: Int
     var schedulePost: Bool
     var publishAt: Date
+    var instagram: String = ""
 }
 
 /// Decides whether closing a new plan offers "Save as Draft" or just throws it away.

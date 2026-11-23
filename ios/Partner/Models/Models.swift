@@ -190,6 +190,8 @@ struct Activity: Codable, Identifiable, Hashable {
     var serverCoverURL: String? = nil
     /// Which server cover `coverPhotoData` holds, so it's only downloaded or uploaded once.
     var coverSyncedURL: String? = nil
+    /// The event's (or club's) Instagram handle, without the "@". Optional; see `InstagramHandle`.
+    var instagram: String? = nil
 
     var isLocationPrivate: Bool { privateLocation == true }
 
@@ -303,6 +305,8 @@ struct ActivityDraft: Codable, Identifiable {
     var recurrence: EventRecurrence?
     var suggestedLocation: String?
     var reviewedFlyerLocation: FlyerLocation?
+    /// What the host typed in the Instagram field ("@club" or a link); checked with `InstagramHandle`.
+    var instagram: String?
     var updatedAt = Date.now
 
     var activity: Activity? {
@@ -315,9 +319,45 @@ struct ActivityDraft: Codable, Identifiable {
             capacity: capacity, attendeeIDs: [], details: details,
             tags: [category.title], level: level, requiresApproval: requiresApproval || privateLocation == true,
             costNote: cost.isEmpty ? "Free" : cost, coverPhotoData: coverPhotoData,
-            privateLocation: privateLocation == true ? true : nil
+            privateLocation: privateLocation == true ? true : nil,
+            instagram: InstagramHandle.normalize(instagram ?? "")
         )
     }
+}
+
+/// Instagram handles on events. Hosts can type "@davisclimbing", "davisclimbing" or paste a profile
+/// link; the app keeps the bare handle. Same rules as the server (backend/services/instagram.py).
+enum InstagramHandle {
+    /// The bare, lowercase handle, or nil when the text is empty or isn't a handle or profile link.
+    static func normalize(_ input: String) -> String? {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        let link = #"^(?i)(?:https?://)?(?:www\.|m\.)?(?:instagram\.com|instagr\.am)/([^/?#]+)/?(?:[?#].*)?$"#
+        if let regex = try? NSRegularExpression(pattern: link),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let range = Range(match.range(at: 1), in: text) {
+            text = String(text[range])
+            if notProfiles.contains(text.lowercased()) { return nil }
+        } else if text.contains("/") || text.contains(" ") {
+            return nil
+        }
+        if text.hasPrefix("@") { text.removeFirst() }
+        let handle = #"^(?!\.)(?!.*\.\.)(?!.*\.$)[A-Za-z0-9._]{1,30}$"#
+        return text.range(of: handle, options: .regularExpression) != nil ? text.lowercased() : nil
+    }
+
+    /// Empty is fine (the field is optional); anything else must be a real handle or profile link.
+    static func isAcceptable(_ input: String) -> Bool {
+        input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || normalize(input) != nil
+    }
+
+    /// Opens the profile in the Instagram app.
+    static func appURL(_ handle: String) -> URL? { URL(string: "instagram://user?username=\(handle)") }
+    /// The same profile in the browser, when the app isn't installed.
+    static func webURL(_ handle: String) -> URL? { URL(string: "https://www.instagram.com/\(handle)/") }
+
+    /// instagram.com paths that aren't profiles (posts, reels, ...).
+    private static let notProfiles: Set = ["p", "reel", "reels", "explore", "stories", "accounts", "tv", "direct"]
 }
 
 

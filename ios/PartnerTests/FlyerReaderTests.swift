@@ -417,3 +417,73 @@ struct FlyerScanNormalizationTests {
         #expect(FailedScan(data: Data(), error: CocoaError(.fileReadUnknown)).message.contains("blurry"))
     }
 }
+
+/// Instagram link on events. (Kept in this file so the Xcode project needn't change.)
+@Suite("Instagram link")
+struct InstagramLinkTests {
+    @Test(arguments: [
+        ("@DavisClimbing", "davisclimbing"),
+        ("davis.climbing_club", "davis.climbing_club"),
+        ("  @ucd_aggies ", "ucd_aggies"),
+        ("https://www.instagram.com/davisclimbing/", "davisclimbing"),
+        ("instagram.com/davisclimbing?hl=en", "davisclimbing"),
+        ("http://instagr.am/davisclimbing", "davisclimbing"),
+    ])
+    func acceptsHandlesAndProfileLinks(input: String, handle: String) {
+        #expect(InstagramHandle.normalize(input) == handle)
+    }
+
+    @Test(arguments: ["", "  ", "@", "two words", ".startsdot", "ends.", "dou..ble", String(repeating: "x", count: 31),
+                      "bad!char", "https://www.instagram.com/p/Cx123/", "https://twitter.com/davisclimbing",
+                      "davisclimbing.com/about"])
+    func rejectsEverythingElse(input: String) {
+        #expect(InstagramHandle.normalize(input) == nil)
+    }
+
+    @Test func optionalButValidated() {
+        #expect(InstagramHandle.isAcceptable(""))
+        #expect(InstagramHandle.isAcceptable("@club"))
+        #expect(!InstagramHandle.isAcceptable("not a handle"))
+    }
+
+    @Test func linksOpenTheAppThenTheBrowser() {
+        #expect(InstagramHandle.appURL("davisclimbing")?.absoluteString == "instagram://user?username=davisclimbing")
+        #expect(InstagramHandle.webURL("davisclimbing")?.absoluteString == "https://www.instagram.com/davisclimbing/")
+    }
+
+    @Test func draftToEventToServerAndBack() throws {
+        var draft = ActivityDraft()
+        draft.title = "Climbing Social"
+        draft.place = Place(name: "ARC", address: "Davis", latitude: 38.54, longitude: -121.76)
+        draft.instagram = "https://instagram.com/DavisClimbing/"
+        let activity = try #require(draft.activity)
+        #expect(activity.instagram == "davisclimbing")
+        #expect(activity.serverBody().instagram == "davisclimbing")
+
+        draft.instagram = "  "
+        #expect(draft.activity?.instagram == nil)
+    }
+
+    @Test func serverEventsCarryTheHandle() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        let json = #"{"id":"seed-001","title":"Climb","description":"","start_time":"2026-12-01T19:00:00Z","#
+            + #""category":"sports","instagram":"davisclimbing"}"#
+        let event = try decoder.decode(EventServer.ServerEvent.self, from: Data(json.utf8))
+        #expect(Activity(server: event, hostID: UUID()).instagram == "davisclimbing")
+        // Older servers don't send it.
+        let old = try decoder.decode(EventServer.ServerEvent.self, from: Data(json.replacingOccurrences(of: #","instagram":"davisclimbing""#, with: "").utf8))
+        #expect(Activity(server: old, hostID: UUID()).instagram == nil)
+    }
+
+    @Test func flyerHandleFillsTheField() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let reading = try decoder.decode(ClaudeFlyerReader.Reading.self,
+                                         from: Data(#"{"title":"Climb","instagram":"@DavisClimbing"}"#.utf8))
+        #expect(reading.result(image: UIImage()).instagram == "davisclimbing")
+        let junk = try decoder.decode(ClaudeFlyerReader.Reading.self, from: Data(#"{"instagram":"follow us!"}"#.utf8))
+        #expect(junk.result(image: UIImage()).instagram == "")
+    }
+}
