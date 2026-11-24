@@ -78,6 +78,18 @@ class EventService:
             raise ServiceUnavailableError("Event store unavailable") from e
         return event
 
+    def delete_event(self, event_id, user):
+        """The host deletes their event, with its attendees and cover. Everyone who had joined
+        or asked to join is told through cancellations_for()."""
+        event = self._event(event_id)
+        self._require_host(event, user)
+        if self._store(self._repository.delete_event, event.id, self.now()) is None:
+            raise NotFoundError("event")
+
+    def cancellations_for(self, user, limit=50):
+        """Events this user joined or asked to join that their host has since deleted."""
+        return self._store(self._repository.list_cancellations_for, user.id, limit)
+
     # MARK: Attendees. Every check below runs on the server; the app only hides buttons.
 
     def _store(self, call, *args):
@@ -189,6 +201,21 @@ class EventService:
             raise NotFoundError("attendee")
         if attendee.status != APPROVED:
             raise ForbiddenError("Approve the guest before checking them in")
+        return attendee
+
+    def record_attendance(self, event_id, user, attended, feedback):
+        """A guest says whether they went, after the event, with optional feedback for the host.
+        Answering again replaces the earlier answer. Feedback is kept only when they went."""
+        event = self._event(event_id)
+        attendee = self._store(self._repository.get_attendee, event.id, user.id)
+        if attendee is None or attendee.status != APPROVED:
+            raise ForbiddenError("Only guests of this event can say whether they went")
+        if (event.end_time or event.start_time) > self.now():
+            raise ForbiddenError("You can answer once the event is over")
+        attendee = self._store(self._repository.set_attendance, event.id, user.id, attended,
+                               feedback if attended else None, self.now())
+        if attendee is None:
+            raise NotFoundError("attendee")
         return attendee
 
     def remove_attendee(self, event_id, attendee_id, user):

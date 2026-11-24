@@ -31,6 +31,8 @@ enum EventServer {
         var requiresApproval: Bool?
         var locationPrivate: Bool?
         var summary: String?
+        /// Bare Instagram handle, or nil. Older servers don't send it.
+        var instagram: String?
     }
 
     struct Attendee: Decodable, Identifiable {
@@ -38,7 +40,39 @@ enum EventServer {
         var name: String
         var status: String
         var checkedIn: Bool?
+        /// The guest's "Did you attend?" answer after the event (nil = not answered), and their feedback.
+        var attended: Bool?
+        var feedback: String?
         var isApproved: Bool { status == "approved" }
+    }
+
+    /// The host's view of what guests said after an event, grouped for the feedback screen.
+    struct FeedbackSummary {
+        /// Went and left a comment.
+        var comments: [Attendee] = []
+        /// Went, no comment.
+        var attendedQuietly: [Attendee] = []
+        var missed: [Attendee] = []
+        var unanswered: [Attendee] = []
+
+        var guestCount: Int { comments.count + attendedQuietly.count + missed.count + unanswered.count }
+        var answeredCount: Int { guestCount - unanswered.count }
+        var attendedCount: Int { comments.count + attendedQuietly.count }
+
+        /// Approved guests only (requests that were never approved weren't asked), each list by name.
+        init(_ attendees: [Attendee]) {
+            for guest in attendees where guest.isApproved {
+                let note = guest.feedback?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                switch guest.attended {
+                case true?: if note.isEmpty { attendedQuietly.append(guest) } else { comments.append(guest) }
+                case false?: missed.append(guest)
+                case nil: unanswered.append(guest)
+                }
+            }
+            for list in [\FeedbackSummary.comments, \.attendedQuietly, \.missed, \.unanswered] {
+                self[keyPath: list].sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            }
+        }
     }
 
     struct Location: Decodable {
@@ -66,6 +100,8 @@ enum EventServer {
         var level: String
         var requiresApproval: Bool
         var locationPrivate: Bool
+        /// Left out of the JSON when nil.
+        var instagram: String?
     }
 
     struct ServerError: LocalizedError {
@@ -216,6 +252,37 @@ enum EventServer {
         return try decoder.decode(Attendee.self, from: data)
     }
 
+    /// After the event: whether you went, and optional feedback for the host (`PUT …/attendees/me/attendance`).
+    static func recordAttendance(eventID: String, attended: Bool, feedback: String?, baseURL: URL) async throws {
+        struct Body: Encodable { var attended: Bool; var feedback: String? }
+        let url = baseURL.appending(path: "api/events/\(eventID)/attendees/me/attendance")
+        _ = try await send("PUT", url, body: try encoder.encode(Body(attended: attended, feedback: feedback)))
+    }
+
+    /// A plan you joined or asked to join that its host deleted (`GET /api/events/cancelled`).
+    struct Cancellation: Decodable, Equatable {
+        var eventId: String
+        var title: String
+        var hostName: String?
+        var startTime: Date
+        var cancelledAt: Date
+    }
+
+    static func cancelledEvents(baseURL: URL) async throws -> [Cancellation] {
+        struct Response: Decodable { var events: [Cancellation] }
+        let data = try await send("GET", "api/events/cancelled", baseURL: baseURL)
+        return try decoder.decode(Response.self, from: data).events
+    }
+
+    /// The host deletes their event (with its attendees and cover). Already gone counts as done.
+    static func deleteEvent(eventID: String, baseURL: URL) async throws {
+        do {
+            _ = try await send("DELETE", "api/events/\(eventID)", baseURL: baseURL)
+        } catch let error as ServerError where error.status == 404 {
+            return
+        }
+    }
+
     /// The host removes someone (or declines a request), or you remove yourself.
     static func removeAttendee(eventID: String, attendeeID: String, baseURL: URL) async throws {
         _ = try await send("DELETE", "api/events/\(eventID)/attendees/\(attendeeID)", baseURL: baseURL)
@@ -333,7 +400,8 @@ extension Activity {
             serverID: e.id,
             privateLocation: e.locationPrivate == true ? true : nil,
             locationHidden: hidden ? true : nil,
-            serverCoverURL: e.imageUrl
+            serverCoverURL: e.imageUrl,
+            instagram: e.instagram.flatMap(InstagramHandle.normalize)
         )
     }
 
@@ -343,7 +411,8 @@ extension Activity {
             locationName: placeName, latitude: latitude, longitude: longitude, category: category.rawValue,
             address: address, capacity: min(max(capacity, 2), 500), cost: costNote,
             tags: Array(tags.prefix(10)).map { String($0.prefix(30)) }, level: level.apiValue,
-            requiresApproval: requiresApproval || isLocationPrivate, locationPrivate: isLocationPrivate
+            requiresApproval: requiresApproval || isLocationPrivate, locationPrivate: isLocationPrivate,
+            instagram: instagram.flatMap(InstagramHandle.normalize)
         )
     }
 }

@@ -20,6 +20,10 @@ struct FlyerScanResult: Identifiable {
     var details: String
     var cost: String
     var category: ActivityCategory? = nil
+    /// The club or group hosting it, if the flyer names one.
+    var organizer = ""
+    /// An Instagram handle printed on the flyer (bare, no "@").
+    var instagram = ""
     /// Fields the reader couldn't find or wasn't sure about: title, date, time, location, cost.
     var missing: [String] = []
     var isEventFlyer = true
@@ -130,7 +134,8 @@ enum FlyerScanner {
         guard !lines.isEmpty else { return nil }
         let fields = parse(lines: lines)
         var missing: [String] = []
-        if fields.date == nil { missing += ["date", "time"] }
+        if !fields.hasDay { missing.append("date") }
+        if !fields.hasTime { missing.append("time") }
         if fields.location.isEmpty && fields.address.isEmpty { missing.append("location") }
         if fields.cost.isEmpty { missing.append("cost") }
         return FlyerScanResult(
@@ -174,7 +179,8 @@ enum FlyerScanner {
     }
 
     /// Kept separate from recognition so extraction can be checked with sample flyer text.
-    static func parse(lines: [String]) -> (title: String, date: Date?, endDate: Date?, location: String, address: String, cost: String) {
+    static func parse(lines: [String], now: Date = .now)
+        -> (title: String, date: Date?, endDate: Date?, hasDay: Bool, hasTime: Bool, location: String, address: String, cost: String) {
         func labeled(_ labels: [String]) -> String? {
             for line in lines {
                 for label in labels {
@@ -187,14 +193,8 @@ enum FlyerScanner {
             return nil
         }
         let text = lines.joined(separator: "\n")
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
         let dateText = [labeled(["date", "when"]), labeled(["time"])].compactMap { $0 }.joined(separator: " ")
-        let input = dateText.isEmpty ? text : dateText
-        let timeMatch = detector?.firstMatch(in: input, range: NSRange(input.startIndex..., in: input))
-        let date = timeMatch?.date
-        let endDate = date.flatMap { start in
-            timeMatch.flatMap { $0.duration > 0 ? start.addingTimeInterval($0.duration) : nil }
-        }
+        let when = FlyerDateTime.read(dateText.isEmpty ? text : dateText, now: now)
         let location = labeled(["location", "where", "venue"]) ?? ""
         var address = labeled(["address", "room"]) ?? ""
         if address.isEmpty, location.isEmpty,
@@ -217,7 +217,54 @@ enum FlyerScanner {
                 cost = String(priceLine[range])
             }
         }
-        return (labeled(["event", "title"]) ?? "", date, endDate, location, address, cost)
+        return (labeled(["event", "title"]) ?? "", when.start, when.end, when.hasDay, when.hasTime, location, address, cost)
+    }
+}
+
+/// Finds a flyer's day and time even when they're printed apart ("Nov 23" on one line, "6-8 PM" on the
+/// next). Apple's detector returns those as two matches: the day at noon, and the time on today's date.
+/// The reader used to keep only the first match, so the event landed at noon with no end time and the
+/// time wasn't even flagged. This puts the day and the time (and its end) back together.
+enum FlyerDateTime {
+    struct Reading: Equatable {
+        var start: Date?
+        var end: Date?
+        /// The text named a day ("Nov 23", "Friday", "12/5").
+        var hasDay = false
+        /// The text named a time of day ("6pm", "18:30", "noon").
+        var hasTime = false
+    }
+
+    static func read(_ text: String, now: Date = .now, calendar: Calendar = .current) -> Reading {
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) else { return Reading() }
+        let ns = text as NSString
+        let matches = detector.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { match in
+            match.date.map { (date: $0, duration: match.duration, said: ns.substring(with: match.range)) }
+        }
+        let day = matches.first { names($0.said, dayPattern) }
+        let clock = matches.first { names($0.said, timePattern) }
+        guard let base = day ?? clock else { return Reading() }
+
+        var start = base.date
+        if let clock {
+            let time = calendar.dateComponents([.hour, .minute], from: clock.date)
+            start = calendar.date(bySettingHour: time.hour ?? 12, minute: time.minute ?? 0, second: 0, of: base.date) ?? start
+        }
+        // No year printed means the next one: "Jan 10" read in November is next January.
+        if let day, !names(day.said, #"\b20\d{2}\b"#), start < calendar.startOfDay(for: now),
+           let next = calendar.date(byAdding: .year, value: 1, to: start) {
+            start = next
+        }
+        let duration = clock?.duration ?? 0
+        return Reading(start: start, end: duration > 0 ? start.addingTimeInterval(duration) : nil,
+                       hasDay: day != nil, hasTime: clock != nil)
+    }
+
+    private static let dayPattern = #"(?i)\b(?:today|tonight|tomorrow|mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\d{1,2}/\d{1,2}|\d{4}-\d{2}-\d{2}"#
+    private static let timePattern = #"(?i)\d\s*(?:a\.?m\b|p\.?m\b)|\b\d{1,2}:\d{2}\b|\bnoon\b|\bmidnight\b"#
+
+    private static func names(_ text: String, _ pattern: String) -> Bool {
+        text.range(of: pattern, options: .regularExpression) != nil
     }
 }
 
@@ -405,10 +452,22 @@ struct FlyerFields {
     var cost: String
     var category: ActivityCategory?
     var cover: UIImage?
+    /// Raw text from the review's Instagram field ("" when none).
+    var instagram = ""
 
     static func duration(from start: Date, to end: Date) -> Int? {
         let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
         return minutes > 0 ? minutes : nil
+    }
+
+    /// The Host form has no organizer field, so the club goes at the top of the description
+    /// ("Hosted by Davis Climbing Club."), unless the description already names it.
+    static func details(_ details: String, organizer: String) -> String {
+        let details = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        let organizer = organizer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !organizer.isEmpty, !details.localizedCaseInsensitiveContains(organizer) else { return details }
+        let line = "Hosted by \(organizer)" + (organizer.hasSuffix(".") ? "" : ".")
+        return details.isEmpty ? line : "\(line)\n\n\(details)"
     }
 }
 
@@ -448,7 +507,11 @@ struct FlyerReviewView: View {
     @State private var details: String
     @State private var cost: String
     @State private var category: ActivityCategory?
+    @State private var organizer: String
+    @State private var instagram: String
     @State private var confirmedDate = false
+    /// The host changed the date or time, so a "not detected" date no longer needs pointing out.
+    @State private var dateEdited = false
     @State private var useCover = true
 
     init(result: FlyerScanResult, onApply: @escaping (FlyerFields) -> Void) {
@@ -464,11 +527,31 @@ struct FlyerReviewView: View {
         _details = State(initialValue: result.details)
         _cost = State(initialValue: result.cost)
         _category = State(initialValue: result.category)
+        _organizer = State(initialValue: result.organizer)
+        _instagram = State(initialValue: result.instagram.isEmpty ? "" : "@" + result.instagram)
     }
 
     private var reviewedLocation: FlyerLocation { FlyerLocation(venue: location, address: address) }
 
     private func isMissing(_ field: String) -> Bool { result.missing.contains(field) }
+
+    private func isBlank(_ text: String) -> Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    // What wasn't detected and is still empty. Each highlight clears as soon as the host fills it in.
+    private var needsTitle: Bool { isBlank(title) }
+    private var needsCategory: Bool { category == nil }
+    private var needsDate: Bool { (isMissing("date") || isMissing("time")) && !dateEdited && !confirmedDate }
+    private var needsLocation: Bool { reviewedLocation.query.isEmpty }
+    private var needsDetails: Bool { isBlank(details) }
+    private var needsCost: Bool { isBlank(cost) }
+
+    private var dateHelp: String? {
+        if date <= .now { return "This date has already passed. Pick the right date and time." }
+        guard needsDate else { return nil }
+        if result.date == nil { return "We couldn't detect the date, please fill it in." }
+        return isMissing("date") ? "We couldn't detect the date, please check it."
+                                 : "We couldn't detect the time, please set it."
+    }
 
     /// What still blocks "Apply details", in form order, so the host knows why it's greyed out.
     private var stillNeeded: [String] {
@@ -478,6 +561,7 @@ struct FlyerReviewView: View {
         if hasEndDate && FlyerFields.duration(from: date, to: endDate) == nil { needed.append("pick an end time after the start") }
         if !confirmedDate { needed.append("turn on \"I checked the date and time\"") }
         if reviewedLocation.query.isEmpty { needed.append("enter the location") }
+        if !InstagramHandle.isAcceptable(instagram) { needed.append("fix the Instagram handle") }
         return needed
     }
 
@@ -504,12 +588,12 @@ struct FlyerReviewView: View {
                     if !result.isEventFlyer {
                         Label(result.source == .text
                               ? "This doesn't sound like a plan. You can still fill in the details yourself."
-                              : "This doesn't look like an event flyer. You can still fill in the details yourself.",
+                              : "This doesn't look like an event flyer, or the photo is too blurry to read. Cancel and try a clearer photo, or fill in the details yourself.",
                               systemImage: "questionmark.circle.fill")
                             .font(.footnote)
                             .foregroundStyle(.orange)
                     }
-                    Text("Check the details. Anything marked in orange wasn't \(result.source == .text ? "in the description" : "on the flyer") or wasn't clear, so fill it in before posting.")
+                    Text("Check the details. Fields outlined in orange weren't \(result.source == .text ? "in the description" : "on the flyer") or weren't clear, so fill them in before posting.")
                         .font(.subheadline)
                     if !stillNeeded.isEmpty {
                         Label("To apply: \(stillNeeded.joined(separator: ", ")).", systemImage: "info.circle.fill")
@@ -519,22 +603,27 @@ struct FlyerReviewView: View {
                 }
                 Section {
                     TextField("Enter event name", text: $title)
+                        .needsInput(needsTitle)
                 } header: {
-                    reviewHeader("Event name", missing: isMissing("title"))
+                    reviewHeader("Event name", missing: isMissing("title") && !needsTitle)
+                } footer: {
+                    notDetected(needsTitle)
                 }
-                Section("Category") {
+                Section {
                     Picker("Category", selection: $category) {
                         Text("Choose…").tag(ActivityCategory?.none)
                         ForEach(ActivityCategory.allCases) { Label($0.title, systemImage: $0.symbol).tag(Optional($0)) }
                     }
+                    .needsInput(needsCategory)
+                } header: {
+                    Text("Category")
+                } footer: {
+                    notDetected(needsCategory)
                 }
                 Section {
-                    if result.date == nil {
-                        Text("No date was detected. Enter the event date and time.")
-                            .foregroundStyle(.orange)
-                    }
                     DatePicker("Starts", selection: $date, in: Date.now...)
-                        .onChange(of: date) { confirmedDate = false }
+                        .needsInput(dateHelp != nil)
+                        .onChange(of: date) { confirmedDate = false; dateEdited = true }
                     Toggle("Set end time", isOn: $hasEndDate)
                         .onChange(of: hasEndDate) {
                             if hasEndDate && endDate <= date { endDate = date.addingTimeInterval(5400) }
@@ -542,16 +631,20 @@ struct FlyerReviewView: View {
                         }
                     if hasEndDate {
                         DatePicker("Ends", selection: $endDate)
-                            .onChange(of: endDate) { confirmedDate = false }
+                            .onChange(of: endDate) { confirmedDate = false; dateEdited = true }
                     }
                     Toggle("I checked the date and time", isOn: $confirmedDate)
                 } header: {
-                    reviewHeader("Date and time", missing: isMissing("date") || isMissing("time"))
+                    reviewHeader("Date and time", missing: (isMissing("date") || isMissing("time")) && dateHelp == nil && !confirmedDate)
+                } footer: {
+                    if let dateHelp { helper(dateHelp) }
                 }
                 Section {
                     TextField("Venue", text: $location)
+                        .needsInput(needsLocation)
                     TextField("Address or room", text: $address)
                         .textContentType(.fullStreetAddress)
+                        .needsInput(needsLocation)
                     if let pickedPlace {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
@@ -582,7 +675,9 @@ struct FlyerReviewView: View {
                             .font(.caption)
                     }
                 } header: {
-                    reviewHeader("Location", missing: isMissing("location"))
+                    reviewHeader("Location", missing: isMissing("location") && !needsLocation)
+                } footer: {
+                    notDetected(needsLocation)
                 }
                 .onChange(of: reviewedLocation) { pickedPlace = nil }
                 .task(id: reviewedLocation.query) {
@@ -596,14 +691,37 @@ struct FlyerReviewView: View {
                     }
                     if !Task.isCancelled { suggestions = found }
                 }
-                Section("Description") {
+                Section {
+                    TextField("Club or organization (optional)", text: $organizer)
+                    TextField("Instagram (optional), e.g. @ucdavis", text: $instagram)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                } header: {
+                    Text("Hosted by")
+                } footer: {
+                    if InstagramHandle.isAcceptable(instagram) {
+                        Text("The club goes at the top of the description. Guests can tap the Instagram link on the event.")
+                    } else {
+                        helper("Enter a handle like @ucdavis or an instagram.com profile link.")
+                    }
+                }
+                Section {
                     TextField("Description", text: $details, axis: .vertical)
                         .lineLimit(4...10)
+                        .needsInput(needsDetails)
+                } header: {
+                    Text("Description")
+                } footer: {
+                    notDetected(needsDetails)
                 }
                 Section {
                     TextField("Enter cost or Free", text: $cost)
+                        .needsInput(needsCost)
                 } header: {
-                    reviewHeader("Cost", missing: isMissing("cost"))
+                    reviewHeader("Cost", missing: isMissing("cost") && !needsCost)
+                } footer: {
+                    notDetected(needsCost)
                 }
                 if result.image != nil {
                     Section {
@@ -622,8 +740,10 @@ struct FlyerReviewView: View {
                         let duration = hasEndDate ? FlyerFields.duration(from: date, to: endDate) : nil
                         onApply(FlyerFields(title: title, date: date, duration: duration, location: reviewedLocation,
                                             place: pickedPlace.map(reviewedLocation.pinned(to:)),
-                                            details: details, cost: cost, category: category,
-                                            cover: useCover ? result.image : nil))
+                                            details: FlyerFields.details(details, organizer: organizer),
+                                            cost: cost, category: category,
+                                            cover: useCover ? result.image : nil,
+                                            instagram: instagram))
                         dismiss()
                     }
                     .disabled(!stillNeeded.isEmpty)
@@ -633,6 +753,17 @@ struct FlyerReviewView: View {
         .interactiveDismissDisabled()
     }
 
+    @ViewBuilder private func notDetected(_ show: Bool) -> some View {
+        if show { helper("We couldn't detect this, please fill it in.") }
+    }
+
+    private func helper(_ text: String) -> some View {
+        Label(text, systemImage: "exclamationmark.circle.fill")
+            .font(.footnote)
+            .foregroundStyle(.orange)
+    }
+
+    /// Claude found a value but wasn't sure of it: worth a look, not empty.
     private func reviewHeader(_ text: String, missing: Bool) -> some View {
         HStack(spacing: 6) {
             Text(text)
@@ -642,6 +773,16 @@ struct FlyerReviewView: View {
                     .foregroundStyle(.orange)
             }
         }
+    }
+}
+
+private extension View {
+    /// An orange outline on a review row that still needs the host's input.
+    func needsInput(_ active: Bool) -> some View {
+        listRowBackground(active ? RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color(.secondarySystemGroupedBackground))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.orange, lineWidth: 2))
+            : nil)
     }
 }
 

@@ -232,15 +232,43 @@ def my_attendance(event_id):
     return _guarded(lambda: jsonify(service.my_attendance(event_id, g.user).to_dict()))
 
 
+MAX_FEEDBACK = 1000
+
+
+def _with_attendance(attendee):
+    """The attendee plus their "Did you attend?" answer, once they've given one."""
+    if attendee.attended is None:
+        return attendee.to_dict()
+    return attendee.to_dict() | {"attended": attendee.attended, "feedback": attendee.feedback}
+
+
 @events_bp.get("/<event_id>/attendees")
 def list_attendees(event_id):
     service = current_app.extensions["event_service"]
     return _guarded(lambda: jsonify({
         "attendees": [
-            a.to_dict() | ({"checked_in": True} if a.checked_in else {})
+            _with_attendance(a) | ({"checked_in": True} if a.checked_in else {})
             for a in service.list_attendees(event_id, g.user)
         ],
     }))
+
+
+@events_bp.put("/<event_id>/attendees/me/attendance")
+def record_attendance(event_id):
+    """After the event: "Did you attend?" from a guest, with optional feedback for the host."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not isinstance(body.get("attended"), bool):
+        return error_response(400, "invalid_attendance", "attended must be true or false")
+    feedback = body.get("feedback")
+    if feedback is not None and not isinstance(feedback, str):
+        return error_response(400, "invalid_attendance", "feedback must be a string")
+    feedback = (feedback or "").strip() or None
+    if feedback is not None and len(feedback) > MAX_FEEDBACK:
+        return error_response(400, "invalid_attendance", f"feedback must be at most {MAX_FEEDBACK} characters")
+
+    service = current_app.extensions["event_service"]
+    return _guarded(lambda: jsonify(_with_attendance(
+        service.record_attendance(event_id, g.user, body["attended"], feedback))))
 
 
 @events_bp.post("/<event_id>/attendees/<attendee_id>/approve")
@@ -261,6 +289,24 @@ def set_check_in(event_id, attendee_id):
         attendee = service.set_check_in(event_id, attendee_id, g.user, body["checked_in"])
         return jsonify(attendee.to_dict() | {"checked_in": attendee.checked_in})
 
+    return _guarded(run)
+
+
+@events_bp.get("/cancelled")
+def cancelled_events():
+    """Plans you joined or asked to join that the host deleted, newest first."""
+    service = current_app.extensions["event_service"]
+    return _guarded(lambda: jsonify({"events": [c.to_dict() for c in service.cancellations_for(g.user)]}))
+
+
+@events_bp.delete("/<event_id>")
+def delete_event(event_id):
+    """Host only. Removes the event, its attendees and its cover."""
+    service = current_app.extensions["event_service"]
+
+    def run():
+        service.delete_event(event_id, g.user)
+        return "", 204
     return _guarded(run)
 
 

@@ -37,6 +37,8 @@ final class AppStore {
     var notificationsEnabled = true
     var radiusMiles: Double = 50
     var showAgeOnProfile = true
+    /// "Did you attend?" answers, per plan (see AppStore.attendanceQueue).
+    var attendanceAnswers: [UUID: AttendanceAnswer] = [:]
 
     // MARK: Transient UI state
     var banner: InAppBanner?
@@ -47,6 +49,7 @@ final class AppStore {
     var showProfile = false                   // Profile sheet, opened from the top-right avatar
     var openConversationID: UUID?
     var requestedChat: UUID?                  // set to deep-link into a conversation
+    var attendancePrompt: Activity?           // the plan the "Did you attend?" popup is asking about
     private(set) var swipeHistory: [(UUID, SwipeAction)] = []
 
     // MARK: Server (see AppStore+Server.swift)
@@ -54,6 +57,8 @@ final class AppStore {
     let auth = Auth()
     var serverStatus: ServerStatus = .off
     @ObservationIgnored var rejectedUploads: Set<UUID> = []   // plans the server refused; not retried
+    /// Server ids of plans you deleted, so a sync that raced the delete doesn't bring them back.
+    @ObservationIgnored var deletedServerIDs: Set<String> = []
     @ObservationIgnored var debugPlannerQuery: String?         // DEBUG: `-plan "<text>"` opens I'm free… and runs it
     var serverURLString: String = UserDefaults.standard.string(forKey: AppStore.serverURLKey) ?? AppStore.defaultServerURL {
         didSet { UserDefaults.standard.set(serverURLString, forKey: AppStore.serverURLKey) }
@@ -160,6 +165,16 @@ final class AppStore {
         if args.contains("-onboarding") { hasOnboarded = false }
         if args.contains("-swipeTutorial") { isReplayingSwipeTutorial = true }
         if args.contains("-noSwipeTutorial") { hasSeenSwipeTutorial = true }
+        if args.contains("-attendancePrompt"), hasOnboarded {
+            // Makes two sample plans you joined end in the last few hours, so "Did you attend?" shows (queued).
+            for (n, i) in activities.indices.filter({ !isHost(activities[$0]) && activities[$0].serverID == nil }).prefix(2).enumerated() {
+                activities[i].date = .now.addingTimeInterval(-Double(3 + n * 2) * 3600)
+                activities[i].durationMinutes = 60
+                joinedIDs.insert(activities[i].id)
+                attendanceAnswers[activities[i].id] = nil
+            }
+            activities.sort { $0.date < $1.date }
+        }
         if args.contains("-host") { showCreate = true }
         if args.contains("-samples") { showSampleEvents = true; serverURLString = "" }
         if let i = args.firstIndex(of: "-server"), i + 1 < args.count { serverURLString = args[i + 1] }
@@ -270,6 +285,11 @@ final class AppStore {
 
     var hosting: [Activity] {
         activities.filter { isHost($0) && !$0.isPast }.sorted { $0.date < $1.date }
+    }
+
+    /// Events you hosted that are over, most recent first (where hosts find guest feedback).
+    var pastHosting: [Activity] {
+        activities.filter { isHost($0) && $0.isPast }.sorted { $0.date > $1.date }
     }
 
     var saved: [Activity] {
@@ -393,6 +413,28 @@ final class AppStore {
         save()
     }
 
+    /// The host deleted a plan you joined or asked to join. It leaves your plans, and you're told twice:
+    /// a banner now, and a message in the plan's group chat (unread, so the Chats badge shows it later).
+    /// Does nothing if the plan isn't yours to be told about, so repeating it is harmless.
+    func hostCancelled(_ id: UUID, hostName: String?) {
+        guard let plan = activity(id), !isHost(plan), isGoing(plan) || isPending(plan) else { return }
+        let host = hostName?.split(separator: " ").first.map(String.init) ?? person(plan.hostID)?.firstName ?? "The host"
+        let when = plan.date.friendlyDateTime
+        joinedIDs.remove(id)
+        pendingIDs.remove(id)
+        savedIDs.remove(id)
+        if let c = conversations.firstIndex(where: { $0.activityID == id }) {
+            conversations[c].messages.append(Message(senderID: plan.hostID,
+                                                     text: "\(host) cancelled “\(plan.title)” (\(when)).",
+                                                     date: .now, kind: .system))
+            conversations[c].unreadCount += 1
+        }
+        withAnimation(.snappy) { activities.removeAll { $0.id == id } }
+        save()
+        show(InAppBanner(title: "Plan cancelled", subtitle: "\(host) cancelled \(plan.title) (\(when)).",
+                         symbol: "calendar.badge.exclamationmark", color: .orange))
+    }
+
     func toggleSaved(_ activity: Activity) {
         let saved = !savedIDs.contains(activity.id)
         if saved { savedIDs.insert(activity.id) } else { savedIDs.remove(activity.id) }
@@ -498,11 +540,44 @@ final class AppStore {
         Task { await upload(a) }
     }
 
+    /// Deletes a plan you host. It disappears at once, with its chat and requests (optimistic). A shared plan
+    /// is then deleted on the server; if that fails, it all comes back and a banner says why.
     func cancel(_ activity: Activity) {
+        let removedActivities = activities.filter { $0.id == activity.id }
+        let removedChats = conversations.filter { $0.activityID == activity.id }
+        let removedRequests = requests.filter { $0.activityID == activity.id }
         activities.removeAll { $0.id == activity.id }
         conversations.removeAll { $0.activityID == activity.id }
         requests.removeAll { $0.activityID == activity.id }
         save()
+
+        guard let serverID = activity.serverID else { return }
+        deletedServerIDs.insert(serverID)
+        Task {
+            let failure: String?
+            if let url = serverURL {
+                do {
+                    try await EventServer.deleteEvent(eventID: serverID, baseURL: url)
+                    failure = nil
+                } catch {
+                    failure = Self.describe(error)
+                }
+            } else {
+                failure = "Set a server in Profile → Server to delete shared plans."
+            }
+            guard let failure else { return }
+            // Roll back: put the plan, its chat and its requests back where they were.
+            deletedServerIDs.remove(serverID)
+            withAnimation(.snappy) {
+                if !activities.contains(where: { $0.id == activity.id }) { activities.append(contentsOf: removedActivities) }
+                activities.sort { $0.date < $1.date }
+                conversations.append(contentsOf: removedChats.filter { c in !conversations.contains { $0.id == c.id } })
+                requests.append(contentsOf: removedRequests.filter { r in !requests.contains { $0.id == r.id } })
+            }
+            save()
+            show(InAppBanner(title: "Couldn't delete “\(activity.title)”", subtitle: failure,
+                             symbol: "exclamationmark.icloud", color: .orange))
+        }
     }
 
     func requests(for activity: Activity) -> [JoinRequest] {
@@ -748,6 +823,7 @@ final class AppStore {
         var notificationsEnabled: Bool
         var radiusMiles: Double
         var showAgeOnProfile: Bool
+        var attendanceAnswers: [UUID: AttendanceAnswer]? = nil
     }
 
     @discardableResult
@@ -755,7 +831,8 @@ final class AppStore {
         let snap = Snapshot(hasOnboarded: hasOnboarded, me: me, people: people, activities: activitiesWithoutCovers(), drafts: drafts,
                             joinedIDs: joinedIDs, pendingIDs: pendingIDs, savedIDs: savedIDs, pendingSaves: pendingSaves, skippedIDs: skippedIDs,
                             conversations: conversations, requests: requests, notificationsEnabled: notificationsEnabled,
-                            radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile)
+                            radiusMiles: radiusMiles, showAgeOnProfile: showAgeOnProfile,
+                            attendanceAnswers: attendanceAnswers)
         do {
             let data = try JSONEncoder().encode(snap)
             try data.write(to: fileURL, options: .atomic)
@@ -826,6 +903,7 @@ final class AppStore {
         notificationsEnabled = s.notificationsEnabled
         radiusMiles = s.radiusMiles
         showAgeOnProfile = s.showAgeOnProfile
+        attendanceAnswers = s.attendanceAnswers ?? [:]
         // Keep the demo fresh: if every seeded plan has passed, reseed activities.
         if !activities.contains(where: { !$0.isPast && !isHost($0) }) {
             let hosted = activities.filter { isHost($0) }
@@ -877,6 +955,8 @@ final class AppStore {
         try? FileManager.default.removeItem(at: fileURL)
         hasOnboarded = false
         drafts = []
+        attendanceAnswers = [:]
+        attendancePrompt = nil
         notificationsEnabled = true
         radiusMiles = 50
         seed()
@@ -889,6 +969,82 @@ final class AppStore {
     /// Keeps the profile but restores fresh demo activities and chats.
     func refreshDemoContent() {
         seed(keepingMe: true)
+        save()
+    }
+}
+
+// MARK: - After a plan: "Did you attend?"
+
+extension AppStore {
+    /// How long after a plan ends it's still worth asking about. Older ones are skipped, so a phone
+    /// that's been away for months doesn't get a pile of popups.
+    nonisolated static let attendanceWindow: TimeInterval = 7 * 24 * 3600
+
+    /// Plans to ask about, oldest first: joined (not hosted), over, ended within the window, not yet answered.
+    nonisolated static func attendanceQueue(activities: [Activity], joinedIDs: Set<UUID>, hostID: UUID,
+                                answers: [UUID: AttendanceAnswer], now: Date = .now) -> [Activity] {
+        activities
+            .filter { a in
+                joinedIDs.contains(a.id) && a.hostID != hostID && answers[a.id] == nil
+                    && a.endDate <= now && a.endDate >= now.addingTimeInterval(-attendanceWindow)
+            }
+            .sorted { $0.endDate < $1.endDate }
+    }
+
+    var attendanceQueue: [Activity] {
+        Self.attendanceQueue(activities: activities, joinedIDs: joinedIDs, hostID: me.id, answers: attendanceAnswers)
+    }
+
+    /// Shows the next "Did you attend?" popup, if there is one and nothing else is in the way
+    /// (onboarding, the swipe tutorial, or another sheet). Called when the app opens or comes back.
+    func checkForAttendancePrompts() {
+        guard attendancePrompt == nil, hasOnboarded, canOpenApp, !showsSwipeTutorial,
+              !showCreate, !showProfile, !showPlanner, let next = attendanceQueue.first else { return }
+        attendancePrompt = next
+    }
+
+    /// Saves an answer on this phone right away (so closing the popup mid-way keeps it).
+    func recordAttendance(_ activity: Activity, response: AttendanceAnswer.Response, feedback: String? = nil) {
+        let text = feedback?.trimmingCharacters(in: .whitespacesAndNewlines)
+        attendanceAnswers[activity.id] = AttendanceAnswer(
+            response: response,
+            feedback: response == .attended && text?.isEmpty == false ? String(text!.prefix(1000)) : nil,
+            answeredAt: .now,
+            needsSync: response != .dismissed && activity.serverID != nil ? true : nil
+        )
+        save()
+    }
+
+    /// The popup closed. No answer means it was dismissed: it won't be asked again. Then the answer is
+    /// sent to the server, and the next plan in the queue (if any) is shown.
+    func finishAttendancePrompt(_ activity: Activity) {
+        if attendanceAnswers[activity.id] == nil { recordAttendance(activity, response: .dismissed) }
+        attendancePrompt = nil
+        Task {
+            if let url = serverURL, auth.isSignedIn { await sendPendingAttendance(baseURL: url) }
+            try? await Task.sleep(for: .milliseconds(450))   // let the sheet finish closing
+            checkForAttendancePrompts()
+        }
+    }
+
+    /// Sends answers that haven't reached the server yet. Retried on every sync until they do;
+    /// one the server refuses for good (not your plan any more, or it's gone) isn't retried.
+    func sendPendingAttendance(baseURL url: URL) async {
+        for (id, answer) in attendanceAnswers where answer.needsSync == true {
+            guard let serverID = activity(id)?.serverID, answer.response != .dismissed else {
+                attendanceAnswers[id]?.needsSync = nil
+                continue
+            }
+            do {
+                try await EventServer.recordAttendance(eventID: serverID, attended: answer.response == .attended,
+                                                       feedback: answer.feedback, baseURL: url)
+                attendanceAnswers[id]?.needsSync = nil
+            } catch let error as EventServer.ServerError where [403, 404].contains(error.status) {
+                attendanceAnswers[id]?.needsSync = nil
+            } catch {
+                continue   // offline or server error: try again on the next sync
+            }
+        }
         save()
     }
 }

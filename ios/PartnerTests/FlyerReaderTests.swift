@@ -257,3 +257,233 @@ struct PlanDescriptionTests {
         #expect(noKey.hasSuffix("This description was read on your iPhone instead."))
     }
 }
+
+/// The scanner bug: a flyer's date and time were read but didn't reach the right fields.
+/// Sample answers from POST /api/flyers/read (complete, partial, empty, malformed), and the
+/// phone's own reading when the day and the time are printed on different lines.
+@Suite("Flyer scan: date, time and sample AI answers")
+struct FlyerScanNormalizationTests {
+    /// Decodes the way the app does (snake_case keys); `Reading` reads its own times.
+    private func reading(_ json: String) throws -> ClaudeFlyerReader.Reading {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(ClaudeFlyerReader.Reading.self, from: Data(json.utf8))
+    }
+
+    private let pacific = TimeZone(identifier: "America/Los_Angeles")!
+
+    // MARK: Sample AI answers
+
+    @Test func completeAnswerFillsEveryField() throws {
+        let r = try reading(#"""
+        {"is_event_flyer": true, "title": "Fall Climbing Social", "start_time": "2026-11-14T19:00:00-08:00",
+         "end_time": "2026-11-14T21:00:00-08:00", "location_name": "ARC Climbing Wall", "address": "ARC, UC Davis",
+         "description": "Climbing night.", "cost": "Free", "category": "sports", "organizer": "Davis Climbing Club",
+         "missing": [], "model": "claude-opus-5-5"}
+        """#)
+        let result = r.result(image: UIImage())
+        #expect(result.date == Date(timeIntervalSince1970: 1_794_711_600))     // 7 PM Pacific
+        #expect(result.endDate?.timeIntervalSince(try #require(result.date)) == 7200)
+        #expect(result.title == "Fall Climbing Social")
+        #expect(result.organizer == "Davis Climbing Club")
+        #expect(result.missing.isEmpty)
+    }
+
+    @Test func partialAnswerWithNullsKeepsWhatWasFound() throws {
+        let r = try reading(#"""
+        {"is_event_flyer": true, "title": "Open Mic", "start_time": null, "end_time": null, "location_name": null,
+         "address": "", "description": "Bring a song.", "cost": null, "category": "music", "missing": ["location"]}
+        """#)
+        #expect(r.title == "Open Mic")
+        #expect(r.startTime == nil)
+        #expect(r.locationName == "" && r.cost == "")
+        #expect(r.organizer == nil)
+        #expect(r.missing == ["location", "date", "time"])
+        #expect(r.result(image: UIImage()).category == .music)
+    }
+
+    @Test func emptyAnswerFlagsEverythingInsteadOfFailing() throws {
+        let r = try reading("{}")
+        #expect(r.isEventFlyer)
+        #expect(r.title.isEmpty && r.startTime == nil && r.endTime == nil)
+        #expect(r.missing == ["date", "time"])
+    }
+
+    @Test func malformedJSONThrowsSoThePhoneReadsTheFlyerInstead() {
+        #expect(throws: (any Error).self) { try reading("<html>Bad Gateway</html>") }
+        #expect(throws: (any Error).self) { try reading(#"["not", "an", "object"]"#) }
+        // FlyerScanner.scan turns any such error into the on-device reading, with a reason.
+        #expect(FlyerScanner.explain(DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "")))
+                == "Something went wrong with Claude, so this flyer was read on your iPhone.")
+    }
+
+    @Test func oddTimesAreStillRead() throws {
+        // A time Claude can't be trusted with is dropped and flagged, not fatal to the whole answer.
+        let words = try reading(#"{"title": "Trivia", "start_time": "next friday 8pm", "end_time": "9pm"}"#)
+        #expect(words.title == "Trivia" && words.startTime == nil && words.endTime == nil)
+        #expect(words.missing == ["date", "time"])
+
+        // No UTC offset: the phone's own time zone.
+        let naive = FlyerTime.parse("2026-11-23T18:00:00", timeZone: pacific)
+        #expect(naive == FlyerTime(date: Date(timeIntervalSince1970: 1_795_485_600), hasTime: true))
+        #expect(FlyerTime.parse("2026-11-23T18:00", timeZone: pacific).date == naive.date)
+        #expect(FlyerTime.parse("2026-11-24T02:00:00.000000+00:00").date == naive.date)
+
+        // Only a day: kept at noon, with the time flagged for the host.
+        let day = FlyerTime.parse("2026-11-23", timeZone: pacific)
+        #expect(day.hasTime == false)
+        #expect(day.date == Date(timeIntervalSince1970: 1_795_464_000))
+        #expect(FlyerTime.parse(nil) == FlyerTime())
+        #expect(FlyerTime.parse("  ") == FlyerTime())
+    }
+
+    @Test func dayOnlyAnswerAsksForTheTimeAndDropsTheEnd() throws {
+        let r = try reading(#"{"title": "Club Fair", "start_time": "2026-12-03", "end_time": "2026-12-03", "missing": []}"#)
+        #expect(r.startTime != nil)
+        #expect(r.endTime == nil)
+        #expect(r.missing == ["time"])
+    }
+
+    @Test func endBeforeStartIsDropped() throws {
+        let r = try reading(#"{"start_time": "2026-11-14T19:00:00-08:00", "end_time": "2026-11-14T18:00:00-08:00"}"#)
+        #expect(r.startTime != nil && r.endTime == nil)
+    }
+
+    // MARK: On the phone (no server)
+
+    private let now: Date = {
+        Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 20, hour: 9))!
+    }()
+
+    private func parts(_ date: Date?) -> DateComponents? {
+        date.map { Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: $0) }
+    }
+
+    @Test func dayAndTimeOnSeparateLinesAreCombined() {
+        // Before the fix this came back as Nov 23 at 12:00 PM, no end time, and the time not flagged.
+        let fields = FlyerScanner.parse(lines: ["Film Night", "Nov 23", "6-8 PM", "Room 205"], now: now)
+        #expect(parts(fields.date) == DateComponents(year: 2026, month: 11, day: 23, hour: 18, minute: 0))
+        #expect(parts(fields.endDate) == DateComponents(year: 2026, month: 11, day: 23, hour: 20, minute: 0))
+        #expect(fields.hasDay && fields.hasTime)
+    }
+
+    @Test func dayAndTimeRangeOnOneLine() {
+        let fields = FlyerScanner.parse(lines: ["Film Night", "Friday 12/4 · 7pm - 9pm"], now: now)
+        #expect(parts(fields.date) == DateComponents(year: 2026, month: 12, day: 4, hour: 19, minute: 0))
+        #expect(fields.endDate.map { $0.timeIntervalSince(fields.date!) } == 7200)
+    }
+
+    @Test func dayWithoutATimeIsFlagged() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { _ in }.cgImage!
+        let result = try #require(FlyerScanner.local(image: image, lines: ["Club Fair", "Dec 3", "Quad"], heading: nil))
+        #expect(result.date != nil)
+        #expect(result.missing.contains("time"))
+        #expect(!result.missing.contains("date"))
+    }
+
+    @Test func timeWithoutADayIsFlagged() {
+        let fields = FlyerScanner.parse(lines: ["Trivia", "8pm"], now: now)
+        #expect(fields.hasTime && !fields.hasDay)
+        #expect(Calendar.current.component(.hour, from: fields.date!) == 20)
+    }
+
+    @Test func aDateWithoutAYearMeansTheNextOne() {
+        let fields = FlyerScanner.parse(lines: ["Winter Kickoff", "Jan 10", "5pm"], now: now)
+        #expect(parts(fields.date)?.year == 2027)
+        #expect(parts(fields.date)?.month == 1)
+        let printedYear = FlyerScanner.parse(lines: ["Reunion", "Jan 10, 2026", "5pm"], now: now)
+        #expect(parts(printedYear.date)?.year == 2026)
+    }
+
+    @Test func nothingDatelikeMeansNoDate() {
+        let fields = FlyerScanner.parse(lines: ["Free pizza", "Bring a friend"], now: now)
+        #expect(fields.date == nil && !fields.hasDay && !fields.hasTime)
+    }
+
+    // MARK: Review screen → Host form
+
+    @Test func organizerGoesAtTheTopOfTheDescriptionOnce() {
+        #expect(FlyerFields.details("Climbing night.", organizer: "Davis Climbing Club")
+                == "Hosted by Davis Climbing Club.\n\nClimbing night.")
+        #expect(FlyerFields.details("", organizer: "Davis Climbing Club") == "Hosted by Davis Climbing Club.")
+        #expect(FlyerFields.details("Davis Climbing Club's social.", organizer: "davis climbing club")
+                == "Davis Climbing Club's social.")
+        #expect(FlyerFields.details("  Climbing night. ", organizer: "  ") == "Climbing night.")
+    }
+
+    @Test func failedScansExplainWhatToDo() {
+        #expect(FailedScan(data: Data(), error: CocoaError(.fileReadCorruptFile)).message.contains("couldn't be opened"))
+        #expect(FailedScan(data: Data(), error: URLError(.timedOut)).message.contains("connection"))
+        #expect(FailedScan(data: Data(), error: CocoaError(.fileReadUnknown)).message.contains("blurry"))
+    }
+}
+
+/// Instagram link on events. (Kept in this file so the Xcode project needn't change.)
+@Suite("Instagram link")
+struct InstagramLinkTests {
+    @Test(arguments: [
+        ("@DavisClimbing", "davisclimbing"),
+        ("davis.climbing_club", "davis.climbing_club"),
+        ("  @ucd_aggies ", "ucd_aggies"),
+        ("https://www.instagram.com/davisclimbing/", "davisclimbing"),
+        ("instagram.com/davisclimbing?hl=en", "davisclimbing"),
+        ("http://instagr.am/davisclimbing", "davisclimbing"),
+    ])
+    func acceptsHandlesAndProfileLinks(input: String, handle: String) {
+        #expect(InstagramHandle.normalize(input) == handle)
+    }
+
+    @Test(arguments: ["", "  ", "@", "two words", ".startsdot", "ends.", "dou..ble", String(repeating: "x", count: 31),
+                      "bad!char", "https://www.instagram.com/p/Cx123/", "https://twitter.com/davisclimbing",
+                      "davisclimbing.com/about"])
+    func rejectsEverythingElse(input: String) {
+        #expect(InstagramHandle.normalize(input) == nil)
+    }
+
+    @Test func optionalButValidated() {
+        #expect(InstagramHandle.isAcceptable(""))
+        #expect(InstagramHandle.isAcceptable("@club"))
+        #expect(!InstagramHandle.isAcceptable("not a handle"))
+    }
+
+    @Test func linksOpenTheAppThenTheBrowser() {
+        #expect(InstagramHandle.appURL("davisclimbing")?.absoluteString == "instagram://user?username=davisclimbing")
+        #expect(InstagramHandle.webURL("davisclimbing")?.absoluteString == "https://www.instagram.com/davisclimbing/")
+    }
+
+    @Test func draftToEventToServerAndBack() throws {
+        var draft = ActivityDraft()
+        draft.title = "Climbing Social"
+        draft.place = Place(name: "ARC", address: "Davis", latitude: 38.54, longitude: -121.76)
+        draft.instagram = "https://instagram.com/DavisClimbing/"
+        let activity = try #require(draft.activity)
+        #expect(activity.instagram == "davisclimbing")
+        #expect(activity.serverBody().instagram == "davisclimbing")
+
+        draft.instagram = "  "
+        #expect(draft.activity?.instagram == nil)
+    }
+
+    @Test func serverEventsCarryTheHandle() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        let json = #"{"id":"seed-001","title":"Climb","description":"","start_time":"2026-12-01T19:00:00Z","#
+            + #""category":"sports","instagram":"davisclimbing"}"#
+        let event = try decoder.decode(EventServer.ServerEvent.self, from: Data(json.utf8))
+        #expect(Activity(server: event, hostID: UUID()).instagram == "davisclimbing")
+        // Older servers don't send it.
+        let old = try decoder.decode(EventServer.ServerEvent.self, from: Data(json.replacingOccurrences(of: #","instagram":"davisclimbing""#, with: "").utf8))
+        #expect(Activity(server: old, hostID: UUID()).instagram == nil)
+    }
+
+    @Test func flyerHandleFillsTheField() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let reading = try decoder.decode(ClaudeFlyerReader.Reading.self,
+                                         from: Data(#"{"title":"Climb","instagram":"@DavisClimbing"}"#.utf8))
+        #expect(reading.result(image: UIImage()).instagram == "davisclimbing")
+        let junk = try decoder.decode(ClaudeFlyerReader.Reading.self, from: Data(#"{"instagram":"follow us!"}"#.utf8))
+        #expect(junk.result(image: UIImage()).instagram == "")
+    }
+}

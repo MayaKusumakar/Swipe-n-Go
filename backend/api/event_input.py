@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime
 
 from models import LEVELS
+from services import instagram as instagram_handle
 
 MAX_TITLE = 120
 MAX_DESCRIPTION = 2000
@@ -121,6 +122,18 @@ def parse_new_event(body, now):
     if not isinstance(location_private, bool):
         raise InvalidEventError("location_private", "location_private must be true or false")
 
+    # Optional. "@handle", "handle" or an instagram.com profile link; stored as the bare handle.
+    instagram = body.get("instagram")
+    if instagram is not None:
+        if not isinstance(instagram, str):
+            raise InvalidEventError("instagram", "instagram must be a string")
+        if instagram.strip():
+            instagram = instagram_handle.normalize(instagram)
+            if instagram is None:
+                raise InvalidEventError("instagram", "instagram must be an Instagram handle like @ucdavis or a profile link")
+        else:
+            instagram = None
+
     return {
         "event_id": event_id,
         "title": _text(body, "title", MAX_TITLE, required=True),
@@ -138,4 +151,5 @@ def parse_new_event(body, now):
         "level": level,
         "requires_approval": requires_approval,
         "location_private": location_private,
+        "instagram": instagram,
     }

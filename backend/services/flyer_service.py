@@ -6,12 +6,14 @@ print. Claude returns structured fields; the app shows them for the host to
 check before anything is posted. Images are never stored.
 """
 import base64
+import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, time
 
 from pydantic import BaseModel, Field
 
 from services import claude_call
+from services import instagram as instagram_handle
 from services.claude_call import MODEL, clip
 
 # The app's categories (ios/Partner/Models/Models.swift, ActivityCategory).
@@ -31,6 +33,8 @@ class _FlyerOutput(BaseModel):
     description: str = Field(description="1-3 plain sentences about the event using only what the flyer says.")
     cost: str = Field(description='"Free", a price like "$5", or empty if not mentioned.')
     category: str = Field(description="The best fit from: " + ", ".join(CATEGORIES) + ". Empty if none fits.")
+    organizer: str = Field(default="", description="The club or organization hosting the event, as printed. Empty if not found.")
+    instagram: str = Field(default="", description="The event's or club's Instagram handle or link, as printed (e.g. @davisclimbing). Empty if not found.")
     missing: list[str] = Field(description="Which of title, date, time, location, cost you could not read or are unsure about.")
 
 
@@ -47,6 +51,8 @@ class FlyerReading:
     category: str
     missing: list[str] = field(default_factory=list)
     model: str = MODEL
+    organizer: str = ""
+    instagram: str = ""
 
     def to_dict(self):
         return {
@@ -59,6 +65,8 @@ class FlyerReading:
             "description": self.description,
             "cost": self.cost,
             "category": self.category,
+            "organizer": self.organizer or None,
+            "instagram": self.instagram or None,
             "missing": self.missing,
             "model": self.model,
         }
@@ -78,6 +86,8 @@ is given ("7-9pm"), fill both start and end.
 - Location: put only the venue or building name in location_name. Put the printed street address \
 and room or suite in address. Leave either field empty when the flyer omits it.
 - Cost: read the price of admission. Free food, parking, or giveaways do not mean free admission.
+- Organizer: the club or group putting on the event, if printed (not a sponsor).
+- Instagram: an Instagram handle (@name) or instagram.com link printed on the flyer. Never guess one.
 - Title: the event's name, not the club's slogan or a sponsor. Fix ALL-CAPS into normal \
 capitalization.
 - Description: 1-3 short sentences a student would find useful (what it is, who it's for, what to \
@@ -113,19 +123,21 @@ class FlyerService:
             ],
             output_format=_FlyerOutput,
         )
-        return self._clean(output)
+        return self._clean(output, now)
 
-    def _clean(self, o):
+    def _clean(self, o, now):
         """Trust nothing blindly: real times only, known categories, short text."""
         if not o.is_event_flyer:
             return FlyerReading(False, "", None, None, "", "", "", "", "", list(FIELDS), self._model)
-        start = _parse_time(o.start_time)
-        end = _parse_time(o.end_time)
-        if start and end and end <= start:
+        start, start_has_time = _parse_time(o.start_time, now)
+        end, end_has_time = _parse_time(o.end_time, now)
+        if not end_has_time or (start and end and end <= start):
             end = None
         missing = [f for f in dict.fromkeys(m.strip().lower() for m in o.missing) if f in FIELDS]
         if start is None:
             missing = list(dict.fromkeys(missing + ["date", "time"]))
+        elif not start_has_time:
+            missing = list(dict.fromkeys(missing + ["time"]))
         return FlyerReading(
             is_event_flyer=True,
             title=clip(o.title, 120),
@@ -138,12 +150,32 @@ class FlyerService:
             category=o.category if o.category in CATEGORIES else "",
             missing=missing,
             model=self._model,
+            organizer=clip(o.organizer, 120),
+            instagram=instagram_handle.normalize(o.instagram) or "",
         )
 
 
-def _parse_time(value):
+_DATE_ONLY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _parse_time(value, now):
+    """Claude's time → (an aware datetime or None, whether it had a time of day).
+
+    Claude is asked for ISO-8601 with the UTC offset from `now`, but sometimes leaves the offset
+    off ("2026-11-23T18:00:00") or gives only the day ("2026-11-23"). Those used to be thrown away,
+    so a flyer's date never reached the app. Now a missing offset means the host's time zone (from
+    `now`), and a bare day is kept at noon with the time flagged for the host to fill in.
+    """
+    text = (value or "").strip().replace("Z", "+00:00")
+    if not text:
+        return None, False
     try:
-        parsed = datetime.fromisoformat((value or "").replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(text)
     except ValueError:
-        return None
-    return parsed if parsed.tzinfo else None
+        return None, False
+    has_time = not _DATE_ONLY.match(text)
+    if not has_time:
+        parsed = datetime.combine(parsed.date(), time(12, 0))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=now.tzinfo)
+    return parsed, has_time

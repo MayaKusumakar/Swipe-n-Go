@@ -7,7 +7,7 @@ are lost when it stops.
 import threading
 from dataclasses import replace
 
-from models import APPROVED
+from models import APPROVED, Cancellation
 
 
 class InMemoryEventRepository:
@@ -16,6 +16,7 @@ class InMemoryEventRepository:
         self._lock = threading.Lock()
         self._attendees = {}  # (event_id, attendee_id) -> Attendee
         self._covers = {}     # event_id -> JPEG bytes
+        self._cancellations = {}  # event_id -> Cancellation
 
     def list_upcoming(self, now, limit):
         with self._lock:
@@ -32,6 +33,25 @@ class InMemoryEventRepository:
     def get(self, event_id):
         with self._lock:
             return next((event for event in self._events if event.id == event_id), None)
+
+    def delete_event(self, event_id, cancelled_at):
+        with self._lock:
+            event = self._find(event_id)
+            if event is None:
+                return None
+            guests = [attendee_id for (eid, attendee_id) in self._attendees if eid == event_id]
+            cancellation = Cancellation.for_event(event, guests, cancelled_at)
+            if guests:
+                self._cancellations[event_id] = cancellation
+            self._events = [e for e in self._events if e.id != event_id]
+            self._attendees = {key: a for key, a in self._attendees.items() if key[0] != event_id}
+            self._covers.pop(event_id, None)
+        return cancellation
+
+    def list_cancellations_for(self, user_id, limit):
+        with self._lock:
+            found = [c for c in self._cancellations.values() if user_id in c.attendee_ids]
+        return sorted(found, key=lambda c: c.cancelled_at, reverse=True)[:limit]
 
     def rename_host(self, host_id, host_name):
         with self._lock:
@@ -107,6 +127,16 @@ class InMemoryEventRepository:
             if attendee is not None and attendee.status == APPROVED:
                 attendee = replace(attendee, checked_in=checked_in)
                 self._attendees[key] = attendee
+            return attendee
+
+    def set_attendance(self, event_id, attendee_id, attended, feedback, answered_at):
+        with self._lock:
+            key = (event_id, attendee_id)
+            attendee = self._attendees.get(key)
+            if attendee is None:
+                return None
+            attendee = replace(attendee, attended=attended, feedback=feedback, feedback_at=answered_at)
+            self._attendees[key] = attendee
             return attendee
 
     def save_attendee(self, attendee):

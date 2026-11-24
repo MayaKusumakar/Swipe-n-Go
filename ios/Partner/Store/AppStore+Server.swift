@@ -70,11 +70,15 @@ extension AppStore {
             let events = try await EventServer.fetchEvents(baseURL: url)
             merge(events)
             serverStatus = .online(events: events.count, at: .now)
+            await syncCancellations(baseURL: url)
             await uploadPendingHostedEvents()
             await syncCovers(baseURL: url)
             await syncSaved(baseURL: url)
             await syncName(baseURL: url)
             await syncAttendance(baseURL: url)
+            if attendanceAnswers.values.contains(where: { $0.needsSync == true }) {
+                await sendPendingAttendance(baseURL: url)
+            }
         } catch let error as EventServer.ServerError where error.status == 401 || error.status == 403 {
             // The server no longer accepts this sign-in (expired, revoked, or not @ucdavis.edu).
             auth.signOut(message: error.message)
@@ -111,7 +115,7 @@ extension AppStore {
         let before = activities
         var newHosts: [Person] = []
         var fetched = Set<UUID>()
-        for event in events {
+        for event in events where !deletedServerIDs.contains(event.id) {
             let localID = EventServer.localID(for: event.id)
             fetched.insert(localID)
             if let i = activities.firstIndex(where: { $0.id == localID }) {
@@ -314,6 +318,14 @@ extension AppStore {
 
     // MARK: - Attendees on the server (see docs/API.md)
 
+    /// Plans you joined or asked to join that the host deleted: tell you, once (the plan is then gone).
+    private func syncCancellations(baseURL url: URL) async {
+        guard let cancelled = try? await EventServer.cancelledEvents(baseURL: url) else { return }
+        for c in cancelled {
+            hostCancelled(EventServer.localID(for: c.eventId), hostName: c.hostName)
+        }
+    }
+
     /// Hosts pick up requests from other phones; guests find out when a host
     /// approved them, which is when a private location is shared.
     private func syncAttendance(baseURL url: URL) async {
@@ -387,7 +399,7 @@ extension AppStore {
         }
     }
 
-    private static func describe(_ error: Error) -> String {
+    static func describe(_ error: Error) -> String {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .cannotConnectToHost, .cannotFindHost, .timedOut, .networkConnectionLost:

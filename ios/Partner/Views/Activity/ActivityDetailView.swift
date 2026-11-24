@@ -4,14 +4,18 @@ import MapKit
 struct ActivityDetailView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     let activity: Activity
     var isSheet = false
 
     @State private var celebration: Celebration?
     @State private var confirmLeave = false
     @State private var confirmCancel = false
+    /// Set by the delete sheet; acted on once the sheet is gone, so the two animations don't fight.
+    @State private var cancelConfirmed = false
     @State private var removing: Person?
     @State private var showCheckIn = false
+    @State private var showFeedback = false
 
     private var live: Activity { store.activity(activity.id) ?? activity }
     private var host: Person? { store.person(live.hostID) }
@@ -58,23 +62,29 @@ struct ActivityDetailView: View {
         .fullScreenCover(item: $celebration) { c in
             CelebrationView(celebration: c).presentationBackground(.clear)
         }
+        .sheet(isPresented: $showFeedback) {
+            if store.isHost(live), let eventID = live.serverID, let baseURL = store.serverURL {
+                HostFeedbackView(eventID: eventID, baseURL: baseURL, title: live.title)
+            }
+        }
         .sheet(isPresented: $showCheckIn) {
             if store.isHost(live), let eventID = live.serverID, let baseURL = store.serverURL {
                 HostCheckInView(eventID: eventID, baseURL: baseURL, title: live.title)
             }
         }
-        .confirmationDialog("Leave this plan?", isPresented: $confirmLeave, titleVisibility: .visible) {
-            Button("Leave plan", role: .destructive) { withAnimation { store.leave(live) } }
+        // "Delete Event" is how a guest leaves. It removes the event for you only; it still happens for others.
+        .confirmationDialog("Delete this event?", isPresented: $confirmLeave, titleVisibility: .visible) {
+            Button("Delete Event", role: .destructive) { withAnimation { store.leave(live) } }
         } message: {
-            Text("\(host?.firstName ?? "The host") will be notified. You can always request to join again.")
+            Text("You'll leave the plan and its group chat. It still happens for everyone else. \(host?.firstName ?? "The host") will be notified, and you can always request to join again.")
         }
-        .confirmationDialog("Cancel this plan?", isPresented: $confirmCancel, titleVisibility: .visible) {
-            Button("Cancel plan", role: .destructive) {
-                store.cancel(live)
-                dismiss()
-            }
-        } message: {
-            Text("Everyone who joined will be notified.")
+        .sheet(isPresented: $confirmCancel, onDismiss: {
+            guard cancelConfirmed else { return }
+            cancelConfirmed = false
+            withAnimation(.snappy) { store.cancel(live) }
+            dismiss()
+        }) {
+            CancelPlanSheet(activity: live) { cancelConfirmed = true }
         }
         .confirmationDialog("Remove \(removing?.firstName ?? "this person")?",
                             isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
@@ -157,6 +167,18 @@ struct ActivityDetailView: View {
 
     private var hostTools: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // After the event: what guests said ("Did you attend?" answers and feedback).
+            if live.isPast {
+                if live.serverID != nil, store.serverURL != nil {
+                    hostToolRow("Guest feedback", subtitle: "See who went and what they said",
+                                symbol: "text.bubble.fill") { showFeedback = true }
+                } else {
+                    Label("Guest feedback is collected for events shared through your team's server.",
+                          systemImage: "text.bubble")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
             if live.serverID != nil, store.serverURL != nil {
                 Button {
                     showCheckIn = true
@@ -185,11 +207,31 @@ struct ActivityDetailView: View {
             ForEach(store.requests(for: live)) { req in
                 RequestRow(request: req)
             }
-            Button(role: .destructive) { confirmCancel = true } label: {
-                Label("Cancel plan", systemImage: "xmark.circle")
-                    .font(.subheadline.weight(.semibold))
-            }
         }
+    }
+
+    private func hostToolRow(_ title: String, subtitle: String, symbol: String,
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.headline)
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(14)
+            .background(.background, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Host
@@ -237,7 +279,39 @@ struct ActivityDetailView: View {
                 if live.isLocationPrivate { TagPill(text: "Private location", tint: .orange) }
                 ForEach(live.tags, id: \.self) { TagPill(text: $0) }
             }
+            if let handle = live.instagram { instagramLink(handle) }
         }
+    }
+
+    /// Opens the Instagram app on the profile, or instagram.com in the browser if the app isn't installed.
+    private func instagramLink(_ handle: String) -> some View {
+        Button {
+            guard let app = InstagramHandle.appURL(handle) else { return }
+            openURL(app) { opened in
+                if !opened, let web = InstagramHandle.webURL(handle) { openURL(web) }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "camera.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(live.category.color)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("@\(handle)").font(.subheadline.weight(.semibold))
+                    Text("Open on Instagram").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(12)
+            .background(.background, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Instagram: @\(handle)")
+        .accessibilityHint("Opens Instagram")
     }
 
     // MARK: Going
@@ -382,19 +456,16 @@ struct ActivityDetailView: View {
 
     @ViewBuilder private var bottomBar: some View {
         HStack(spacing: 12) {
+            // Host and guest get the same layout: group chat, then the red action at the bottom right.
             if store.isHost(live) {
-                chatButton(title: "Open group chat")
-            } else if store.isGoing(live) {
-                Button(role: .destructive) { confirmLeave = true } label: {
-                    Label("Leave Plan", systemImage: "rectangle.portrait.and.arrow.right")
-                        .font(.headline)
-                        .foregroundStyle(.red)
-                        .frame(height: 54)
-                        .padding(.horizontal, 18)
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                }
-                .buttonStyle(.plain)
                 chatButton(title: "Group chat")
+                // An event that's over can't be cancelled.
+                if !live.isPast {
+                    destructiveButton("Cancel Event", symbol: "xmark.circle") { confirmCancel = true }
+                }
+            } else if store.isGoing(live) {
+                chatButton(title: "Group chat")
+                destructiveButton("Delete Event", symbol: "trash") { confirmLeave = true }
             } else if store.isPending(live) {
                 HStack(spacing: 10) {
                     ProgressView()
@@ -438,6 +509,21 @@ struct ActivityDetailView: View {
         .padding(.bottom, 4)
         .animation(.snappy, value: store.isGoing(live))
         .animation(.snappy, value: store.isPending(live))
+    }
+
+    /// The red capsule at the bottom right: Cancel Event (host) or Delete Event (guest).
+    private func destructiveButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(role: .destructive, action: action) {
+            Label(title, systemImage: symbol)
+                .font(.headline)
+                .foregroundStyle(.red)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(height: 54)
+                .padding(.horizontal, 18)
+                .glassEffect(.regular.interactive(), in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func chatButton(title: String) -> some View {
@@ -505,6 +591,72 @@ struct RequestRow: View {
     }
 }
 
+
+/// Instagram-style confirmation for deleting a plan you host: a small bottom sheet with one clear
+/// destructive choice. The caller deletes once the sheet is gone (optimistic, see `AppStore.cancel`).
+struct CancelPlanSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let activity: Activity
+    let onConfirm: () -> Void
+    @State private var height: CGFloat = 280
+    @State private var confirmed = false
+
+    private var message: String {
+        let joined = activity.attendeeIDs.count
+        guard joined > 0 else { return "It's deleted for everyone and can't be undone." }
+        let people = joined == 1 ? "The 1 person who joined" : "The \(joined) people who joined"
+        return "It's deleted for everyone and can't be undone. \(people), and anyone who asked to join, will be told it was cancelled."
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 6) {
+                Text("Cancel “\(activity.title)”?")
+                    .font(.headline)
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 28)
+            .padding(.top, 30)
+            .padding(.bottom, 18)
+
+            Divider()
+            row("Cancel Event", symbol: "xmark.circle", role: .destructive) {
+                confirmed = true
+                onConfirm()
+                dismiss()
+            }
+            Divider().padding(.leading, 60)
+            row("Keep Event", symbol: "arrow.uturn.backward", role: nil) { dismiss() }
+                .padding(.bottom, 8)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        .presentationDetents([.height(height)])
+        .presentationDragIndicator(.visible)
+        .sensoryFeedback(.warning, trigger: confirmed) { _, new in new }
+    }
+
+    private func row(_ title: String, symbol: String, role: ButtonRole?, action: @escaping () -> Void) -> some View {
+        Button(role: role, action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: symbol)
+                    .font(.system(size: 19, weight: .medium))
+                    .frame(width: 28)
+                Text(title)
+                    .font(.body.weight(role == .destructive ? .semibold : .regular))
+                Spacer()
+            }
+            .foregroundStyle(role == .destructive ? Color.red : Color.primary)
+            .padding(.horizontal, 20)
+            .frame(height: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 private struct HostCheckInView: View {
     @Environment(\.dismiss) private var dismiss
@@ -632,6 +784,220 @@ private struct HostCheckInView: View {
             }
         } catch {
             errorMessage = "Couldn't update \(guest.name). \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Guest feedback (host, after the event)
+
+/// What guests said after the event: their "Did you attend?" answers and any feedback.
+/// Read from the guest list (GET /api/events/<id>/attendees), so it's always current.
+struct HostFeedbackView: View {
+    @Environment(\.dismiss) private var dismiss
+    let eventID: String
+    let baseURL: URL
+    let title: String
+
+    @State private var summary: EventServer.FeedbackSummary?
+    @State private var loading = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let summary {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(title).font(.subheadline).foregroundStyle(.secondary)
+                            Text("\(summary.answeredCount) of \(summary.guestCount) guests answered")
+                                .font(.title2.bold())
+                                .monospacedDigit()
+                            if summary.answeredCount > 0 {
+                                Text("\(summary.attendedCount) went · \(summary.missed.count) didn't make it")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    if summary.guestCount == 0 {
+                        ContentUnavailableView("No guests", systemImage: "person.2",
+                                               description: Text("Nobody had joined this event, so there's no feedback."))
+                    } else if summary.answeredCount == 0 {
+                        ContentUnavailableView("No answers yet", systemImage: "text.bubble",
+                                               description: Text("Guests are asked \"Did you attend?\" the next time they open the app after the event."))
+                    }
+                    if !summary.comments.isEmpty {
+                        Section("What guests said") {
+                            ForEach(summary.comments) { guest in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    guestName(guest)
+                                    Text(guest.feedback ?? "")
+                                        .font(.body)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(.vertical, 4)
+                                .accessibilityElement(children: .combine)
+                            }
+                        }
+                    }
+                    names("Went, no comment", summary.attendedQuietly)
+                    names("Didn't make it", summary.missed)
+                    names("Haven't answered yet", summary.unanswered)
+                }
+                if loading && summary == nil {
+                    ProgressView("Loading feedback…")
+                }
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage).foregroundStyle(.secondary)
+                        Button("Try again") { Task { await load() } }
+                            .disabled(loading)
+                    }
+                }
+            }
+            .navigationTitle("Guest feedback")
+            .navigationBarTitleDisplayMode(.inline)
+            .refreshable { await load() }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .task { await load() }
+        }
+    }
+
+    @ViewBuilder private func names(_ header: String, _ guests: [EventServer.Attendee]) -> some View {
+        if !guests.isEmpty {
+            Section(header) {
+                ForEach(guests) { guestName($0) }
+            }
+        }
+    }
+
+    private func guestName(_ guest: EventServer.Attendee) -> some View {
+        HStack(spacing: 8) {
+            Text(guest.name).font(.body.weight(.medium))
+            if guest.checkedIn == true {
+                Label("Checked in", systemImage: "checkmark.circle.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+        }
+    }
+
+    private func load() async {
+        guard !loading else { return }
+        loading = true
+        errorMessage = nil
+        defer { loading = false }
+        do {
+            summary = EventServer.FeedbackSummary(try await EventServer.attendees(eventID: eventID, baseURL: baseURL))
+        } catch {
+            errorMessage = "Couldn't load feedback. \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - After a plan: "Did you attend?"
+
+/// Shown when the app opens after a plan you joined has ended. Yes → optional feedback for the host
+/// (can be skipped); No → done. Closing it any other way counts as dismissed (see AppStore.finishAttendancePrompt).
+struct AttendancePromptView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let activity: Activity
+
+    @State private var step: Step = .ask
+    @State private var feedback = ""
+    @FocusState private var writing: Bool
+
+    private enum Step { case ask, feedback }
+
+    private var hostName: String { store.person(activity.hostID)?.firstName ?? "the host" }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 14) {
+                ActivityCover(category: activity.category, photoData: activity.coverPhotoData)
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(activity.title).font(.headline).lineLimit(2)
+                    Text("\(activity.date.friendlyDateTime) · \(store.placeLabel(activity))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+
+            switch step {
+            case .ask: ask
+            case .feedback: feedbackForm
+            }
+        }
+        .padding(24)
+        .presentationDetents([.height(step == .ask ? 300 : 400)])
+        .presentationDragIndicator(.visible)
+        .animation(.snappy, value: step)
+        .sensoryFeedback(.success, trigger: step) { _, new in new == .feedback }
+    }
+
+    private var ask: some View {
+        VStack(spacing: 12) {
+            Text("Did you attend?")
+                .font(.title2.weight(.bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                store.recordAttendance(activity, response: .attended)
+                step = .feedback
+                writing = true
+            } label: {
+                Label("Yes, I went", systemImage: "checkmark")
+            }
+            .buttonStyle(PrimaryButtonStyle(tint: AnyShapeStyle(activity.category.gradient)))
+            Button {
+                store.recordAttendance(activity, response: .missed)
+                dismiss()
+            } label: {
+                Text("No, I didn't make it")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var feedbackForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Glad you made it!")
+                .font(.title2.weight(.bold))
+            Text("Anything you'd like \(hostName) to know? Optional.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            TextField("What went well, what could be better…", text: $feedback, axis: .vertical)
+                .lineLimit(3...5)
+                .focused($writing)
+                .padding(12)
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            HStack(spacing: 12) {
+                Button("Skip") { dismiss() }
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                Button("Send to \(hostName)") {
+                    store.recordAttendance(activity, response: .attended, feedback: feedback)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(activity.category.color)
+                .disabled(feedback.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
         }
     }
 }

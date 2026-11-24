@@ -116,6 +116,7 @@ Code: `backend/api/auth.py` (routes and the check before every request), `backen
 | `requires_approval` | boolean | default `false`. Always `true` when `location_private` is true |
 | `location_private` | boolean | default `false`. The location is shared only with the host and approved attendees, through `GET /api/events/<id>/location` |
 | `summary` | string \| null | short "what it is / who's going" blurb written by the summaries job (see **Summaries**). `null` until the job has run. Never mentions the location |
+| `instagram` | string \| null | the event's or club's Instagram handle, bare and lowercase (`"davisclimbing"`, no `@`). The app links to `instagram.com/<handle>` |
 
 `capacity` counts the host, like the app's "spots left": an event is full when `attendee_count` reaches `capacity - 1`.
 
@@ -218,6 +219,7 @@ Request body (JSON). Required: `title`, `start_time`, `location_name`, `category
 - Text fields are trimmed.
 
 - `location_private` is optional (`true`/`false`). When `true`, the server also sets `requires_approval` to `true`.
+- `instagram` is optional: `"@davisclimbing"`, `"davisclimbing"` or a profile link like `"https://www.instagram.com/davisclimbing/"`. It's stored as the bare lowercase handle. Handles follow Instagram's rules (1–30 letters, digits, `.` and `_`; no leading, trailing or doubled `.`); post and reel links, other sites, and anything else are `400`. `null`, `""` or leaving it out means none. Code: `backend/services/instagram.py`.
 
 Response `201`: the created Event object with its full location. The signed-in user is the host (`host_id`), and `host_name` comes from their account.
 
@@ -227,6 +229,27 @@ Errors:
 - `503 datastore_unavailable`
 
 Code: `backend/api/events.py` (route), `backend/api/event_input.py` (validation), `services/event_service.py`, `repositories/`.
+
+## DELETE /api/events/\<id\>
+
+Host only. Deletes the event, all its attendees (join requests and approved guests), and its cover photo. Response `204` with no body. The app calls it from "Cancel plan".
+
+Errors:
+- `403 forbidden`: you're not the host (sample events without a `host_id` can't be deleted)
+- `404 not_found`: no such event. The app treats this as already deleted.
+- `503 datastore_unavailable`
+
+Everyone who had joined or asked to join is told: a `CancelledEvent` entity (keyed by the event id: title, host name, start time, `cancelled_at`, and the list of their account ids) is left behind and returned by `GET /api/events/cancelled` below. Nothing is left if nobody had joined. Users' saved lists may still contain the id; the app ignores ids it doesn't have.
+
+Code: `backend/api/events.py`, `services/event_service.py` (`delete_event`), `repositories/` (`delete_event`).
+
+## GET /api/events/cancelled
+
+Plans the signed-in user joined or asked to join that the host has since deleted, most recently cancelled first (at most 50). The app checks it on every sync and tells the guest once. Response `200`:
+```json
+{"events": [{"event_id": "6f1c…", "title": "Pickup Soccer", "host_name": "Avery", "start_time": "2026-12-01T19:00:00+00:00", "cancelled_at": "2026-11-23T18:00:00+00:00"}]}
+```
+The guest list isn't returned. Errors: `401`, `503 datastore_unavailable`. One Datastore query on a list property (built-in index).
 
 ## POST /api/planner
 
@@ -316,13 +339,19 @@ Response `200`:
   "description": "Beginner-friendly climbing night with free gear rental.",
   "cost": "Free",
   "category": "sports",
+  "organizer": "Davis Climbing Club",
+  "instagram": "davisclimbing",
   "missing": [],
   "model": "claude-opus-5-5"
 }
 ```
-- `missing` lists what wasn't on the flyer or wasn't clear: any of `title`, `date`, `time`, `location`, `cost`. The app marks those for the host to fill in. When there's no start time, `date` and `time` are always listed.
+- `missing` lists what wasn't on the flyer or wasn't clear: any of `title`, `date`, `time`, `location`, `cost`. The app marks those for the host to fill in. When there's no start time, `date` and `time` are always listed; when only the day was found, `time` is.
 - `category` is one of the app's club categories (`sports, outdoors, wellness, cultural, arts, music, academic, career, tech, service, greek, faith, gaming, social`), or `""`.
 - `start_time` / `end_time` may be `null`. An end time that isn't after the start is dropped.
+- Times always carry a UTC offset. If Claude leaves the offset off, the host's offset from `now` is used. If Claude gives only a day (`2026-11-23`), `start_time` is that day at 12:00 and `time` is added to `missing`; an end given as only a day is dropped. Anything that isn't an ISO-8601 date is `null`.
+- `organizer`: the club or group hosting the event, as printed, or `null`. The app adds it to the top of the description ("Hosted by …").
+- `instagram`: an Instagram handle printed on the flyer, normalized like the event field, or `null` (also when what Claude read isn't a valid handle). The app fills the event's Instagram field with it.
+- Text fields (`title`, `location_name`, `address`, `description`, `cost`, `category`) are `""` when not found, so app builds from before `organizer` was added still decode. The app accepts `null` for any field.
 - If the image isn't an event flyer, `is_event_flyer` is `false` and the other fields are empty.
 
 Errors:
@@ -387,7 +416,7 @@ Your own entry for this event, e.g. to see when the host approved you. `404 not_
 
 ### GET /api/events/\<id\>/attendees
 
-Host only. Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`. Checked-in guests include `"checked_in": true`. An omitted field means the guest has yet to check in.
+Host only. Response `200`: `{"attendees": [ /* Attendee objects, oldest first */ ]}`. Checked-in guests include `"checked_in": true`. An omitted field means the guest has yet to check in. Guests who answered "Did you attend?" (below) also include `"attended": true|false` and `"feedback": "…"|null`; those who haven't answered don't have these fields.
 
 ### POST /api/events/\<id\>/attendees/\<attendee_id\>/approve
 
@@ -398,6 +427,14 @@ Errors: `409 event_full` (the request stays `pending`).
 ### PUT /api/events/\<id\>/attendees/\<attendee_id\>/check-in
 
 Host only. Send `{"checked_in": true}` to mark an approved guest as arrived or `{"checked_in": false}` to undo. Response `200` includes the updated Attendee with its `checked_in` value. Retrying the same value has no additional effect. Check-in leaves RSVP status and capacity unchanged.
+
+### PUT /api/events/\<id\>/attendees/me/attendance
+
+After the event, an approved guest says whether they went, with optional feedback for the host. The app asks once per event ("Did you attend?") when it's opened after the event ends. Body: `{"attended": true, "feedback": "Great night!"}`.
+- `attended` (boolean) is required. `feedback` is optional, up to 1000 characters, trimmed; `""` counts as none. Feedback is only kept when `attended` is `true`.
+- Answering again replaces the earlier answer. Stored on the guest's Attendee entity (`attended`, `feedback` unindexed, `feedback_at`).
+
+Response `200`: your Attendee object plus `attended` and `feedback`. Errors: `400 invalid_attendance`, `403` (you're not an approved guest, or the event hasn't ended: its `end_time`, or `start_time` if it has none), `404`. The host reads the answers in `GET /api/events/<id>/attendees`; the app shows them on the event's Guest feedback screen once it has ended.
 
 ### DELETE /api/events/\<id\>/attendees/\<attendee_id\>
 
