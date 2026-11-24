@@ -40,7 +40,39 @@ enum EventServer {
         var name: String
         var status: String
         var checkedIn: Bool?
+        /// The guest's "Did you attend?" answer after the event (nil = not answered), and their feedback.
+        var attended: Bool?
+        var feedback: String?
         var isApproved: Bool { status == "approved" }
+    }
+
+    /// The host's view of what guests said after an event, grouped for the feedback screen.
+    struct FeedbackSummary {
+        /// Went and left a comment.
+        var comments: [Attendee] = []
+        /// Went, no comment.
+        var attendedQuietly: [Attendee] = []
+        var missed: [Attendee] = []
+        var unanswered: [Attendee] = []
+
+        var guestCount: Int { comments.count + attendedQuietly.count + missed.count + unanswered.count }
+        var answeredCount: Int { guestCount - unanswered.count }
+        var attendedCount: Int { comments.count + attendedQuietly.count }
+
+        /// Approved guests only (requests that were never approved weren't asked), each list by name.
+        init(_ attendees: [Attendee]) {
+            for guest in attendees where guest.isApproved {
+                let note = guest.feedback?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                switch guest.attended {
+                case true?: if note.isEmpty { attendedQuietly.append(guest) } else { comments.append(guest) }
+                case false?: missed.append(guest)
+                case nil: unanswered.append(guest)
+                }
+            }
+            for list in [\FeedbackSummary.comments, \.attendedQuietly, \.missed, \.unanswered] {
+                self[keyPath: list].sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            }
+        }
     }
 
     struct Location: Decodable {

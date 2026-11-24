@@ -287,6 +287,11 @@ final class AppStore {
         activities.filter { isHost($0) && !$0.isPast }.sorted { $0.date < $1.date }
     }
 
+    /// Events you hosted that are over, most recent first (where hosts find guest feedback).
+    var pastHosting: [Activity] {
+        activities.filter { isHost($0) && $0.isPast }.sorted { $0.date > $1.date }
+    }
+
     var saved: [Activity] {
         activities.filter { savedIDs.contains($0.id) && !$0.isPast }.sorted { $0.date < $1.date }
     }

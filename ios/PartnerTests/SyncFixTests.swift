@@ -100,3 +100,35 @@ struct CancelledPlanTests {
         #expect(EventServer.localID(for: c.eventId) == UUID(uuidString: "6F1C2B9E-1D2A-4C7B-9A51-0D6E2F3A4B5C"))
     }
 }
+
+/// The host's Guest feedback screen: how the guest list is grouped.
+struct HostFeedbackTests {
+    private func guests(_ json: String) throws -> [EventServer.Attendee] {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode([EventServer.Attendee].self, from: Data(json.utf8))
+    }
+
+    @Test func guestsAreGroupedByAnswer() throws {
+        // The shape GET /api/events/<id>/attendees answers with.
+        let summary = EventServer.FeedbackSummary(try guests(#"""
+        [{"id":"1","name":"Sam","status":"approved","attended":true,"feedback":"Loved it!","checked_in":true},
+         {"id":"2","name":"ana","status":"approved","attended":true,"feedback":"Great host"},
+         {"id":"3","name":"Lee","status":"approved","attended":true,"feedback":"   "},
+         {"id":"4","name":"Kai","status":"approved","attended":false,"feedback":null},
+         {"id":"5","name":"Zoe","status":"approved"},
+         {"id":"6","name":"Pending Pat","status":"pending"}]
+        """#))
+        #expect(summary.comments.map(\.name) == ["ana", "Sam"])           // by name, any case
+        #expect(summary.attendedQuietly.map(\.name) == ["Lee"])          // a blank comment isn't one
+        #expect(summary.missed.map(\.name) == ["Kai"])
+        #expect(summary.unanswered.map(\.name) == ["Zoe"])                // requests never approved aren't guests
+        #expect((summary.guestCount, summary.answeredCount, summary.attendedCount) == (5, 4, 3))
+        #expect(summary.comments.last?.checkedIn == true)
+    }
+
+    @Test func noGuestsMeansNothingToShow() {
+        let summary = EventServer.FeedbackSummary([])
+        #expect(summary.guestCount == 0 && summary.answeredCount == 0)
+    }
+}

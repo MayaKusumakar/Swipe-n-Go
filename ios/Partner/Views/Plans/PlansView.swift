@@ -110,6 +110,20 @@ struct PlansView: View {
                         }
                         .animation(.snappy, value: items.map(\.id))
                     }
+
+                    // Events you hosted that are over: open one to see guest feedback.
+                    if segment == .hosting, !store.pastHosting.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionHeader(title: "Past events", subtitle: "Open one to see guest feedback")
+                            LazyVStack(spacing: 12) {
+                                ForEach(store.pastHosting) { a in
+                                    NavigationLink(value: a) { ActivityRow(activity: a) }
+                                        .buttonStyle(PressableStyle())
+                                }
+                            }
+                        }
+                        .padding(.top, 8)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)

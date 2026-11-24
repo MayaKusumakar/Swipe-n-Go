@@ -434,7 +434,7 @@ After the event, an approved guest says whether they went, with optional feedbac
 - `attended` (boolean) is required. `feedback` is optional, up to 1000 characters, trimmed; `""` counts as none. Feedback is only kept when `attended` is `true`.
 - Answering again replaces the earlier answer. Stored on the guest's Attendee entity (`attended`, `feedback` unindexed, `feedback_at`).
 
-Response `200`: your Attendee object plus `attended` and `feedback`. Errors: `400 invalid_attendance`, `403` (you're not an approved guest, or the event hasn't ended: its `end_time`, or `start_time` if it has none), `404`. The host reads the answers in `GET /api/events/<id>/attendees`; the app has no screen for them yet.
+Response `200`: your Attendee object plus `attended` and `feedback`. Errors: `400 invalid_attendance`, `403` (you're not an approved guest, or the event hasn't ended: its `end_time`, or `start_time` if it has none), `404`. The host reads the answers in `GET /api/events/<id>/attendees`; the app shows them on the event's Guest feedback screen once it has ended.
 
 ### DELETE /api/events/\<id\>/attendees/\<attendee_id\>
 

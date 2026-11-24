@@ -15,6 +15,7 @@ struct ActivityDetailView: View {
     @State private var cancelConfirmed = false
     @State private var removing: Person?
     @State private var showCheckIn = false
+    @State private var showFeedback = false
 
     private var live: Activity { store.activity(activity.id) ?? activity }
     private var host: Person? { store.person(live.hostID) }
@@ -60,6 +61,11 @@ struct ActivityDetailView: View {
         .safeAreaInset(edge: .bottom) { bottomBar }
         .fullScreenCover(item: $celebration) { c in
             CelebrationView(celebration: c).presentationBackground(.clear)
+        }
+        .sheet(isPresented: $showFeedback) {
+            if store.isHost(live), let eventID = live.serverID, let baseURL = store.serverURL {
+                HostFeedbackView(eventID: eventID, baseURL: baseURL, title: live.title)
+            }
         }
         .sheet(isPresented: $showCheckIn) {
             if store.isHost(live), let eventID = live.serverID, let baseURL = store.serverURL {
@@ -161,6 +167,18 @@ struct ActivityDetailView: View {
 
     private var hostTools: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // After the event: what guests said ("Did you attend?" answers and feedback).
+            if live.isPast {
+                if live.serverID != nil, store.serverURL != nil {
+                    hostToolRow("Guest feedback", subtitle: "See who went and what they said",
+                                symbol: "text.bubble.fill") { showFeedback = true }
+                } else {
+                    Label("Guest feedback is collected for events shared through your team's server.",
+                          systemImage: "text.bubble")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
             if live.serverID != nil, store.serverURL != nil {
                 Button {
                     showCheckIn = true
@@ -190,6 +208,30 @@ struct ActivityDetailView: View {
                 RequestRow(request: req)
             }
         }
+    }
+
+    private func hostToolRow(_ title: String, subtitle: String, symbol: String,
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol)
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.headline)
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .padding(14)
+            .background(.background, in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Host
@@ -417,7 +459,10 @@ struct ActivityDetailView: View {
             // Host and guest get the same layout: group chat, then the red action at the bottom right.
             if store.isHost(live) {
                 chatButton(title: "Group chat")
-                destructiveButton("Cancel Event", symbol: "xmark.circle") { confirmCancel = true }
+                // An event that's over can't be cancelled.
+                if !live.isPast {
+                    destructiveButton("Cancel Event", symbol: "xmark.circle") { confirmCancel = true }
+                }
             } else if store.isGoing(live) {
                 chatButton(title: "Group chat")
                 destructiveButton("Delete Event", symbol: "trash") { confirmLeave = true }
@@ -739,6 +784,119 @@ private struct HostCheckInView: View {
             }
         } catch {
             errorMessage = "Couldn't update \(guest.name). \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Guest feedback (host, after the event)
+
+/// What guests said after the event: their "Did you attend?" answers and any feedback.
+/// Read from the guest list (GET /api/events/<id>/attendees), so it's always current.
+struct HostFeedbackView: View {
+    @Environment(\.dismiss) private var dismiss
+    let eventID: String
+    let baseURL: URL
+    let title: String
+
+    @State private var summary: EventServer.FeedbackSummary?
+    @State private var loading = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if let summary {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(title).font(.subheadline).foregroundStyle(.secondary)
+                            Text("\(summary.answeredCount) of \(summary.guestCount) guests answered")
+                                .font(.title2.bold())
+                                .monospacedDigit()
+                            if summary.answeredCount > 0 {
+                                Text("\(summary.attendedCount) went · \(summary.missed.count) didn't make it")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    if summary.guestCount == 0 {
+                        ContentUnavailableView("No guests", systemImage: "person.2",
+                                               description: Text("Nobody had joined this event, so there's no feedback."))
+                    } else if summary.answeredCount == 0 {
+                        ContentUnavailableView("No answers yet", systemImage: "text.bubble",
+                                               description: Text("Guests are asked \"Did you attend?\" the next time they open the app after the event."))
+                    }
+                    if !summary.comments.isEmpty {
+                        Section("What guests said") {
+                            ForEach(summary.comments) { guest in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    guestName(guest)
+                                    Text(guest.feedback ?? "")
+                                        .font(.body)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(.vertical, 4)
+                                .accessibilityElement(children: .combine)
+                            }
+                        }
+                    }
+                    names("Went, no comment", summary.attendedQuietly)
+                    names("Didn't make it", summary.missed)
+                    names("Haven't answered yet", summary.unanswered)
+                }
+                if loading && summary == nil {
+                    ProgressView("Loading feedback…")
+                }
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage).foregroundStyle(.secondary)
+                        Button("Try again") { Task { await load() } }
+                            .disabled(loading)
+                    }
+                }
+            }
+            .navigationTitle("Guest feedback")
+            .navigationBarTitleDisplayMode(.inline)
+            .refreshable { await load() }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .task { await load() }
+        }
+    }
+
+    @ViewBuilder private func names(_ header: String, _ guests: [EventServer.Attendee]) -> some View {
+        if !guests.isEmpty {
+            Section(header) {
+                ForEach(guests) { guestName($0) }
+            }
+        }
+    }
+
+    private func guestName(_ guest: EventServer.Attendee) -> some View {
+        HStack(spacing: 8) {
+            Text(guest.name).font(.body.weight(.medium))
+            if guest.checkedIn == true {
+                Label("Checked in", systemImage: "checkmark.circle.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
+        }
+    }
+
+    private func load() async {
+        guard !loading else { return }
+        loading = true
+        errorMessage = nil
+        defer { loading = false }
+        do {
+            summary = EventServer.FeedbackSummary(try await EventServer.attendees(eventID: eventID, baseURL: baseURL))
+        } catch {
+            errorMessage = "Couldn't load feedback. \(error.localizedDescription)"
         }
     }
 }
