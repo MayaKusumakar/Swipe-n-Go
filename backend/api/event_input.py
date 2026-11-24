@@ -130,7 +130,7 @@ def parse_new_event(body, now):
         if instagram.strip():
             instagram = instagram_handle.normalize(instagram)
             if instagram is None:
-                raise InvalidEventError("instagram", "instagram must be an Instagram handle like @davisclimbing or a profile link")
+                raise InvalidEventError("instagram", "instagram must be an Instagram handle like @ucdavis or a profile link")
         else:
             instagram = None
 

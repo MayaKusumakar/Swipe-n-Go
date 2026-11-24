@@ -693,7 +693,7 @@ struct FlyerReviewView: View {
                 }
                 Section {
                     TextField("Club or organization (optional)", text: $organizer)
-                    TextField("Instagram (optional), e.g. @davisclimbing", text: $instagram)
+                    TextField("Instagram (optional), e.g. @ucdavis", text: $instagram)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
@@ -703,7 +703,7 @@ struct FlyerReviewView: View {
                     if InstagramHandle.isAcceptable(instagram) {
                         Text("The club goes at the top of the description. Guests can tap the Instagram link on the event.")
                     } else {
-                        helper("Enter a handle like @davisclimbing or an instagram.com profile link.")
+                        helper("Enter a handle like @ucdavis or an instagram.com profile link.")
                     }
                 }
                 Section {

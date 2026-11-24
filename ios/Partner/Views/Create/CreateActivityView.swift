@@ -933,7 +933,7 @@ struct CreateActivityView: View {
                     .font(.title3)
                     .foregroundStyle(category.color)
                     .accessibilityHidden(true)
-                TextField("Instagram (optional), e.g. @davisclimbing", text: $instagram)
+                TextField("Instagram (optional), e.g. @ucdavis", text: $instagram)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
@@ -948,7 +948,7 @@ struct CreateActivityView: View {
                 }
             }
             if !valid {
-                Text("Enter a handle like @davisclimbing or an instagram.com profile link.")
+                Text("Enter a handle like @ucdavis or an instagram.com profile link.")
                     .font(.caption)
                     .foregroundStyle(.red)
             } else if let handle = InstagramHandle.normalize(instagram), focus != .instagram {
