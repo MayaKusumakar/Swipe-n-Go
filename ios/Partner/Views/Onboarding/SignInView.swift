@@ -31,13 +31,13 @@ struct SignInView: View {
                         // guest keeps the app usable. Hidden whenever UC Davis sign-in works.
                         guestButton
                     }
-                    #if DEBUG
+                    // In every build: App Review (and anyone curious) can look around without an account.
                     Button("Continue in Demo Mode") {
                         store.enterDemoMode()
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.white.opacity(0.9))
-                    #endif
+                    .accessibilityIdentifier("demoMode")
                 }
                 .padding(.horizontal, 28)
                 .padding(.bottom, 40)

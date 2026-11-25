@@ -97,9 +97,7 @@ final class AppStore {
     }
 
     var canOpenApp: Bool {
-        #if DEBUG
         if isDemoMode { return true }
-        #endif
         return auth.isSignedIn || isGuest
     }
 
@@ -148,8 +146,10 @@ final class AppStore {
         isGuest = false
     }
 
-    #if DEBUG
-    private var isDemoMode = false
+    /// Demo Mode: sample events and a sample profile, no account and no server. In every build,
+    /// including TestFlight, so App Review can try the app without a UC Davis Google account.
+    /// Not saved: the next launch is back on the sign-in screen.
+    private(set) var isDemoMode = false
 
     func enterDemoMode() {
         isDemoMode = true
@@ -159,6 +159,7 @@ final class AppStore {
         save()
     }
 
+    #if DEBUG
     /// `-demo` skips onboarding with a sample profile; `-tab <name>` opens a tab. Handy for screenshots.
     private func applyDebugLaunchArguments() {
         let args = ProcessInfo.processInfo.arguments
