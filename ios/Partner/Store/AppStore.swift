@@ -63,7 +63,9 @@ final class AppStore {
     var serverURLString: String = UserDefaults.standard.string(forKey: AppStore.serverURLKey) ?? AppStore.defaultServerURL {
         didSet { UserDefaults.standard.set(serverURLString, forKey: AppStore.serverURLKey) }
     }
-    var showSampleEvents: Bool = UserDefaults.standard.object(forKey: AppStore.showSampleEventsKey) as? Bool ?? true {
+    /// Off by default: signed-in students see only what people posted. Demo Mode and guests always
+    /// see samples (`samplesVisible`).
+    var showSampleEvents: Bool = UserDefaults.standard.object(forKey: AppStore.showSampleEventsKey) as? Bool ?? false {
         didSet { UserDefaults.standard.set(showSampleEvents, forKey: AppStore.showSampleEventsKey) }
     }
 
@@ -95,6 +97,11 @@ final class AppStore {
         applyDebugLaunchArguments()
         #endif
     }
+
+    /// Whether the app plays the other side itself: sample events and chats, automatic replies,
+    /// join requests from sample people and instant approvals. Only in Demo Mode and for guests;
+    /// a signed-in student deals with real people only.
+    var simulatesOthers: Bool { isDemoMode || !auth.isSignedIn }
 
     var canOpenApp: Bool {
         if isDemoMode { return true }
@@ -297,7 +304,7 @@ final class AppStore {
         activities.filter { savedIDs.contains($0.id) && !$0.isPast }.sorted { $0.date < $1.date }
     }
 
-    var totalUnread: Int { conversations.reduce(0) { $0 + ($1.muted ? 0 : $1.unreadCount) } }
+    var totalUnread: Int { visibleConversations.reduce(0) { $0 + ($1.muted ? 0 : $1.unreadCount) } }
 
     // MARK: - Onboarding & profile
 
@@ -388,10 +395,12 @@ final class AppStore {
     }
 
     /// The host of a shared private event accepted you (the server just shared the location).
-    func confirmServerApproval(_ id: UUID) {
+    func confirmServerApproval(_ id: UUID, locationShared: Bool = true) {
         guard let a = activity(id) else { return }
         confirmJoin(id)
-        show(InAppBanner(title: "You're in! 🎉", subtitle: "\(person(a.hostID)?.firstName ?? "The host") accepted you. The location is now visible.",
+        let host = person(a.hostID)?.firstName ?? "The host"
+        show(InAppBanner(title: "You're in! 🎉",
+                         subtitle: locationShared ? "\(host) accepted you. The location is now visible." : "\(host) accepted you for \(a.title).",
                          symbol: a.category.symbol, color: a.category.color))
     }
 
@@ -610,7 +619,7 @@ final class AppStore {
         }
         appendSystem("\(guest.firstName) joined the plan", to: convo)
         save()
-        scheduleReply(in: convo, from: guest.id, text: "Thanks for having me! 🙌", after: 2.0)
+        if simulatesOthers { scheduleReply(in: convo, from: guest.id, text: "Thanks for having me! 🙌", after: 2.0) }
     }
 
     func decline(_ request: JoinRequest) {
@@ -695,7 +704,7 @@ final class AppStore {
         bumpToTop(i)
         save()
 
-        guard let responder = others(in: conversations[0]).randomElement() else { return }
+        guard simulatesOthers, let responder = others(in: conversations[0]).randomElement() else { return }
         scheduleReply(in: conversationID, from: responder.id, text: reply(to: trimmed), after: Double.random(in: 1.6...3.2))
     }
 
@@ -760,6 +769,7 @@ final class AppStore {
     }
 
     private func simulateHostApproval(for activityID: UUID) {
+        guard simulatesOthers else { return }   // a real host approves on their phone; see syncAttendance
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(3.5))
             guard let self, self.pendingIDs.contains(activityID), let a = self.activity(activityID) else { return }
@@ -771,6 +781,7 @@ final class AppStore {
     }
 
     private func simulateWelcome(in conversationID: UUID, activity: Activity) {
+        guard simulatesOthers else { return }
         let lines = [
             "Welcome \(me.firstName)! 👋 Stoked you're joining",
             "Yay welcome! See you \(activity.date.friendlyDay.lowercased() == "today" ? "later today" : activity.date.friendlyDay)",
@@ -780,6 +791,7 @@ final class AppStore {
     }
 
     private func simulateIncomingRequest(for activityID: UUID) {
+        guard simulatesOthers else { return }
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(5))
             guard let self, let a = self.activity(activityID) else { return }

@@ -115,3 +115,9 @@ Differences from our design:
   - The Host form has no organizer field, so the flyer's organizer goes into the description.
   - The swipe tutorial's "seen" flag is per phone (UserDefaults), like the rest of the app's state, not per account. "Sign out & reset" clears it.
   - New tests were added to existing test files (`FlyerReaderTests.swift`, `SyncFixTests.swift`) so `project.pbxproj` didn't need changing.
+- **Real people only for signed-in students (added 2026-11-25).**
+  - `AppStore.simulatesOthers` is true only in Demo Mode and for guests. When it's false (a signed-in student), the app no longer plays the other side: no automatic chat replies, no welcome message from the host, no "Thanks for having me!", no fake join requests after hosting, and no instant approval of your own requests.
+  - Approval now comes from the server instead: on each sync a pending request to an approval-only event with a public location asks `GET /api/events/<id>/attendees/me` and you're in once the host approved (`confirmIfApproved`). Private-location events already worked this way through the location call.
+  - Sample events and the two sample DMs (Maya, Hana) are hidden for signed-in students (`samplesVisible`, `visibleConversations`; the Chats badge counts only visible chats). "Show sample events" in Profile → Server is now off by default (key `showSampleEvents.v2`) and turns them back on.
+  - Demo Mode (on the sign-in screen in every build since TestFlight 1.0 (3)) keeps everything, so App Review sees a full app.
+  - **Open:** group chat is still on the phone only, so two real students in the same plan can't message each other yet; that needs chat endpoints on the server. The live server also still serves the seeded sample club events from the "dev" namespace (Beale's `app.yaml`), so those appear as real events until it points at a clean namespace.

@@ -13,7 +13,8 @@ enum ServerStatus: Equatable {
 /// (joining, chats, requests) still lives on this phone for now.
 extension AppStore {
     static let serverURLKey = "serverURL"
-    static let showSampleEventsKey = "showSampleEvents"
+    // ".v2": samples became off by default for signed-in students (they were on).
+    static let showSampleEventsKey = "showSampleEvents.v2"
 
     /// The deployed backend (App Engine). Release builds always use it.
     static let productionServerURL = "https://swipe-n-go-app.wl.r.appspot.com"
@@ -55,8 +56,21 @@ extension AppStore {
     /// Events shown in Discover and Explore: server events and your own,
     /// plus the built-in samples unless they're turned off.
     var feedActivities: [Activity] {
-        guard !showSampleEvents else { return activities }
+        guard !samplesVisible else { return activities }
         return activities.filter { $0.serverID != nil || isHost($0) || isGoing($0) || isPending($0) }
+    }
+
+    /// Samples show in Demo Mode, for guests, or when a signed-in student turns them on.
+    var samplesVisible: Bool { simulatesOthers || showSampleEvents }
+
+    /// Chats shown in the Chats tab. Without samples: only group chats of real plans (shared on
+    /// the server or your own). Direct messages are sample-only until chat is on the server.
+    var visibleConversations: [Conversation] {
+        guard !samplesVisible else { return conversations }
+        return conversations.filter { c in
+            guard let aid = c.activityID, let a = activity(aid) else { return false }
+            return a.serverID != nil || isHost(a)
+        }
     }
 
     func syncWithServer() async {
@@ -334,6 +348,8 @@ extension AppStore {
                 await pullServerRequests(for: activity, baseURL: url)
             } else if activity.locationHidden == true, activity.myAttendeeID != nil {
                 await revealLocationIfApproved(activity, baseURL: url)
+            } else if isPending(activity), activity.myAttendeeID != nil {
+                await confirmIfApproved(activity, baseURL: url)
             }
         }
     }
@@ -361,6 +377,14 @@ extension AppStore {
             }
         }
         save()
+    }
+
+    /// A request to an approval-only event with a public location: you're in once the host approves.
+    private func confirmIfApproved(_ activity: Activity, baseURL url: URL) async {
+        guard let serverID = activity.serverID,
+              let me = try? await EventServer.myAttendance(eventID: serverID, baseURL: url),
+              me.isApproved, isPending(activity) else { return }
+        confirmServerApproval(activity.id, locationShared: false)
     }
 
     private func revealLocationIfApproved(_ activity: Activity, baseURL url: URL) async {
