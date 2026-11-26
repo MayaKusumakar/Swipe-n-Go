@@ -17,6 +17,7 @@ class InMemoryEventRepository:
         self._attendees = {}  # (event_id, attendee_id) -> Attendee
         self._covers = {}     # event_id -> JPEG bytes
         self._cancellations = {}  # event_id -> Cancellation
+        self._messages = {}  # event_id -> [Message], oldest first
 
     def list_upcoming(self, now, limit):
         with self._lock:
@@ -46,6 +47,7 @@ class InMemoryEventRepository:
             self._events = [e for e in self._events if e.id != event_id]
             self._attendees = {key: a for key, a in self._attendees.items() if key[0] != event_id}
             self._covers.pop(event_id, None)
+            self._messages.pop(event_id, None)
         return cancellation
 
     def list_cancellations_for(self, user_id, limit):
@@ -146,3 +148,21 @@ class InMemoryEventRepository:
     def delete_attendee(self, event_id, attendee_id):
         with self._lock:
             self._attendees.pop((event_id, attendee_id), None)
+
+    def add_message(self, message):
+        """Same contract as EventRepository.add_message."""
+        with self._lock:
+            if self._find(message.event_id) is None:
+                return None
+            chat = self._messages.setdefault(message.event_id, [])
+            existing = next((m for m in chat if message.client_id and m.client_id == message.client_id), None)
+            if existing is not None:
+                return existing, False
+            chat.append(message)
+            chat.sort(key=lambda m: m.id)
+        return message, True
+
+    def list_messages(self, event_id, after_id, limit):
+        with self._lock:
+            chat = self._messages.get(event_id, [])
+            return [m for m in chat if after_id is None or m.id > after_id][:limit]

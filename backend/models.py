@@ -10,7 +10,13 @@ COVER_KIND = "Cover"
 ATTENDEE_KIND = "Attendee"
 # Left behind when a host deletes an event, so its guests can be told (GET /api/events/cancelled).
 CANCELLED_KIND = "CancelledEvent"
+# A plan's group chat: messages are child entities of their event (GET/POST /api/events/<id>/messages).
+MESSAGE_KIND = "Message"
 USER_KIND = "User"
+
+# Message.kind values.
+MESSAGE_TEXT = "text"
+MESSAGE_SYSTEM = "system"
 
 # Attendee.status values.
 PENDING = "pending"
@@ -206,6 +212,57 @@ class Attendee:
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "status": self.status}
+
+
+@dataclass
+class Message:
+    """One message in a plan's group chat. The id is "<13-digit Unix ms>-<8 hex>", so sorting by
+    key is sorting by time: reading "everything after id X" needs only Datastore's built-in index.
+    `client_id` is the app's own id for the message, so a retried send isn't stored twice."""
+    id: str
+    event_id: str
+    sender_id: str
+    sender_name: str
+    text: str
+    created_at: datetime
+    client_id: str | None = None
+    # "text", or "system" for the lines the server adds itself ("Maya joined the plan").
+    kind: str = MESSAGE_TEXT
+
+    @classmethod
+    def from_entity(cls, entity):
+        return cls(
+            id=entity.key.id_or_name,
+            event_id=str(entity.key.parent.id_or_name),
+            sender_id=entity.get("sender_id", ""),
+            sender_name=entity.get("sender_name", ""),
+            text=entity.get("text", ""),
+            created_at=entity["created_at"],
+            client_id=entity.get("client_id"),
+            kind=entity.get("kind", MESSAGE_TEXT),
+        )
+
+    def to_entity_properties(self):
+        return {
+            "kind": self.kind,
+            "sender_id": self.sender_id,
+            "sender_name": self.sender_name,
+            "text": self.text,
+            "created_at": self.created_at,
+            "client_id": self.client_id,
+        }
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "sender_id": self.sender_id,
+            "sender_name": self.sender_name,
+            "text": self.text,
+            # Always milliseconds (".123"): iOS's ISO-8601 parser doesn't take microseconds.
+            "created_at": self.created_at.isoformat(timespec="milliseconds"),
+            "client_id": self.client_id,
+            "kind": self.kind,
+        }
 
 
 @dataclass

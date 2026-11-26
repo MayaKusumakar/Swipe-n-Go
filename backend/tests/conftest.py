@@ -24,6 +24,7 @@ class FakeEventRepository:
         self.events = []
         self.attendees = {}
         self.cancellations = {}
+        self.messages = {}  # event_id -> [Message]
         self.error = None
         self.calls = []
 
@@ -58,6 +59,7 @@ class FakeEventRepository:
             self.cancellations[event_id] = cancellation
         self.events = [e for e in self.events if e.id != event_id]
         self.attendees = {key: a for key, a in self.attendees.items() if key[0] != event_id}
+        self.messages.pop(event_id, None)
         return cancellation
 
     def list_cancellations_for(self, user_id, limit):
@@ -127,6 +129,25 @@ class FakeEventRepository:
 
     def delete_attendee(self, event_id, attendee_id):
         self.attendees.pop((event_id, attendee_id), None)
+
+    def add_message(self, message):
+        if self.error:
+            raise self.error
+        if self.get(message.event_id) is None:
+            return None
+        chat = self.messages.setdefault(message.event_id, [])
+        existing = next((m for m in chat if message.client_id and m.client_id == message.client_id), None)
+        if existing is not None:
+            return existing, False
+        chat.append(message)
+        chat.sort(key=lambda m: m.id)
+        return message, True
+
+    def list_messages(self, event_id, after_id, limit):
+        if self.error:
+            raise self.error
+        chat = self.messages.get(event_id, [])
+        return [m for m in chat if after_id is None or m.id > after_id][:limit]
 
 
 def make_event(event_id="seed-001", **overrides):

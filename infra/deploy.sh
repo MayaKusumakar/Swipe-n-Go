@@ -17,6 +17,9 @@ grep -q 'REPLACE_WITH_IOS_CLIENT_ID' app.yaml && fail "set GOOGLE_CLIENT_IDS in 
 grep -q 'max_instances: 1' app.yaml || fail "app.yaml must keep max_instances: 1 (free tier)"
 grep -q 'instance_class: F1' app.yaml || fail "app.yaml must keep instance_class: F1 (free tier)"
 
+# The live app must not read the seeded sample events (scripts/seed_dev_events.py).
+grep -q 'DATASTORE_NAMESPACE: *"\?dev' app.yaml && fail "app.yaml points at the seeded \"dev\" namespace"
+
 # Never ship a key in app.yaml; it comes from Secret Manager.
 grep -q 'ANTHROPIC_API_KEY' app.yaml && fail "remove ANTHROPIC_API_KEY from app.yaml (use Secret Manager)"
 

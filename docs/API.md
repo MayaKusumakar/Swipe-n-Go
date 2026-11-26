@@ -448,6 +448,48 @@ Code: `backend/api/events.py` (routes), `services/event_service.py` (all permiss
 
 ---
 
+## Group chat
+
+Each event has one group chat for its host and **approved** guests. Pending requests, removed guests and everyone else get `403 forbidden`, for reading and sending. Unknown event: `404 not_found`. Store down: `503 datastore_unavailable`. Deleting the event deletes its chat.
+
+There's no push: the app polls `GET …/messages?after=<newest id it has>` (for example on each sync and every few seconds while the chat is open).
+
+The Message object:
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | `"<13-digit Unix ms>-<8 hex>"`, e.g. `"1764072000000-9f3a1c2e"`. Ids sort in time order; use the newest one as `after` |
+| `sender_id` | string | the sender's account id (compare with your own to tell your messages apart) |
+| `sender_name` | string | the sender's profile name when they sent it |
+| `text` | string | 1–2000 characters, trimmed |
+| `created_at` | string | ISO-8601 with milliseconds and UTC offset (`"2026-11-25T12:00:00.123+00:00"`), from the server clock |
+| `client_id` | string \| null | the id the app sent, if any |
+| `kind` | string | `"text"`, or `"system"` for a line the server adds itself (below) |
+
+The server adds a `system` message when someone joins (approved straight away, or when the host approves the request): `"Maya joined the plan"`; when an approved guest leaves: `"Maya left the plan"`; and when the host removes one: `"Maya was removed from the plan"`. Requests that were never approved add nothing. The text uses the person's first name; `sender_id` and `sender_name` are that person's, and `client_id` is `null`. These lines don't count toward the rate limit and can't be sent through `POST` (a `kind` in the body is ignored). If storing the line fails, the join or leave still happens and only the line is missing.
+
+### POST /api/events/\<id\>/messages
+
+Body: `{"text": "See you at 7!", "client_id": "6F1C2A90-…"}`. `client_id` is optional (1–64 letters, digits and `-`; the app's message UUID fits). Sending the same `client_id` again in the same chat returns the first message with `200` instead of storing a copy, so a send can be retried safely.
+
+Response `201`: the Message. Errors: `400 invalid_message` (missing, empty or too-long `text`, bad `client_id`), `403`, `404`, `429 rate_limited` (30 a minute, 1000 a day per account).
+
+### GET /api/events/\<id\>/messages
+
+Query: `after` (optional, a message id): only messages after it. Without it, from the start of the chat. `limit` (optional, 1–100, default 50).
+
+Response `200`, oldest first:
+```json
+{"messages": [{"id": "1764072000000-9f3a1c2e", "sender_id": "1084…", "sender_name": "Maya", "text": "I'll bring snacks", "created_at": "2026-11-25T12:00:00.000+00:00", "client_id": null, "kind": "text"}], "has_more": false}
+```
+When `has_more` is `true`, ask again with `after` set to the last id returned. Errors: `400 invalid_parameter` (bad `after` or `limit`), `403`, `404`.
+
+Storage: `Message` entities are children of their Event, keyed by `id`, so "after this id" is a key-range query on Datastore's built-in index (no `index.yaml`). `text` and `sender_name` are unindexed. Each send is 1 write plus 2–3 reads (event, your attendee entry, your profile name); each poll is 2 reads plus the query.
+
+Code: `backend/api/events.py` (routes and validation), `services/event_service.py` (`post_message`, `list_messages`, membership check), `repositories/` (`add_message`, `list_messages`).
+
+---
+
 ## Experimental (off by default, not part of the stable API)
 
 These routes **don't exist** unless the server is started with the `EXPERIMENTS` variable naming them (comma-separated). With it unset, which is the default and how `app.yaml` deploys, they answer `404 not_found` like any unknown route. Clients shouldn't depend on them until the team moves them into the sections above. Code: `backend/experimental/`, tests: `backend/tests/test_experimental.py`.
