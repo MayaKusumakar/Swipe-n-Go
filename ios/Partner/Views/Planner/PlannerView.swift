@@ -231,7 +231,7 @@ struct PlannerView: View {
                 ContentUnavailableView {
                     Label("Nothing coming up", systemImage: "calendar.badge.exclamationmark")
                 } description: {
-                    Text(store.showSampleEvents
+                    Text(store.samplesVisible
                          ? "Nobody has posted plans yet. Host one with ＋ and people will come to you."
                          : "Sample events are off and nothing is posted yet. Turn them on in Profile → Server, or host a plan with ＋.")
                 }

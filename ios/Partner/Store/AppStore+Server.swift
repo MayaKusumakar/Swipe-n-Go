@@ -9,11 +9,12 @@ enum ServerStatus: Equatable {
     var isOnline: Bool { if case .online = self { true } else { false } }
 }
 
-/// Keeps the shared events in sync with the backend. Everything else
-/// (joining, chats, requests) still lives on this phone for now.
+/// Keeps the shared events, attendees and plan group chats in sync with the backend.
+/// Direct messages and system messages ("X joined") stay on this phone.
 extension AppStore {
     static let serverURLKey = "serverURL"
-    static let showSampleEventsKey = "showSampleEvents"
+    // ".v2": samples became off by default for signed-in students (they were on).
+    static let showSampleEventsKey = "showSampleEvents.v2"
 
     /// The deployed backend (App Engine). Release builds always use it.
     static let productionServerURL = "https://swipe-n-go-app.wl.r.appspot.com"
@@ -55,8 +56,21 @@ extension AppStore {
     /// Events shown in Discover and Explore: server events and your own,
     /// plus the built-in samples unless they're turned off.
     var feedActivities: [Activity] {
-        guard !showSampleEvents else { return activities }
+        guard !samplesVisible else { return activities }
         return activities.filter { $0.serverID != nil || isHost($0) || isGoing($0) || isPending($0) }
+    }
+
+    /// Samples show in Demo Mode, for guests, or when a signed-in student turns them on.
+    var samplesVisible: Bool { simulatesOthers || showSampleEvents }
+
+    /// Chats shown in the Chats tab. Without samples: only group chats of real plans (shared on
+    /// the server or your own). Direct messages are sample-only until chat is on the server.
+    var visibleConversations: [Conversation] {
+        guard !samplesVisible else { return conversations }
+        return conversations.filter { c in
+            guard let aid = c.activityID, let a = activity(aid) else { return false }
+            return a.serverID != nil || isHost(a)
+        }
     }
 
     func syncWithServer() async {
@@ -76,6 +90,7 @@ extension AppStore {
             await syncSaved(baseURL: url)
             await syncName(baseURL: url)
             await syncAttendance(baseURL: url)
+            await syncChats(baseURL: url)
             if attendanceAnswers.values.contains(where: { $0.needsSync == true }) {
                 await sendPendingAttendance(baseURL: url)
             }
@@ -113,7 +128,7 @@ extension AppStore {
         // Runs every 15 seconds: only touch (and save) what actually changed, so the screen
         // isn't redrawn and the state file isn't rewritten when nothing is new.
         let before = activities
-        var newHosts: [Person] = []
+        let peopleBefore = people
         var fetched = Set<UUID>()
         for event in events where !deletedServerIDs.contains(event.id) {
             let localID = EventServer.localID(for: event.id)
@@ -121,13 +136,20 @@ extension AppStore {
             if let i = activities.firstIndex(where: { $0.id == localID }) {
                 // Refresh server-owned details, keep what only this phone knows.
                 let old = activities[i]
-                var updated = Activity(server: event, hostID: hostedByMe(event) ? me.id : old.hostID)
-                updated.attendeeIDs = old.attendeeIDs
+                var hostID = old.hostID
+                if !hostedByMe(event), event.hostId != nil {
+                    // Plans seen before hosts were told apart by account: move to the account's person.
+                    hostID = serverPerson(named: event.hostName, accountID: event.hostId,
+                                          category: ActivityCategory(serverValue: event.category))
+                    if hostID != old.hostID { replacePerson(old.hostID, with: hostID, inPlan: old.id) }
+                }
+                var updated = Activity(server: event, hostID: hostedByMe(event) ? me.id : hostID)
+                updated.attendeeIDs = activities[i].attendeeIDs   // after replacePerson, not `old`
                 updated.coverPhotoData = old.coverPhotoData
                 updated.coverSyncedURL = old.coverSyncedURL
                 updated.seriesID = old.seriesID
                 updated.myAttendeeID = old.myAttendeeID
-                updated.serverAttendeeIDs = old.serverAttendeeIDs
+                updated.serverAttendeeIDs = activities[i].serverAttendeeIDs
                 if updated.locationHidden == true, old.locationHidden != true {
                     // The public list hides private locations; keep the one this phone already has
                     // (you're the host, or the server already shared it with you).
@@ -142,12 +164,11 @@ extension AppStore {
                 // Posted from your account on another phone (or before reinstalling).
                 activities.append(Activity(server: event, hostID: me.id))
             } else {
-                let host = Person.serverHost(named: event.hostName, category: ActivityCategory(serverValue: event.category))
-                if person(host.id) == nil, !newHosts.contains(where: { $0.id == host.id }) { newHosts.append(host) }
-                activities.append(Activity(server: event, hostID: host.id))
+                let hostID = serverPerson(named: event.hostName, accountID: event.hostId,
+                                          category: ActivityCategory(serverValue: event.category))
+                activities.append(Activity(server: event, hostID: hostID))
             }
         }
-        if !newHosts.isEmpty { people.append(contentsOf: newHosts) }
         // Drop server events that disappeared, unless you're part of them.
         if activities.contains(where: { a in
             a.serverID != nil && !fetched.contains(a.id) && !isHost(a) && !isGoing(a) && !isPending(a)
@@ -157,7 +178,7 @@ extension AppStore {
             }
         }
         if !activities.isSorted(by: { $0.date <= $1.date }) { activities.sort { $0.date < $1.date } }
-        if activities != before || !newHosts.isEmpty { save() }
+        if activities != before || people != peopleBefore { save() }
     }
 
     /// Sends the name from your profile, so your events show it instead of the sign-in name.
@@ -334,6 +355,8 @@ extension AppStore {
                 await pullServerRequests(for: activity, baseURL: url)
             } else if activity.locationHidden == true, activity.myAttendeeID != nil {
                 await revealLocationIfApproved(activity, baseURL: url)
+            } else if isPending(activity), activity.myAttendeeID != nil {
+                await confirmIfApproved(activity, baseURL: url)
             }
         }
     }
@@ -342,14 +365,22 @@ extension AppStore {
         guard let serverID = activity.serverID,
               let attendees = try? await EventServer.attendees(eventID: serverID, baseURL: url),
               let i = activities.firstIndex(where: { $0.id == activity.id }) else { return }
+        for attendee in attendees {
+            // Guests seen before people were told apart by account: move them to the account's person.
+            let guestID = serverPerson(named: attendee.name, accountID: attendee.id, category: activity.category,
+                                       bio: "Joined from Swipe-n-Go.")
+            let earlier = Set((activities[i].serverAttendeeIDs ?? [:]).filter { $0.value == attendee.id }.keys)
+                .union(requests.filter { $0.activityID == activity.id && $0.serverAttendeeID == attendee.id }.map(\.personID))
+            for old in earlier where old != guestID { replacePerson(old, with: guestID, inPlan: activity.id) }
+        }
         let known = Set(activities[i].serverAttendeeIDs?.values.map { $0 } ?? [])
             .union(requests.compactMap(\.serverAttendeeID))
         // Requests withdrawn on the server disappear here too.
         let listed = Set(attendees.map(\.id))
         requests.removeAll { $0.activityID == activity.id && $0.serverAttendeeID.map { !listed.contains($0) } == true }
         for attendee in attendees where !known.contains(attendee.id) {
-            let guest = Person.serverHost(named: attendee.name, category: activity.category, bio: "Joined from Swipe-n-Go.")
-            if person(guest.id) == nil { people.append(guest) }
+            guard let guest = person(serverPerson(named: attendee.name, accountID: attendee.id, category: activity.category,
+                                                  bio: "Joined from Swipe-n-Go.")) else { continue }
             if attendee.isApproved {
                 activities[i].serverAttendeeIDs = (activities[i].serverAttendeeIDs ?? [:]).merging([guest.id: attendee.id]) { $1 }
                 if !activities[i].attendeeIDs.contains(guest.id) { activities[i].attendeeIDs.append(guest.id) }
@@ -361,6 +392,14 @@ extension AppStore {
             }
         }
         save()
+    }
+
+    /// A request to an approval-only event with a public location: you're in once the host approves.
+    private func confirmIfApproved(_ activity: Activity, baseURL url: URL) async {
+        guard let serverID = activity.serverID,
+              let me = try? await EventServer.myAttendance(eventID: serverID, baseURL: url),
+              me.isApproved, isPending(activity) else { return }
+        confirmServerApproval(activity.id, locationShared: false)
     }
 
     private func revealLocationIfApproved(_ activity: Activity, baseURL url: URL) async {
@@ -379,6 +418,133 @@ extension AppStore {
             confirmServerApproval(activities[i].id)
         } else {
             save()
+        }
+    }
+
+    // MARK: - Group chat on the server (see docs/API.md, "Group chat")
+
+    /// The server id of the plan a chat belongs to, when the chat is shared: the plan is on the server and
+    /// you're its host or an approved guest. nil for direct messages, sample chats and Demo Mode.
+    func sharedChatEventID(_ convo: Conversation) -> String? {
+        guard !simulatesOthers, let aid = convo.activityID, let plan = activity(aid),
+              let serverID = plan.serverID, isGoing(plan) else { return nil }
+        return serverID
+    }
+
+    /// Every sync: shared chats of plans that haven't been over for more than a week.
+    /// (An older chat still updates while it's open: see syncOpenChat.)
+    private func syncChats(baseURL url: URL) async {
+        let cutoff = Date.now.addingTimeInterval(-7 * 86400)
+        for convo in conversations {
+            guard sharedChatEventID(convo) != nil,
+                  let plan = convo.activityID.flatMap(activity), plan.endDate > cutoff else { continue }
+            await syncChat(convo.id, baseURL: url)
+        }
+    }
+
+    /// Called every few seconds while a chat is on screen, and right after you send.
+    func syncOpenChat(_ conversationID: UUID) async {
+        guard let url = serverURL, auth.isSignedIn else { return }
+        await syncChat(conversationID, baseURL: url)
+    }
+
+    private func syncChat(_ conversationID: UUID, baseURL url: URL) async {
+        guard let convo = conversation(conversationID), let eventID = sharedChatEventID(convo) else { return }
+        await sendPendingMessages(conversationID, eventID: eventID, baseURL: url)
+        await pullMessages(conversationID, eventID: eventID, baseURL: url)
+    }
+
+    /// Sends messages written on this phone that the server doesn't have yet, oldest first.
+    /// Each carries its own UUID as client_id, so a retry after a lost reply isn't stored twice.
+    private func sendPendingMessages(_ conversationID: UUID, eventID: String, baseURL url: URL) async {
+        let pending = conversation(conversationID)?.messages.filter { $0.needsSync == true } ?? []
+        for message in pending {
+            var sent: EventServer.ChatMessage?
+            do {
+                sent = try await EventServer.sendMessage(eventID: eventID, text: message.text,
+                                                         clientID: message.id.uuidString, baseURL: url)
+            } catch let error as EventServer.ServerError where [400, 403, 404].contains(error.status) {
+                sent = nil   // refused for good (you left the plan, or it's gone): this phone keeps it
+            } catch {
+                return       // offline or rate limited: the next sync tries again
+            }
+            guard let c = conversations.firstIndex(where: { $0.id == conversationID }),
+                  let m = conversations[c].messages.firstIndex(where: { $0.id == message.id }),
+                  conversations[c].messages[m].needsSync == true else { continue }
+            conversations[c].messages[m].serverID = sent?.id
+            conversations[c].messages[m].needsSync = sent == nil ? false : nil
+            save()
+        }
+    }
+
+    /// Picks up messages newer than the last one this phone has.
+    private func pullMessages(_ conversationID: UUID, eventID: String, baseURL url: URL) async {
+        var after = conversation(conversationID)?.serverCursor
+        var received: [EventServer.ChatMessage] = []
+        for _ in 0..<10 {   // at most 1000 messages per sync; the rest come next time
+            guard let page = try? await EventServer.messages(eventID: eventID, after: after, baseURL: url) else { break }
+            received += page.messages
+            after = page.messages.last?.id ?? after
+            if !page.hasMore { break }
+        }
+        guard !received.isEmpty, let c = conversations.firstIndex(where: { $0.id == conversationID }),
+              let plan = conversations[c].activityID.flatMap(activity) else { return }
+
+        let myAccount = auth.account?.id
+        let added = conversations[c].merge(received) { m in
+            if m.senderId == myAccount { return me.id }   // sent from your other phone
+            return serverPerson(named: m.senderName, accountID: m.senderId, category: plan.category,
+                                bio: "Joined from Swipe-n-Go.")
+        }
+        for id in Set(added.map(\.senderID)) where !conversations[c].participantIDs.contains(id) {
+            conversations[c].participantIDs.append(id)
+        }
+        // Join and leave lines show in the chat, but only messages raise the badge or a banner.
+        let fromOthers = added.filter { $0.senderID != me.id && $0.kind == .text }
+        if let newest = fromOthers.last, openConversationID != conversationID {
+            conversations[c].unreadCount += fromOthers.count
+            if !conversations[c].muted {
+                let name = person(newest.senderID)?.firstName ?? "New message"
+                show(InAppBanner(title: "\(name) · \(plan.title)", subtitle: newest.text,
+                                 symbol: "bubble.left.and.bubble.right.fill", color: plan.category.color))
+            }
+        }
+        if !fromOthers.isEmpty { bumpToTop(c) }
+        save()
+    }
+
+    /// The person shown for someone from the server, added if new. Their name follows the account's
+    /// latest one, so a rename on their phone shows up here too.
+    func serverPerson(named name: String?, accountID: String?, category: ActivityCategory,
+                      bio: String = "Posts plans on Swipe-n-Go.") -> UUID {
+        let fresh = Person.serverHost(named: name, category: category, bio: bio, accountID: accountID)
+        if let i = people.firstIndex(where: { $0.id == fresh.id }) {
+            if accountID != nil, people[i].name != fresh.name { people[i].name = fresh.name }
+        } else if fresh.id != me.id {
+            people.append(fresh)
+        }
+        return fresh.id
+    }
+
+    /// Within one plan, replaces a person with another: the guest list, requests and the plan's chat.
+    func replacePerson(_ old: UUID, with new: UUID, inPlan activityID: UUID) {
+        guard old != new, old != me.id else { return }
+        if let i = activities.firstIndex(where: { $0.id == activityID }) {
+            activities[i].attendeeIDs = activities[i].attendeeIDs.map { $0 == old ? new : $0 }
+            if let account = activities[i].serverAttendeeIDs?.removeValue(forKey: old) {
+                activities[i].serverAttendeeIDs?[new] = account
+            }
+        }
+        for r in requests.indices where requests[r].activityID == activityID && requests[r].personID == old {
+            requests[r].personID = new
+        }
+        if let c = conversations.firstIndex(where: { $0.activityID == activityID }) {
+            var participants = conversations[c].participantIDs.filter { $0 != old }
+            if conversations[c].participantIDs.contains(old), !participants.contains(new) { participants.append(new) }
+            conversations[c].participantIDs = participants
+            for m in conversations[c].messages.indices where conversations[c].messages[m].senderID == old {
+                conversations[c].messages[m].senderID = new
+            }
         }
     }
 
@@ -413,6 +579,39 @@ extension AppStore {
             }
         }
         return error.localizedDescription
+    }
+}
+
+extension Conversation {
+    /// Adds server messages this chat doesn't have yet and moves `serverCursor` forward. Messages sent from
+    /// this phone come back with their client_id: they're only marked delivered, not added again. The same
+    /// goes for a join or leave line this phone already wrote when it happened here (same text, within 10 minutes).
+    /// `sender` maps a message to the person shown for it. Returns the messages added.
+    mutating func merge(_ received: [EventServer.ChatMessage], sender: (EventServer.ChatMessage) -> UUID) -> [Message] {
+        var added: [Message] = []
+        for m in received {
+            if let mine = m.clientId.flatMap(UUID.init(uuidString:)),
+               let i = messages.firstIndex(where: { $0.id == mine }) {
+                messages[i].serverID = m.id
+                messages[i].needsSync = nil
+            } else if messages.contains(where: { $0.serverID == m.id }) {
+                // Already here.
+            } else if m.isSystem, let i = messages.firstIndex(where: {
+                $0.kind == .system && $0.serverID == nil && $0.text == m.text
+                    && abs($0.date.timeIntervalSince(m.createdAt)) < 600
+            }) {
+                // This phone already showed the line when the join or leave happened here: keep that one.
+                messages[i].serverID = m.id
+            } else {
+                let message = Message(senderID: sender(m), text: m.text, date: m.createdAt,
+                                      kind: m.isSystem ? .system : .text, serverID: m.id)
+                messages.append(message)
+                added.append(message)
+            }
+            // Ids sort in time order; never move back (two syncs can finish out of order).
+            if serverCursor.map({ m.id > $0 }) ?? true { serverCursor = m.id }
+        }
+        return added
     }
 }
 

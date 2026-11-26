@@ -2,8 +2,8 @@
 from google.cloud import datastore
 from google.cloud.datastore.query import PropertyFilter
 
-from models import (APPROVED, ATTENDEE_KIND, CANCELLED_KIND, COVER_KIND, EVENT_KIND, UNINDEXED_EVENT_PROPERTIES,
-                    Attendee, Cancellation, Event)
+from models import (APPROVED, ATTENDEE_KIND, CANCELLED_KIND, COVER_KIND, EVENT_KIND, MESSAGE_KIND,
+                    UNINDEXED_EVENT_PROPERTIES, Attendee, Cancellation, Event, Message)
 
 # Sorts after every geohash character, so [prefix, prefix + "~") is "starts with prefix".
 _PREFIX_END = "~"
@@ -51,16 +51,22 @@ class EventRepository:
         entity = self.client.get(event_key)
         if entity is None:
             return None
-        attendees = self.client.query(kind=ATTENDEE_KIND, ancestor=event_key)
-        attendees.keys_only()
-        keys = [a.key for a in attendees.fetch()]
+        keys = self._child_keys(ATTENDEE_KIND, event_key)
         cancellation = Cancellation.for_event(Event.from_entity(entity), [k.id_or_name for k in keys], cancelled_at)
         if cancellation.attendee_ids:
             notice = datastore.Entity(key=self.client.key(CANCELLED_KIND, event_id), exclude_from_indexes=("title",))
             notice.update(cancellation.to_entity_properties())
             self.client.put(notice)
-        self.client.delete_multi(keys + [self.client.key(COVER_KIND, event_id), event_key])
+        keys += self._child_keys(MESSAGE_KIND, event_key) + [self.client.key(COVER_KIND, event_id), event_key]
+        # delete_multi takes at most 500 keys per call; the event itself goes last.
+        for start in range(0, len(keys), 500):
+            self.client.delete_multi(keys[start:start + 500])
         return cancellation
+
+    def _child_keys(self, kind, event_key):
+        query = self.client.query(kind=kind, ancestor=event_key)
+        query.keys_only()
+        return [entity.key for entity in query.fetch()]
 
     def list_cancellations_for(self, user_id, limit):
         """Deleted events `user_id` had joined or asked to join, most recently cancelled first."""
@@ -201,3 +207,34 @@ class EventRepository:
 
     def delete_attendee(self, event_id, attendee_id):
         self.client.delete(self._attendee_key(event_id, attendee_id))
+
+    # Group chat messages are child entities of their event, keyed so key order is time order.
+
+    def add_message(self, message):
+        """Stores `message` unless one with the same client_id is already in this chat.
+        Returns (stored message, created). None if the event is gone."""
+        event_key = self.client.key(EVENT_KIND, message.event_id)
+        with self.client.transaction():
+            if self.client.get(event_key) is None:
+                return None
+            if message.client_id is not None:
+                query = self.client.query(kind=MESSAGE_KIND, ancestor=event_key)
+                query.add_filter(filter=PropertyFilter("client_id", "=", message.client_id))
+                existing = list(query.fetch(limit=1))
+                if existing:
+                    return Message.from_entity(existing[0]), False
+            entity = datastore.Entity(key=self.client.key(EVENT_KIND, message.event_id, MESSAGE_KIND, message.id),
+                                      exclude_from_indexes=("text", "sender_name"))
+            entity.update(message.to_entity_properties())
+            self.client.put(entity)
+        return message, True
+
+    def list_messages(self, event_id, after_id, limit):
+        """Up to `limit` messages after the one with id `after_id` (from the start if None), oldest first."""
+        event_key = self.client.key(EVENT_KIND, event_id)
+        query = self.client.query(kind=MESSAGE_KIND, ancestor=event_key)
+        if after_id is not None:
+            query.add_filter(filter=PropertyFilter(
+                "__key__", ">", self.client.key(EVENT_KIND, event_id, MESSAGE_KIND, after_id)))
+        query.order = ["__key__"]
+        return [Message.from_entity(entity) for entity in query.fetch(limit=limit)]

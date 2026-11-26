@@ -214,6 +214,11 @@ struct Message: Codable, Identifiable, Hashable {
     var text: String
     var date: Date
     var kind: Kind = .text
+    /// Group chats of shared plans (see AppStore+Server.swift): the server's id once it has the message.
+    var serverID: String? = nil
+    /// true: still to be sent to the server. false: the server refused it, so only this phone has it.
+    /// nil: nothing to send (received messages, system messages, chats that stay on this phone).
+    var needsSync: Bool? = nil
 }
 
 struct Conversation: Codable, Identifiable, Hashable {
@@ -224,6 +229,8 @@ struct Conversation: Codable, Identifiable, Hashable {
     var unreadCount: Int = 0
     /// Muted chats don't count toward the Chats badge. Optional so older saved chats still load.
     var isMuted: Bool? = nil
+    /// The newest server message id this phone has, so the next sync asks only for newer ones.
+    var serverCursor: String? = nil
 
     var muted: Bool { isMuted ?? false }
     var lastMessage: Message? { messages.last }

@@ -48,6 +48,11 @@ DEFAULT_LIMITS = (
     # experimental/routes.py already allows 10 a minute; this adds the daily cap.
     Limit("event_parse_daily", 20, DAY, "You've filled in the most plans from a description allowed today (20).",
           method="POST", route="/api/experimental/events/parse"),
+    # Chat messages are Datastore writes; generous for real conversation, not for flooding.
+    Limit("messages", 30, MINUTE, "You're sending messages too quickly.",
+          method="POST", route="/api/events/<event_id>/messages"),
+    Limit("messages_daily", 1000, DAY, "You've sent the most messages allowed today (1000).",
+          method="POST", route="/api/events/<event_id>/messages"),
     # Covers are the biggest Datastore writes.
     Limit("cover_uploads", 30, HOUR, "You've uploaded too many covers this hour.",
           method="PUT", route="/api/events/<event_id>/cover"),

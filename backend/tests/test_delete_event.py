@@ -52,7 +52,7 @@ def test_memory_store_deletes_attendees_and_cover():
     assert store.delete_event("seed-001", FIXED_NOW) is None
 
 
-def test_datastore_deletes_event_attendees_and_cover_and_leaves_a_notice():
+def test_datastore_deletes_event_attendees_messages_and_cover_and_leaves_a_notice():
     client = MagicMock()
 
     def key(*path):
@@ -62,7 +62,15 @@ def test_datastore_deletes_event_attendees_and_cover_and_leaves_a_notice():
     client.key.side_effect = key
     attendee = MagicMock()
     attendee.key = key("Event", "e1", "Attendee", "maya")
-    client.query.return_value.fetch.return_value = [attendee]
+    message = MagicMock()
+    message.key = key("Event", "e1", "Message", "m1")
+    children = {"Attendee": [attendee], "Message": [message]}
+
+    def query(kind, ancestor):
+        q = MagicMock()
+        q.fetch.return_value = children[kind]
+        return q
+    client.query.side_effect = query
     event = {"title": "Trivia", "start_time": FIXED_NOW, "host_name": "Avery"}
     client.get.return_value = MagicMock(key=key("Event", "e1"), get=lambda k, d=None: event.get(k, d),
                                         __getitem__=lambda self, k: event[k])
@@ -73,7 +81,8 @@ def test_datastore_deletes_event_attendees_and_cover_and_leaves_a_notice():
     notice = client.put.call_args.args[0]
     assert notice["attendee_ids"] == ["maya"] and notice["cancelled_at"] == FIXED_NOW
     deleted = [k.path for k in client.delete_multi.call_args.args[0]]
-    assert deleted == [("Event", "e1", "Attendee", "maya"), ("Cover", "e1"), ("Event", "e1")]
+    assert deleted == [("Event", "e1", "Attendee", "maya"), ("Event", "e1", "Message", "m1"),
+                       ("Cover", "e1"), ("Event", "e1")]
 
     client.get.return_value = None
     assert EventRepository(client=client).delete_event("e1", FIXED_NOW) is None

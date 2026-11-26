@@ -5,6 +5,8 @@ services/auth_service.py). Permission checks compare account ids: the host is
 whoever created the event, and an attendee entry belongs to the user it's for.
 """
 import hashlib
+import logging
+import secrets
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -12,7 +14,7 @@ from datetime import datetime, timezone
 from google.api_core.exceptions import GoogleAPIError
 from google.auth.exceptions import GoogleAuthError
 
-from models import APPROVED, PENDING, Attendee, Event
+from models import APPROVED, MESSAGE_SYSTEM, PENDING, Attendee, Event, Message
 from services import geo, matching
 
 
@@ -168,6 +170,7 @@ class EventService:
         if attendee.status == APPROVED:
             # Counts toward attendee_count right away; refused if the event is full.
             self._update_attendance(event.id, attendee, +1)
+            self._announce(event.id, attendee, "joined the plan")
         else:
             # A request doesn't take a spot until the host approves it.
             self._store(self._repository.save_attendee, attendee)
@@ -191,6 +194,7 @@ class EventService:
             return attendee
         approved = replace(attendee, status=APPROVED)
         self._update_attendance(event.id, approved, +1)
+        self._announce(event.id, approved, "joined the plan")
         return approved
 
     def set_check_in(self, event_id, attendee_id, user, checked_in):
@@ -226,6 +230,8 @@ class EventService:
             raise ForbiddenError("Only the host or this attendee can do this")
         delta = -1 if attendee.status == APPROVED else 0
         self._update_attendance(event.id, attendee, delta, delete=True)
+        if attendee.status == APPROVED:   # a withdrawn or declined request was never in the chat
+            self._announce(event.id, attendee, "left the plan" if attendee.id == user.id else "was removed from the plan")
 
     def location_for(self, event_id, user):
         """The full location, for the host or an approved attendee of this event."""
@@ -236,6 +242,49 @@ class EventService:
         if attendee is not None and attendee.status == APPROVED:
             return event
         raise ForbiddenError("The location is shared once the host approves your request")
+
+    # MARK: Group chat. One chat per plan, for the host and approved guests.
+
+    def _require_member(self, event, user):
+        if self._is_host(event, user):
+            return
+        attendee = self._store(self._repository.get_attendee, event.id, user.id)
+        if attendee is None or attendee.status != APPROVED:
+            raise ForbiddenError("The chat is for the host and approved guests")
+
+    def post_message(self, event_id, user, text, client_id=None):
+        """Adds `text` to the plan's chat. Returns (message, created); sending the same
+        client_id again returns the first message instead of a copy."""
+        event = self._event(event_id)
+        self._require_member(event, user)
+        message = self._message(event.id, user.id, user.name, text, client_id=client_id)
+        result = self._store(self._repository.add_message, message)
+        if result is None:
+            raise NotFoundError("event")
+        return result
+
+    def _message(self, event_id, sender_id, sender_name, text, **fields):
+        now = self._clock()
+        # Key order is time order (see models.Message); the suffix keeps same-ms ids apart.
+        return Message(id=f"{int(now.timestamp() * 1000):013d}-{secrets.token_hex(4)}", event_id=event_id,
+                       sender_id=sender_id, sender_name=sender_name, text=text, created_at=now, **fields)
+
+    def _announce(self, event_id, attendee, what):
+        """A system line in the plan's chat ("Maya joined the plan"), written by the server so every phone
+        shows the same one. Best effort: the join or leave already happened, so a failure is only logged."""
+        first_name = (attendee.name.split() or ["Someone"])[0]
+        message = self._message(event_id, attendee.id, attendee.name, f"{first_name} {what}", kind=MESSAGE_SYSTEM)
+        try:
+            self._repository.add_message(message)
+        except _STORE_ERRORS:
+            logging.exception("Couldn't add %r to the chat of event %s", message.text, event_id)
+
+    def list_messages(self, event_id, user, after_id, limit):
+        """(messages after `after_id`, oldest first, has_more). From the start without `after_id`."""
+        event = self._event(event_id)
+        self._require_member(event, user)
+        found = self._store(self._repository.list_messages, event.id, after_id, limit + 1)
+        return found[:limit], len(found) > limit
 
     # MARK: Nearby and recommended. Private locations are never searched by
     # place, so their position can't be narrowed down by searching from

@@ -294,6 +294,45 @@ enum EventServer {
         return try decoder.decode(Location.self, from: data)
     }
 
+    // MARK: Group chat (see docs/API.md): one chat per plan, for the host and approved guests.
+
+    struct ChatMessage: Decodable, Equatable {
+        /// "<13-digit Unix ms>-<8 hex>": ids sort in time order.
+        var id: String
+        /// The sender's account id (compare with Auth.account.id).
+        var senderId: String
+        var senderName: String
+        var text: String
+        var createdAt: Date
+        /// The app's own id for the message (its UUID), when it was sent from the app.
+        var clientId: String?
+        /// "system" for the join and leave lines the server adds itself. nil from servers before them.
+        var kind: String?
+        var isSystem: Bool { kind == "system" }
+    }
+
+    struct ChatPage: Decodable {
+        var messages: [ChatMessage]
+        var hasMore: Bool
+    }
+
+    /// Sends a message. Sending the same `clientID` again returns the first copy instead of a second one.
+    static func sendMessage(eventID: String, text: String, clientID: String, baseURL: URL) async throws -> ChatMessage {
+        struct Body: Encodable { var text: String; var clientId: String }
+        let data = try await send("POST", baseURL.appending(path: "api/events/\(eventID)/messages"),
+                                  body: try encoder.encode(Body(text: text, clientId: clientID)))
+        return try decoder.decode(ChatMessage.self, from: data)
+    }
+
+    /// Messages after the one with id `after` (from the start when nil), oldest first.
+    static func messages(eventID: String, after: String?, baseURL: URL) async throws -> ChatPage {
+        var components = URLComponents(url: baseURL.appending(path: "api/events/\(eventID)/messages"),
+                                       resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "limit", value: "100")]
+            + (after.map { [URLQueryItem(name: "after", value: $0)] } ?? [])
+        return try decoder.decode(ChatPage.self, from: try await send("GET", components.url!))
+    }
+
     /// For slower endpoints like the AI planner; the timeout is set per request.
     private static let slowSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
@@ -325,7 +364,8 @@ enum EventServer {
 
     // MARK: JSON
 
-    private static let decoder: JSONDecoder = {
+    /// Internal (not private) so tests decode with exactly the app's rules.
+    static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .custom { decoder in
@@ -418,11 +458,14 @@ extension Activity {
 }
 
 extension Person {
-    /// Stand-in profile for a host known only by name from the server.
+    /// Stand-in profile for someone known from the server: a host, a guest or a chat sender.
+    /// With their account id, two people with the same name are two people (each with their own
+    /// avatar colour). Without one (sample events), people are told apart by name only.
     static func serverHost(named name: String?, category: ActivityCategory,
-                           bio: String = "Posts plans on Swipe-n-Go.") -> Person {
+                           bio: String = "Posts plans on Swipe-n-Go.", accountID: String? = nil) -> Person {
         let display = name?.trimmingCharacters(in: .whitespaces).nilIfEmpty ?? "Campus host"
-        let id = EventServer.stableUUID("host:" + display.lowercased())
+        let id = accountID.map { EventServer.stableUUID("account:" + $0) }
+            ?? EventServer.stableUUID("host:" + display.lowercased())
         let hue = Double(id.uuid.0) / 255
         return Person(id: id, name: display, age: 0, bio: bio, pronouns: "",
                       interests: [category], hue: hue, emoji: "", isVerified: false, rating: 5.0,

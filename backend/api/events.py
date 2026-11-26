@@ -1,5 +1,6 @@
 import base64
 import binascii
+import re
 
 from flask import Blueprint, Response, current_app, g, jsonify, request
 
@@ -324,3 +325,55 @@ def remove_attendee(event_id, attendee_id):
 def event_location(event_id):
     service = current_app.extensions["event_service"]
     return _guarded(lambda: jsonify(service.location_for(event_id, g.user).location_dict()))
+
+
+# Group chat: one per plan, for the host and approved guests. The app polls
+# GET .../messages?after=<last id it has> to pick up new messages.
+
+MAX_MESSAGE = 2000
+DEFAULT_MESSAGE_LIMIT = 50
+MAX_MESSAGE_LIMIT = 100
+_MESSAGE_ID = re.compile(r"\d{13}-[0-9a-f]{8}")
+_CLIENT_ID = re.compile(r"[A-Za-z0-9-]{1,64}")
+
+
+@events_bp.post("/<event_id>/messages")
+def post_message(event_id):
+    body = request.get_json(silent=True)
+    text = body.get("text") if isinstance(body, dict) else None
+    if not isinstance(text, str) or not text.strip():
+        return error_response(400, "invalid_message", "text must be a non-empty string")
+    text = text.strip()
+    if len(text) > MAX_MESSAGE:
+        return error_response(400, "invalid_message", f"text must be at most {MAX_MESSAGE} characters")
+    client_id = body.get("client_id")
+    if client_id is not None and not (isinstance(client_id, str) and _CLIENT_ID.fullmatch(client_id)):
+        return error_response(400, "invalid_message", "client_id must be up to 64 letters, digits and dashes")
+
+    service = current_app.extensions["event_service"]
+
+    def run():
+        message, created = service.post_message(event_id, acting_user(), text, client_id)
+        return jsonify(message.to_dict()), 201 if created else 200
+    return _guarded(run)
+
+
+@events_bp.get("/<event_id>/messages")
+def list_messages(event_id):
+    after = request.args.get("after")
+    if after is not None and not _MESSAGE_ID.fullmatch(after):
+        return error_response(400, "invalid_parameter", "after must be a message id")
+    raw_limit = request.args.get("limit")
+    try:
+        limit = DEFAULT_MESSAGE_LIMIT if raw_limit is None else int(raw_limit, 10)
+    except ValueError:
+        limit = 0
+    if not 1 <= limit <= MAX_MESSAGE_LIMIT:
+        return error_response(400, "invalid_parameter", f"limit must be an integer from 1 to {MAX_MESSAGE_LIMIT}")
+
+    service = current_app.extensions["event_service"]
+
+    def run():
+        messages, has_more = service.list_messages(event_id, g.user, after, limit)
+        return jsonify({"messages": [m.to_dict() for m in messages], "has_more": has_more})
+    return _guarded(run)

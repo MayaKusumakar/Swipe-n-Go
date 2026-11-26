@@ -7,8 +7,8 @@ struct ChatsView: View {
     @State private var deleting: Conversation?
 
     private var filtered: [Conversation] {
-        guard !query.isEmpty else { return store.conversations }
-        return store.conversations.filter { store.title(for: $0).localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return store.visibleConversations }
+        return store.visibleConversations.filter { store.title(for: $0).localizedCaseInsensitiveContains(query) }
     }
 
     private var groups: [Conversation] { filtered.filter { $0.activityID != nil } }
@@ -17,7 +17,7 @@ struct ChatsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                if store.conversations.isEmpty {
+                if store.visibleConversations.isEmpty {
                     ContentUnavailableView("No chats yet", systemImage: "bubble.left.and.bubble.right",
                                            description: Text("Join a plan and you'll be added to its group chat."))
                         .listRowBackground(Color.clear)
@@ -42,7 +42,7 @@ struct ChatsView: View {
             .navigationTitle("Chats")
             .profileToolbarButton()
             .navigationDestination(for: UUID.self) { ChatView(conversationID: $0) }
-            .animation(.snappy, value: store.conversations.map(\.id))
+            .animation(.snappy, value: store.visibleConversations.map(\.id))
         }
         .confirmationDialog(deleting.map { "Delete “\(store.title(for: $0))”?" } ?? "",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
@@ -233,6 +233,13 @@ struct ChatView: View {
             if store.openConversationID == conversationID { store.openConversationID = nil }
         }
         .onChange(of: convo?.messages.count) { store.markRead(conversationID) }
+        .task(id: conversationID) {
+            // Shared plans: check for new messages every few seconds while the chat is open.
+            while !Task.isCancelled {
+                await store.syncOpenChat(conversationID)
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
         .sensoryFeedback(.impact(weight: .light), trigger: sentCount)
     }
 
@@ -370,6 +377,12 @@ private struct MessageRow: View {
                         .contextMenu {
                             Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
                         }
+                    if isMe, let needsSync = message.needsSync, isLastInRun || !needsSync {
+                        Text(needsSync ? "Sending…" : "Not delivered")
+                            .font(.caption2)
+                            .foregroundStyle(needsSync ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
+                            .padding(.trailing, 6)
+                    }
                 }
                 if !isMe { Spacer(minLength: 60) }
             }

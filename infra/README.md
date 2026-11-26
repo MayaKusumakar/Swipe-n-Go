@@ -9,7 +9,7 @@ Goal: $0, hard-stopped. Never click "Activate full account" / "Upgrade" in Billi
 - App Engine app (`us-west2`) and Firestore in **Datastore mode** (`(default)` database).
 - Free-tier caps in `backend/app.yaml`: one F1 instance at most.
 - Per-user request limits in the backend (`backend/services/rate_limiter.py`, listed in `docs/API.md`).
-- Budget **"Swipe-n-Go $1 cap (swipe-n-go-app)"** on the project's billing account (Billing → Budgets),
+- Budget **"Swipe-n-Go $10 cap (swipe-n-go-app)"** (raised from $1 on 2026-11-25, for ~20 testers) on the project's billing account (Billing → Budgets),
   scoped to this project. It counts cost *before* trial credits. Emails billing admins at 50%,
   90%, 100%, and sends every update to the Pub/Sub topic `budget-alerts`.
 - **Kill switch** (`budget_kill_switch/`): a Cloud Run function on `budget-alerts`. When cost
@@ -17,7 +17,7 @@ Goal: $0, hard-stopped. Never click "Activate full account" / "Upgrade" in Billi
   and everything else that costs money. It runs as the `budget-kill-switch` service account,
   which has only `roles/billing.projectManager` (and `roles/run.invoker` for the trigger).
 
-Budget data lags real usage by hours, so the cap is "stops soon after $1", not to the cent.
+Budget data lags real usage by hours, so the cap is "stops soon after $10", not to the cent.
 The kill switch doesn't cover the Claude API: Anthropic bills separately (see below).
 
 The project is in the university's Google Cloud organization. A new project there takes a few
