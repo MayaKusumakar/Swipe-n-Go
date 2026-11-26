@@ -700,9 +700,12 @@ final class AppStore {
     func send(_ text: String, in conversationID: UUID) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let i = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
-        conversations[i].messages.append(Message(senderID: me.id, text: trimmed, date: .now))
+        // In a shared plan's chat it goes to the server too (marked until the server has it).
+        let shared = sharedChatEventID(conversations[i]) != nil
+        conversations[i].messages.append(Message(senderID: me.id, text: trimmed, date: .now, needsSync: shared ? true : nil))
         bumpToTop(i)
         save()
+        if shared { Task { await syncOpenChat(conversationID) } }
 
         guard simulatesOthers, let responder = others(in: conversations[0]).randomElement() else { return }
         scheduleReply(in: conversationID, from: responder.id, text: reply(to: trimmed), after: Double.random(in: 1.6...3.2))
@@ -745,7 +748,7 @@ final class AppStore {
         bumpToTop(i)
     }
 
-    private func bumpToTop(_ i: Int) {
+    func bumpToTop(_ i: Int) {
         guard i != 0 else { return }
         let c = conversations.remove(at: i)
         conversations.insert(c, at: 0)

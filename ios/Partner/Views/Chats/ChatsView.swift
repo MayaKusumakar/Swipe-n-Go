@@ -233,6 +233,13 @@ struct ChatView: View {
             if store.openConversationID == conversationID { store.openConversationID = nil }
         }
         .onChange(of: convo?.messages.count) { store.markRead(conversationID) }
+        .task(id: conversationID) {
+            // Shared plans: check for new messages every few seconds while the chat is open.
+            while !Task.isCancelled {
+                await store.syncOpenChat(conversationID)
+                try? await Task.sleep(for: .seconds(4))
+            }
+        }
         .sensoryFeedback(.impact(weight: .light), trigger: sentCount)
     }
 
@@ -370,6 +377,12 @@ private struct MessageRow: View {
                         .contextMenu {
                             Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = message.text }
                         }
+                    if isMe, let needsSync = message.needsSync, isLastInRun || !needsSync {
+                        Text(needsSync ? "Sending…" : "Not delivered")
+                            .font(.caption2)
+                            .foregroundStyle(needsSync ? AnyShapeStyle(.secondary) : AnyShapeStyle(.red))
+                            .padding(.trailing, 6)
+                    }
                 }
                 if !isMe { Spacer(minLength: 60) }
             }
